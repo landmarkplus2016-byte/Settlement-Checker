@@ -1070,3 +1070,69 @@ td.col-actions {
   background: var(--color-danger-bg);
   color: var(--color-danger);
 }
+
+/* ================================================================== *
+ * Approvals — the consolidated review table (CLAUDE.md 3.6, 5.2)
+ *
+ * Ten columns of other people's work, so the job here is density without
+ * noise: two lines per cell where a row needs context, and the money and
+ * the tracking number pinned LTR by `.num` (8.1).
+ *
+ * Tokens only, logical properties only (rules 23, 24).
+ * ================================================================== */
+
+/* The per-status tally above the table. */
+.count-strip {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  flex-wrap: wrap;
+  margin-block-end: var(--space-4);
+}
+
+.count-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: 12.5px;
+}
+
+/* A cell whose first line pairs a badge with a figure. */
+.cell-line {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+
+/*
+ * Free text from a coordinator — an item description, a return note. Clamped
+ * to two lines so one long Arabic sentence cannot set the height of every row
+ * in the table; the full text is on the element's title.
+ */
+.cell-clamp {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  max-inline-size: 260px;
+}
+
+/* Amount columns line up on their end edge, which flips with the document. */
+.table th.text-end,
+.table td.text-end { text-align: end; }
+
+/* The pager sits in the table's footer strip. */
+.pager {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-4);
+}
+
+/* An alert that sits inside a card rather than above one. */
+.m-4 { margin: var(--space-4); }
+
+/* A secondary figure under a money cell — the karta beside a fuel amount.
+   Kept on one line so it never breaks between its label and its number. */
+.cell-subfigure { white-space: nowrap; }

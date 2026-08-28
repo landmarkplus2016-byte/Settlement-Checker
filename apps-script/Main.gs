@@ -45,7 +45,7 @@ function doPost(e) {
  * returns plain data; dispatch() wraps it in the success envelope. `session` is
  * null for the three public actions.
  *
- * Later stages fill in the manager (3.6) and export (3.7) actions here.
+ * A later stage fills in the export (3.7) actions here.
  */
 var ACTIONS = {
 
@@ -180,6 +180,30 @@ var ACTIONS = {
   confirm_track: {
     auth: true,
     handler: function (session, payload) { return handleConfirmTrack(session, payload); }
+  },
+
+  /*
+   * Manager (3.6) — consolidated across every coordinator. All four are
+   * manager-only, enforced inside Manager.gs by requireManager() and by
+   * resolveCoordinatorSheetAsManager(), which is the ONE path that reaches
+   * another user's sheet. The guard travels with the code that opens the
+   * spreadsheet, so no route added here can bypass it (rule 5).
+   */
+  list_pending: {
+    auth: true,
+    handler: function (session, payload) { return handleListPending(session, payload); }
+  },
+  approve_entry: {
+    auth: true,
+    handler: function (session, payload) { return handleApproveEntry(session, payload); }
+  },
+  return_entry: {
+    auth: true,
+    handler: function (session, payload) { return handleReturnEntry(session, payload); }
+  },
+  approve_batch: {
+    auth: true,
+    handler: function (session, payload) { return handleApproveBatch(session, payload); }
   }
 };
 

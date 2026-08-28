@@ -28,6 +28,7 @@
 import { t } from '../i18n/i18n.js';
 import { escapeHtml, qs, qsa } from '../utils/dom.js';
 import { validateRows, toNumber, text as asText, period as asPeriod } from '../utils/validate.js';
+import { formatMoney } from '../utils/money.js';
 import { saveDraft, getDraft } from '../state.js';
 
 /**
@@ -477,16 +478,13 @@ function sumColumn(rows, key) {
   }, 0);
 }
 
-/**
- * Money for display. Always LTR with two decimals (8.1) — a total sitting in an
- * Arabic sentence must still read as a number.
- * @param {number} value
- * @return {string}
+/*
+ * Money formatting moved to utils/money.js, where the file map puts it (9.1) —
+ * the manager's approvals and export screens need the same two decimals as the
+ * grid's footer totals. Re-exported here so nothing that already imports it from
+ * the grid has to change.
  */
-export function formatMoney(value) {
-  const number = toNumber(value) || 0;
-  return number.toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
-}
+export { formatMoney };
 
 /* ================================================================== *
  * Behaviour

@@ -29,6 +29,7 @@ import { logout } from './auth/session.js';
 
 import { renderCoordinatorDashboard, bindCoordinatorDashboardEvents } from './coordinator/dashboard.js';
 import { renderManagerDashboard, bindManagerDashboardEvents } from './manager/dashboard.js';
+import { renderApprovals, bindApprovalsEvents } from './manager/approvals.js';
 
 import { renderSettlementPage, bindSettlementPageEvents } from './coordinator/settlement.js';
 
@@ -65,7 +66,6 @@ const ADMIN_DEFAULT = '#/admin/teams';
  * screen up.
  */
 const NOT_BUILT_YET = {
-  approvals:    { titleKey: 'nav_approvals',       textKey: 'coming_in_stage_7' },
   export:       { titleKey: 'nav_export',          textKey: 'coming_in_stage_8' }
 };
 
@@ -254,6 +254,11 @@ function renderScreen(route, role, hash) {
       return paint(role, hash, renderManagerDashboard(), bindManagerDashboardEvents);
     }
     return paint(role, hash, renderCoordinatorDashboard(), bindCoordinatorDashboardEvents);
+  }
+
+  // The consolidated review screen (3.6). Manager-only, enforced server-side.
+  if (route.name === 'approvals') {
+    return paint(role, hash, renderApprovals(), bindApprovalsEvents);
   }
 
   /*

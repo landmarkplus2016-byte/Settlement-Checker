@@ -362,6 +362,59 @@ export const en = {
   list_remove_note: 'Entries already filed under it keep it. To take it off new entries but leave it visible here, turn it off instead.',
   list_save_failed_title: 'Could not save',
 
+  /* --- manager: approvals (3.6) --- */
+  approvals_subtitle: 'Every coordinator’s confirmed entries, in one place.',
+
+  col_coordinator: 'Coordinator',
+  col_entry: 'Entry',
+  col_category_fuel: 'Category / Fuel',
+  col_period_tracking: 'Period & tracking #',
+
+  filter_all_teams: 'All teams',
+  filter_all_coordinators: 'All coordinators',
+  filter_all_months: 'All months',
+  filter_clear: 'Clear filters',
+
+  period_none: 'No period',
+  list_separator: ', ',
+
+  approve: 'Approve',
+  return_action: 'Return',
+
+  approve_success: 'Entry approved.',
+  approve_already: 'That entry was already approved.',
+
+  approvals_empty_title: 'Nothing waiting',
+  approvals_empty_text: 'No coordinator has confirmed entries that need a decision. Confirmed entries appear here the moment a coordinator sends a track.',
+
+  unrouted_count: '{count} entries have no period, so they settle against neither tracking number.',
+  unrouted_count_one: '1 entry has no period, so it settles against neither tracking number.',
+  sweep_incomplete: 'Some coordinators could not be read, so this list is incomplete: {names}. Reload, and tell the developer if it keeps happening.',
+
+  pager_prev: 'Previous',
+  pager_next: 'Next',
+  pager_position: 'Page {page} of {pages} · {total} entries',
+
+  /* Returning an entry (3.6) — the note is the point of the transition. */
+  return_title: 'Return this entry',
+  return_text: 'This sends entry {entry} back to {coordinator}. They will see your note and can edit the row.',
+  return_note_label: 'Why it is coming back',
+  return_note_placeholder: 'Say what needs fixing — the amount, the site, a missing receipt…',
+  return_note_hint: 'The coordinator sees this note against the row. Without one they have nothing to act on.',
+  return_note_required: 'Write a note before returning the entry.',
+  return_success: 'Entry returned to the coordinator.',
+
+  /* Bulk approval (3.6). */
+  approve_all_pending: 'Approve all pending',
+  approve_all_needs_filter: 'Choose a team, coordinator, month or period first.',
+  approve_all_title: 'Approve everything that matches?',
+  approve_all_text: 'This approves the {count} confirmed entries matching the filter below, across every coordinator.',
+  approve_all_confirm: 'Approve {count}',
+  approve_all_note: 'There is no undo. Un-approving is a return, one entry at a time, with a note.',
+  approve_all_success: '{count} entries approved.',
+
+  approved_by_stamp: 'by {name}',
+
   /* --- routed but not yet built --- */
   screen_not_built_title: 'Not built yet',
   coming_in_stage_5: 'Admin data — teams, the Site → Job Code lookup, people and lists — arrives with the admin screens.',
@@ -435,6 +488,18 @@ export const en = {
   err_msg_no_rows: 'There was nothing to import.',
   err_msg_sitejc_headers_missing: 'The Site → Job Code sheet is missing a column. Ask the developer to check it.',
   err_msg_lists_headers_missing: 'The Lists sheet is missing a column. Ask the developer to check it.',
+
+  /* --- errors: the manager actions (3.6) --- */
+  err_msg_entry_not_found: 'That entry no longer exists. Reload the page.',
+  err_msg_coordinator_not_found: 'That coordinator no longer exists. Reload the page.',
+  err_msg_entry_exported: 'That entry has already been exported to finance, so it cannot change.',
+  err_msg_entry_not_confirmed: 'Only a confirmed entry can be approved. Reload the page to see where this one is now.',
+  err_msg_entry_not_returnable: 'Only a confirmed or approved entry can be returned. Reload the page.',
+  err_msg_invalid_note: 'Write a note before returning the entry.',
+  err_msg_invalid_target: 'The app did not say which coordinator that entry belongs to. Reload the page.',
+  err_msg_filter_required: 'Choose a team, coordinator, month or period before approving in bulk.',
+  err_msg_batch_too_large: 'That is more entries than one bulk approval allows. Narrow the filter and try again.',
+  err_msg_invalid_period: 'That is not a period — use old or new.',
 
   /* --- errors: reading an uploaded file (js/utils/xlsx.js) --- */
   err_msg_xlsx_unavailable: 'The spreadsheet reader did not load. Check your connection and reload the page.',

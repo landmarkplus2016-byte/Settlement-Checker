@@ -360,6 +360,59 @@ export const ar = {
   list_remove_note: 'الإدخالات المسجّلة به تحتفظ بقيمته. ولرفعه عن الإدخالات الجديدة مع إبقائه ظاهراً هنا، أوقفه بدلاً من إزالته.',
   list_save_failed_title: 'تعذّر الحفظ',
 
+  /* --- manager: approvals (3.6) --- */
+  approvals_subtitle: 'كل البنود المؤكَّدة من جميع المنسّقين في مكان واحد.',
+
+  col_coordinator: 'المنسّق',
+  col_entry: 'البند',
+  col_category_fuel: 'الفئة / الوقود',
+  col_period_tracking: 'الفترة ورقم التتبّع',
+
+  filter_all_teams: 'كل الفرق',
+  filter_all_coordinators: 'كل المنسّقين',
+  filter_all_months: 'كل الشهور',
+  filter_clear: 'مسح عوامل التصفية',
+
+  period_none: 'بلا فترة',
+  list_separator: '، ',
+
+  approve: 'اعتماد',
+  return_action: 'إرجاع',
+
+  approve_success: 'تم اعتماد البند.',
+  approve_already: 'هذا البند معتمد بالفعل.',
+
+  approvals_empty_title: 'لا شيء في الانتظار',
+  approvals_empty_text: 'لا يوجد منسّق لديه بنود مؤكَّدة تنتظر قراراً. تظهر البنود هنا فور أن يؤكّد المنسّق أحد المسارين.',
+
+  unrouted_count: '{count} بنداً بلا فترة، فلا تُسوَّى على أي من رقمَي التتبّع.',
+  unrouted_count_one: 'بند واحد بلا فترة، فلا يُسوَّى على أي من رقمَي التتبّع.',
+  sweep_incomplete: 'تعذّرت قراءة بيانات بعض المنسّقين، لذا هذه القائمة غير مكتملة: {names}. أعد التحميل، وأبلغ المطوّر إن تكرر الأمر.',
+
+  pager_prev: 'السابق',
+  pager_next: 'التالي',
+  pager_position: 'صفحة {page} من {pages} · {total} بنداً',
+
+  /* Returning an entry (3.6) — the note is the point of the transition. */
+  return_title: 'إرجاع هذا البند',
+  return_text: 'يعيد هذا البند {entry} إلى {coordinator}. سيرى ملاحظتك ويمكنه تعديل الصف.',
+  return_note_label: 'سبب الإرجاع',
+  return_note_placeholder: 'اذكر ما يحتاج إلى تصحيح — المبلغ، الموقع، إيصال ناقص…',
+  return_note_hint: 'يرى المنسّق هذه الملاحظة أمام الصف. بدونها لا يعرف ما يفعله.',
+  return_note_required: 'اكتب ملاحظة قبل إرجاع البند.',
+  return_success: 'أُعيد البند إلى المنسّق.',
+
+  /* Bulk approval (3.6). */
+  approve_all_pending: 'اعتماد كل المعلّق',
+  approve_all_needs_filter: 'اختر فريقاً أو منسّقاً أو شهراً أو فترة أولاً.',
+  approve_all_title: 'اعتماد كل ما يطابق التصفية؟',
+  approve_all_text: 'يعتمد هذا {count} بنداً مؤكَّداً مطابقاً للتصفية أدناه، عبر جميع المنسّقين.',
+  approve_all_confirm: 'اعتماد {count}',
+  approve_all_note: 'لا تراجع عن هذا. إلغاء الاعتماد يكون بالإرجاع، بنداً بنداً، مع ملاحظة.',
+  approve_all_success: 'تم اعتماد {count} بنداً.',
+
+  approved_by_stamp: 'بواسطة {name}',
+
   /* --- routed but not yet built --- */
   screen_not_built_title: 'لم تُبنَ بعد',
   coming_in_stage_5: 'بيانات الإدارة — الفرق وجدول الموقع ← كود العمل والمستخدمون والقوائم — تأتي مع شاشات الإدارة.',
@@ -433,6 +486,18 @@ export const ar = {
   err_msg_no_rows: 'لا يوجد ما يمكن استيراده.',
   err_msg_sitejc_headers_missing: 'ينقص ورقة «الموقع ← كود العمل» أحد الأعمدة. اطلب من المطوّر مراجعتها.',
   err_msg_lists_headers_missing: 'ينقص ورقة «القوائم» أحد الأعمدة. اطلب من المطوّر مراجعتها.',
+
+  /* --- errors: the manager actions (3.6) --- */
+  err_msg_entry_not_found: 'لم يعد هذا البند موجوداً. أعد تحميل الصفحة.',
+  err_msg_coordinator_not_found: 'لم يعد هذا المنسّق موجوداً. أعد تحميل الصفحة.',
+  err_msg_entry_exported: 'صُدِّر هذا البند بالفعل إلى المالية، فلا يمكن تغييره.',
+  err_msg_entry_not_confirmed: 'لا يُعتمد إلا البند المؤكَّد. أعد تحميل الصفحة لترى حالته الآن.',
+  err_msg_entry_not_returnable: 'لا يُرجَع إلا البند المؤكَّد أو المعتمد. أعد تحميل الصفحة.',
+  err_msg_invalid_note: 'اكتب ملاحظة قبل إرجاع البند.',
+  err_msg_invalid_target: 'لم يحدّد التطبيق المنسّق صاحب هذا البند. أعد تحميل الصفحة.',
+  err_msg_filter_required: 'اختر فريقاً أو منسّقاً أو شهراً أو فترة قبل الاعتماد الجماعي.',
+  err_msg_batch_too_large: 'عدد البنود أكبر مما يسمح به الاعتماد الجماعي الواحد. ضيّق التصفية وحاول مجدداً.',
+  err_msg_invalid_period: 'هذه ليست فترة — استخدم القديم أو الجديد.',
 
   /* --- errors: reading an uploaded file (js/utils/xlsx.js) --- */
   err_msg_xlsx_unavailable: 'لم يُحمَّل قارئ ملفات Excel. تحقق من الاتصال وأعد تحميل الصفحة.',
