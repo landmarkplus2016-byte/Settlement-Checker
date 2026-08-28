@@ -44,6 +44,7 @@ export const ar = {
   delete: 'حذف',
   search: 'بحث',
   actions: 'إجراءات',
+  open: 'فتح',
   status: 'الحالة',
   active: 'نشط',
   inactive: 'موقوف',
@@ -120,6 +121,115 @@ export const ar = {
   stat_approved_unexported: 'معتمدة وغير مصدّرة',
   stat_returned_open: 'مُعادة وقيد المعالجة',
   stat_active_coordinators: 'منسقون نشطون',
+
+  /* --- the settlement screen (5.1, 6.5) --- */
+  kind_expense: 'المصروفات',
+  kind_fuel: 'الوقود',
+  save_draft: 'حفظ المسودة',
+  confirm_old: 'تأكيد القديم',
+  confirm_new: 'تأكيد الجديد',
+  settlement_not_found_text: 'هذه التسوية ليست من تسوياتك، أو لم تعد موجودة.',
+  tracking_placeholder: 'غير محدد',
+  tracking_saved: 'تم حفظ رقم التتبع.',
+  tracking_invalid: 'يجب أن يكون رقم التتبع عدداً صحيحاً أكبر من صفر.',
+  tracking_locked_hint: 'تم تصدير هذا المسار بالفعل، لذا رقمه ثابت.',
+  track_entry_count: '{count} إدخالاً',
+
+  /* --- saving and confirming (3.5, 6.1) --- */
+  save_success: 'تمت إضافة {created} وتحديث {updated}.',
+  save_nothing: 'لا يوجد ما يُحفظ — لا توجد إدخالات في هذا الجدول بعد.',
+  save_reverted: 'تم تعديل {count} إدخالاً معتمداً، فعادت لانتظار الاعتماد.',
+  save_failed_title: 'لم يُحفظ شيء',
+  save_failed_exported: 'تم تصدير أحد هذه الإدخالات بعد فتحك للشاشة، والإدخال المصدَّر لا يمكن تعديله. أعد تحميل الصفحة لمعرفة الوضع الحالي.',
+
+  confirm_working: 'جارٍ التأكيد…',
+  confirm_success: 'تم تأكيد {count} إدخالاً على رقم التتبع {tracking}.',
+  confirm_unrouted: '{count} إدخالاً بلا فترة، فبقيت مسودات. حدّد لها الفترة لتسويتها.',
+
+  confirm_needs_tracking_title: 'لا يوجد رقم تتبع لهذا المسار',
+  confirm_needs_tracking: 'حدّد رقم التتبع {period} قبل التأكيد — فهو الرقم الذي تُسوّى عليه هذه الإدخالات.',
+  confirm_blocked_title: 'بعض الإدخالات تحتاج تصحيحاً أولاً',
+  confirm_has_flags: 'لا يمكن تأكيد المسار {period} بعد. إدخالات تحتاج تصحيحاً: {rows}.',
+  confirm_has_flags_hint: 'هي الصفوف المعلَّمة بالأحمر في الجدول. صحّحها ثم أعد التأكيد — أما التنبيهات الكهرمانية فلا تمنع شيئاً.',
+  confirm_nothing: 'لا يوجد جديد لتأكيده في المسار {period}.',
+
+  confirm_dialog_title: 'تأكيد المسار {period}؟',
+  confirm_dialog_body: 'سيؤدي هذا إلى إرسال المسار {period} إلى المديرين للاعتماد. عدد الإدخالات: {count}.',
+  confirm_dialog_note: 'يمكنك تعديلها بعد ذلك، لكن سيتعيّن على المدير اعتمادها من جديد. ولا يمكن إعادتها إليك إلا عن طريق مدير.',
+
+  confirm_hint_ready: '{count} جاهزة',
+  confirm_hint_flags: '{rows} تحتاج تصحيحاً',
+  confirm_hint_tracking: 'لا يوجد رقم تتبع',
+  confirm_hint_nothing: 'لا يوجد ما يُؤكَّد',
+
+  /* Track roll-up, per period (6.1). */
+  track_status_empty: 'لا شيء بعد',
+  track_status_draft: 'قيد الإدخال',
+  track_status_confirmed: 'بانتظار الاعتماد',
+  track_status_approved: 'معتمد',
+  track_status_returned: 'مُعاد',
+  track_status_exported: 'مُصدَّر',
+
+  /* Entry statuses (6.1). */
+  entry_status_draft: 'مسودة',
+  entry_status_confirmed: 'مؤكد',
+  entry_status_approved: 'معتمد',
+  entry_status_returned: 'مُعاد',
+  entry_status_exported: 'مُصدَّر',
+
+  /* --- the grid (6.6) --- */
+  col_day: 'اليوم',
+  col_project: 'المشروع',
+  col_category: 'التصنيف',
+  col_item: 'وصف البند',
+  col_amount: 'المبلغ',
+  col_comment: 'ملاحظة',
+  col_start_km: 'العداد قبل',
+  col_end_km: 'العداد بعد',
+  col_fuel: 'الوقود',
+  col_area: 'المنطقة',
+  col_driver: 'السائق',
+  col_city: 'المدينة',
+  col_karta: 'الكارتة',
+
+  grid_row_number: 'الصف',
+  grid_add_row: 'إضافة صف',
+  grid_delete_row: 'حذف الصف',
+  grid_row_deleted: 'تم حذف الصف.',
+  grid_row_locked: 'مُصدَّر — هذا الصف مقفل.',
+  grid_total: 'الإجمالي',
+  grid_empty_title: 'لا توجد إدخالات بعد',
+  grid_empty_text: 'أضف صفاً لبدء التسجيل. كل صف جديد يرث الفريق والمشروع والشهر واليوم والفترة من الصف الذي فوقه.',
+  grid_all_clear: 'كل الصفوف جاهزة للتأكيد.',
+  grid_banner_blocked: '{rows} صفاً لا يمكن تأكيدها قبل تصحيحها.',
+  grid_banner_warnings: '{count} ملاحظة تستحق المراجعة. لا يمنع أيٌّ منها التأكيد.',
+
+  /* --- autofill and paste (6.6.1, 6.6.3) --- */
+  autofill_unknown: 'غير موجود في جدول الموقع ← كود العمل: {sites}. أدخل كود العمل والفترة بنفسك.',
+
+  paste_from_excel: 'لصق من Excel',
+  paste_title: 'لصق صفوف من Excel',
+  paste_intro: 'انسخ الصفوف من Excel والصقها هنا. تُضاف إلى أسفل الجدول كمسودات، مع ملء كود العمل والفترة من جدول المواقع.',
+  paste_columns_hint: 'تُقرأ الأعمدة بهذا الترتيب:',
+  paste_label: 'الصفوف الملصقة',
+  paste_placeholder: 'الصق هنا…',
+  paste_append: 'إضافة الصفوف',
+  paste_nothing: 'لا يوجد ما يُضاف — الصق بعض الصفوف أولاً.',
+  paste_added: 'تمت إضافة {count} صفاً.',
+  paste_header_skipped: 'تم تخطي صف العناوين.',
+  paste_truncated: 'تم استبعاد {count} صفاً — الصقها في دفعة ثانية.',
+
+  /* Validation codes — shared with apps-script/Validate.gs (6.3). */
+  valid_missing_site_id: 'لا يوجد رقم موقع',
+  valid_missing_amount: 'لا يوجد مبلغ',
+  valid_missing_project: 'لا يوجد مشروع',
+  valid_missing_category: 'لا يوجد تصنيف',
+  valid_missing_driver: 'لا يوجد سائق',
+  valid_unknown_site: 'الموقع غير موجود في الجدول',
+  valid_missing_job_code: 'لا يوجد كود عمل',
+  valid_missing_period: 'لا توجد فترة — هذا الصف لا يُسوّى على أي رقم تتبع',
+  valid_job_code_count_mismatch: 'عدد المواقع لا يطابق عدد أكواد العمل',
+  valid_km_gap: 'قراءة العداد لا تتصل بالقراءة السابقة',
 
   /* --- admin: teams (3.4) --- */
   teams_subtitle: 'الفرق التي تُسجَّل الإدخالات باسمها.',

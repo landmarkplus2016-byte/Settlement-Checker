@@ -1,0 +1,314 @@
+/**
+ * validate.js — the grid's live validation (CLAUDE.md 6.3).
+ *
+ * This is the CLIENT half of a pair. `apps-script/Validate.gs` computes the same
+ * answers on save and confirm, and the two must agree: the codes here are the
+ * codes the server returns, so a row the grid paints red is the same row
+ * `confirm_track` refuses. When one side changes, the other changes with it.
+ *
+ * The split that matters is FLAG versus WARNING:
+ *
+ *   - A **flag** is a row that cannot be settled — no Site ID, no amount, a
+ *     missing required field. Flags block Confirm.
+ *   - A **warning** is a row that is probably wrong but might not be — a KM
+ *     reading that does not follow on, a site the lookup has never heard of.
+ *     Warnings are shown in amber and block nothing, because 6.3 is explicit
+ *     that an unknown site still confirms.
+ *
+ * Nothing here blocks typing. A draft is allowed to be half-finished; that is
+ * what a draft is.
+ */
+
+/** Codes that block Confirm. Same list as VALIDATION_FLAG_CODES in Validate.gs. */
+export const FLAG_CODES = [
+  'missing_site_id',
+  'missing_amount',
+  'missing_project',
+  'missing_category',
+  'missing_driver'
+];
+
+/** Codes that are shown but never block. */
+export const WARNING_CODES = [
+  'unknown_site',
+  'missing_job_code',
+  'missing_period',
+  'job_code_count_mismatch',
+  'km_gap'
+];
+
+/**
+ * Validate every row of one grid.
+ *
+ * Takes the WHOLE grid rather than one row, because KM continuity is not a
+ * per-row question: a fuel row is compared against the previous row for the same
+ * driver, ordered by day. Validating rows one at a time would never find it.
+ *
+ * Rows are addressed by POSITION, not by entry_id — a row the coordinator has
+ * just typed has no id yet, and it still has to be able to go red.
+ *
+ * @param {string} kind 'expense' | 'fuel'
+ * @param {Array<Object>} rows the grid's in-memory row model.
+ * @param {Object} [options]
+ * @param {Object|null} [options.siteJcMap] uppercased site_id -> {job_code, period}.
+ *        When absent, the lookup checks are skipped rather than guessed at — see
+ *        checkSiteAgainstLookup().
+ * @return {{rows: Array<{flags: Array, warnings: Array}>, flagCount: number,
+ *           warningCount: number, flaggedRows: Array<number>, byCode: Object}}
+ */
+export function validateRows(kind, rows, options = {}) {
+  const list = rows || [];
+  const siteJcMap = options.siteJcMap || null;
+
+  const report = {
+    rows: [],
+    flagCount: 0,
+    warningCount: 0,
+    flaggedRows: [],
+    byCode: {}
+  };
+
+  for (let i = 0; i < list.length; i++) {
+    report.rows.push(validateRow(kind, list[i], siteJcMap));
+  }
+
+  if (kind === 'fuel') applyKmContinuity(list, report);
+
+  for (let i = 0; i < report.rows.length; i++) {
+    const row = report.rows[i];
+
+    report.flagCount += row.flags.length;
+    report.warningCount += row.warnings.length;
+    if (row.flags.length) report.flaggedRows.push(i);
+
+    // Counted by code so the banner can say "3 rows have no amount" rather than
+    // repeating the same sentence three times.
+    [].concat(row.flags, row.warnings).forEach(function (issue) {
+      if (!report.byCode[issue.code]) {
+        report.byCode[issue.code] = { code: issue.code, level: issue.level, count: 0, firstRow: i };
+      }
+      report.byCode[issue.code].count++;
+    });
+  }
+
+  return report;
+}
+
+/**
+ * Everything that can be judged from one row on its own.
+ *
+ * @param {string} kind 'expense' | 'fuel'
+ * @param {Object} row
+ * @param {Object|null} siteJcMap
+ * @return {{flags: Array<Object>, warnings: Array<Object>}}
+ */
+export function validateRow(kind, row, siteJcMap) {
+  const isFuel = kind === 'fuel';
+  const flags = [];
+  const warnings = [];
+
+  const flag = function (code, field, detail) { flags.push({ code, field, detail, level: 'flag' }); };
+  const warn = function (code, field, detail) { warnings.push({ code, field, detail, level: 'warning' }); };
+
+  /*
+   * An exported row is locked and has already been settled (rule 13). Judging it
+   * now would light up the grid over money that has left the building, and the
+   * coordinator could not act on it in any case.
+   */
+  if (String(row.status || '').toLowerCase() === 'exported') {
+    return { flags, warnings };
+  }
+
+  /* --- the fields nothing works without --- */
+  const siteCell = text(row.site_id);
+  if (!siteCell) flag('missing_site_id', 'site_id');
+
+  const amountField = isFuel ? 'fuel_amount' : 'amount';
+  const amount = toNumber(row[amountField]);
+
+  // Zero counts as missing (6.3): an entry that settles nothing is a mistake,
+  // not a zero-value fact.
+  if (amount === null || amount === 0) flag('missing_amount', amountField);
+
+  if (!text(row.project)) flag('missing_project', 'project');
+
+  if (isFuel) {
+    if (!text(row.driver)) flag('missing_driver', 'driver');
+  } else {
+    if (!text(row.category)) flag('missing_category', 'category');
+  }
+
+  /* --- the lookup: warnings only --- */
+  checkSiteAgainstLookup(siteCell, row, siteJcMap, warn);
+
+  /*
+   * A row with no period is routed to neither Tracking# (6.2), so Confirm will
+   * pass it by. Amber rather than red: this is the normal state of a row whose
+   * site is not in the lookup yet, and 6.3 says such a row still confirms.
+   */
+  if (!period(row.period)) warn('missing_period', 'period');
+
+  return { flags, warnings };
+}
+
+/**
+ * Check a Site ID cell against the lookup.
+ *
+ * A cell may hold several sites joined by `/` (2.2), so each segment is looked
+ * up in turn. Matching ignores case — real site lists carry `k3799` beside
+ * `K3666`, and a coordinator typing from paperwork must still find the row.
+ *
+ * When `siteJcMap` is null the site checks are SKIPPED rather than guessed. A
+ * coordinator cannot currently read the lookup (`list_site_jc` is manager-only),
+ * and warning "unknown site" on every row because the client has no lookup would
+ * be worse than saying nothing.
+ *
+ * @param {string} siteCell
+ * @param {Object} row
+ * @param {Object|null} siteJcMap
+ * @param {Function} warn
+ */
+function checkSiteAgainstLookup(siteCell, row, siteJcMap, warn) {
+  const jobCell = text(row.job_code);
+
+  if (siteCell && siteJcMap) {
+    const sites = splitMulti(siteCell);
+    const unknown = sites.filter(function (site) {
+      return !siteJcMap[site.toUpperCase()];
+    });
+
+    if (unknown.length) warn('unknown_site', 'site_id', { sites: unknown });
+  }
+
+  if (!siteCell) return;
+
+  if (!jobCell) {
+    warn('missing_job_code', 'job_code');
+    return;
+  }
+
+  /*
+   * The per-site export pairs site i with job code i (6.4). Different counts
+   * means the money would be divided against the wrong job codes — the warning
+   * here most worth acting on.
+   */
+  const sites = splitMulti(siteCell);
+  const codes = splitMulti(jobCell);
+
+  if (sites.length !== codes.length) {
+    warn('job_code_count_mismatch', 'job_code', { sites: sites.length, job_codes: codes.length });
+  }
+}
+
+/**
+ * KM continuity (6.3): within one driver, a row's start_km should equal the
+ * previous row's end_km.
+ *
+ * Grouped by driver and ordered by day, then by position in the grid — an
+ * odometer is one running sequence, and the two periods have nothing to do with
+ * it. A row missing a reading is skipped rather than guessed at, and does not
+ * break the chain: the next row is compared against the last reading actually
+ * recorded.
+ *
+ * @param {Array<Object>} rows all fuel rows, in grid order.
+ * @param {Object} report from validateRows(); its rows are appended to.
+ */
+function applyKmContinuity(rows, report) {
+  const byDriver = {};
+
+  rows.forEach(function (row, index) {
+    if (String(row.status || '').toLowerCase() === 'exported') return;
+
+    const driver = text(row.driver).toUpperCase();
+    if (!driver) return;               // already flagged as missing_driver
+
+    if (!byDriver[driver]) byDriver[driver] = [];
+    byDriver[driver].push({ index, row });
+  });
+
+  Object.keys(byDriver).forEach(function (driver) {
+    const group = byDriver[driver].slice().sort(function (a, b) {
+      const dayA = toNumber(a.row.day);
+      const dayB = toNumber(b.row.day);
+      if ((dayA || 0) !== (dayB || 0)) return (dayA || 0) - (dayB || 0);
+      return a.index - b.index;
+    });
+
+    let previousEnd = null;
+
+    group.forEach(function (item) {
+      const startKm = toNumber(item.row.start_km);
+      const endKm = toNumber(item.row.end_km);
+
+      if (previousEnd !== null && startKm !== null && startKm !== previousEnd) {
+        report.rows[item.index].warnings.push({
+          code: 'km_gap',
+          field: 'start_km',
+          level: 'warning',
+          detail: { expected: previousEnd, found: startKm }
+        });
+      }
+
+      if (endKm !== null) previousEnd = endKm;
+    });
+  });
+}
+
+/* ------------------------------------------------------------------ *
+ * Coercion — shared with the grid, and matching Validate.gs
+ * ------------------------------------------------------------------ */
+
+/**
+ * A cell as a number.
+ *
+ * Returns null, not 0, for blank or unparseable: the difference between "no
+ * amount typed" and "an amount of zero" is the whole point of missing_amount.
+ * Grouping commas and stray currency text are stripped, because a cell pasted
+ * from Excel carries them.
+ *
+ * @param {*} value
+ * @return {number|null}
+ */
+export function toNumber(value) {
+  if (value === null || value === undefined || value === '') return null;
+  if (typeof value === 'number') return isFinite(value) ? value : null;
+
+  const raw = String(value).trim();
+  if (!raw) return null;
+
+  const cleaned = raw.replace(/,/g, '').replace(/[^\d.\-+eE]/g, '');
+  if (!cleaned || !/\d/.test(cleaned)) return null;
+
+  const parsed = Number(cleaned);
+  return isFinite(parsed) ? parsed : null;
+}
+
+/**
+ * Split a `/`-joined cell into trimmed, non-empty segments.
+ * @param {*} value
+ * @return {Array<string>}
+ */
+export function splitMulti(value) {
+  return text(value)
+    .split('/')
+    .map(function (part) { return part.trim(); })
+    .filter(function (part) { return part !== ''; });
+}
+
+/**
+ * @param {*} value
+ * @return {string} trimmed string form.
+ */
+export function text(value) {
+  if (value === null || value === undefined) return '';
+  return String(value).trim();
+}
+
+/**
+ * @param {*} value
+ * @return {string} 'old' | 'new' | ''
+ */
+export function period(value) {
+  const raw = text(value).toLowerCase();
+  return (raw === 'old' || raw === 'new') ? raw : '';
+}

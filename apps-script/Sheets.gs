@@ -273,3 +273,169 @@ function deleteRowByKey(ss, name, keyCol, keyVal) {
   getSheet(ss, name).deleteRow(row._row);
   return true;
 }
+
+/**
+ * Grow a tab so `lastNeededRow` exists before setValues() addresses it.
+ * getRange() throws rather than expanding when it runs past the sheet's declared
+ * row count, and a freshly-made tab is often only 1000 rows — well under a real
+ * month of entries or a full SiteJC import.
+ *
+ * @param {GoogleAppsScript.Spreadsheet.Sheet} sheet
+ * @param {number} lastNeededRow 1-based.
+ */
+function ensureRowCapacity(sheet, lastNeededRow) {
+  var have = sheet.getMaxRows();
+  if (lastNeededRow > have) sheet.insertRowsAfter(have, lastNeededRow - have);
+}
+
+/* ------------------------------------------------------------------ *
+ * Batched read-modify-write
+ * ------------------------------------------------------------------ */
+
+/**
+ * Read a whole tab into memory for a batched read-modify-write.
+ *
+ * updateRowByKey() re-reads the entire tab on every call, which is fine for the
+ * one-row admin writes but quadratic for the things that touch many rows at
+ * once: a grid save of 200 entries, a confirm that stamps a whole track, the
+ * export's atomic claim. Those read the block ONCE, mutate it in memory, and
+ * write it back in a single setValues().
+ *
+ * Usage:
+ *   var block = openRowBlock(ss, 'Expenses');
+ *   var rows = block.rows();                    // objects carrying `_offset`
+ *   block.patch(rows[3]._offset, { status: 'confirmed' });
+ *   block.append({ entry_id: 'E-000124', ... });
+ *   block.flush();                              // two setValues() calls, at most
+ *
+ * The block is a SNAPSHOT. Anything that must not interleave with another
+ * request — allocating ids, claiming rows — has to hold the script lock around
+ * the open-mutate-flush cycle, exactly as withScriptLock() provides.
+ *
+ * @param {GoogleAppsScript.Spreadsheet.Spreadsheet} ss
+ * @param {string} name tab name.
+ * @return {Object} the block handle.
+ */
+function openRowBlock(ss, name) {
+  var sheet = getSheet(ss, name);
+  var headers = getHeaders(ss, name);
+  var width = headers.length;
+  var lastRow = sheet.getLastRow();
+
+  var data = (lastRow >= 2) ? sheet.getRange(2, 1, lastRow - 1, width).getValues() : [];
+
+  var col = {};
+  for (var c = 0; c < headers.length; c++) {
+    if (headers[c]) col[headers[c]] = c;
+  }
+
+  var appends = [];
+  var touched = false;
+
+  return {
+    headers: headers,
+    data: data,
+
+    /**
+     * @param {string} key column name.
+     * @return {number} zero-based index, or -1 when the tab has no such column.
+     */
+    columnOf: function (key) {
+      return Object.prototype.hasOwnProperty.call(col, key) ? col[key] : -1;
+    },
+
+    /**
+     * Every non-blank row as an object keyed by header, carrying `_offset` (its
+     * index in the block, for patch()) and `_row` (its 1-based sheet row).
+     * @return {Array<Object>}
+     */
+    rows: function () {
+      var out = [];
+
+      for (var r = 0; r < data.length; r++) {
+        var line = data[r];
+        var blank = true;
+        var obj = {};
+
+        for (var i = 0; i < headers.length; i++) {
+          var key = headers[i];
+          if (!key) continue;
+
+          var value = line[i];
+          if (value !== '' && value !== null && value !== undefined) blank = false;
+          obj[key] = value;
+        }
+
+        if (blank) continue;
+
+        obj._offset = r;
+        obj._row = r + 2;
+        out.push(obj);
+      }
+
+      return out;
+    },
+
+    /**
+     * Patch one row in memory. Keys the tab does not have are ignored, so a
+     * caller may hand over a superset of columns without checking first.
+     *
+     * @param {number} offset from a row's `_offset`.
+     * @param {Object} updates
+     */
+    patch: function (offset, updates) {
+      if (!data[offset]) return;
+
+      var keys = Object.keys(updates || {});
+      for (var i = 0; i < keys.length; i++) {
+        var index = this.columnOf(keys[i]);
+        if (index === -1) continue;
+
+        var value = updates[keys[i]];
+        data[offset][index] = (value === null || value === undefined) ? '' : value;
+      }
+
+      touched = true;
+    },
+
+    /**
+     * Queue a new row for the bottom of the tab.
+     * @param {Object} obj keyed by column name; missing columns are written blank.
+     */
+    append: function (obj) {
+      var line = [];
+      var source = obj || {};
+
+      for (var i = 0; i < headers.length; i++) {
+        var key = headers[i];
+        var value = key ? source[key] : '';
+        line.push((value === null || value === undefined) ? '' : value);
+      }
+
+      appends.push(line);
+      touched = true;
+    },
+
+    /** @return {number} how many rows are queued for appending. */
+    appendCount: function () { return appends.length; },
+
+    /**
+     * Write everything back. Nothing happens if nothing was changed.
+     * @return {{updated: number, appended: number}}
+     */
+    flush: function () {
+      if (!touched) return { updated: 0, appended: 0 };
+
+      if (data.length) {
+        sheet.getRange(2, 1, data.length, width).setValues(data);
+      }
+
+      if (appends.length) {
+        ensureRowCapacity(sheet, lastRow + appends.length);
+        sheet.getRange(lastRow + 1, 1, appends.length, width).setValues(appends);
+      }
+
+      return { updated: data.length, appended: appends.length };
+    }
+  };
+}

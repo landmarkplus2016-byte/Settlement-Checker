@@ -78,4 +78,16 @@
   --color-sidebar-muted:#6b74a8;
   --color-sidebar-hover:rgba(255,255,255,.06);
   --color-sidebar-active:rgba(255,255,255,.08);
+
+  /*
+   * The grid (css/grid.css). A whole ROW carries these, so they are far lighter
+   * than the --color-*-bg badges: at badge strength a screen of flagged rows
+   * would be unreadable, and the point is to draw the eye to the few that are
+   * wrong.
+   */
+  --color-danger-tint:#fef5f5;
+  --color-warning-tint:#fffbf0;
+  --color-grid-header:#f5f6fa;
+  --color-grid-line:#e8eaf2;
+  --color-grid-focus:rgba(61,90,241,.08);
 }

@@ -46,6 +46,7 @@ export const en = {
   delete: 'Delete',
   search: 'Search',
   actions: 'Actions',
+  open: 'Open',
   status: 'Status',
   active: 'Active',
   inactive: 'Inactive',
@@ -122,6 +123,115 @@ export const en = {
   stat_approved_unexported: 'Approved, not exported',
   stat_returned_open: 'Returned, open',
   stat_active_coordinators: 'Active coordinators',
+
+  /* --- the settlement screen (5.1, 6.5) --- */
+  kind_expense: 'Expenses',
+  kind_fuel: 'Fuel',
+  save_draft: 'Save draft',
+  confirm_old: 'Confirm Old',
+  confirm_new: 'Confirm New',
+  settlement_not_found_text: 'This settlement is not one of yours, or it no longer exists.',
+  tracking_placeholder: 'Not set',
+  tracking_saved: 'Tracking number saved.',
+  tracking_invalid: 'A tracking number must be a whole number above zero.',
+  tracking_locked_hint: 'This track has already been exported, so its number is fixed.',
+  track_entry_count: '{count} entries',
+
+  /* --- saving and confirming (3.5, 6.1) --- */
+  save_success: '{created} added, {updated} updated.',
+  save_nothing: 'Nothing to save — this grid has no entries yet.',
+  save_reverted: '{count} approved entries changed, so they went back for approval.',
+  save_failed_title: 'Nothing was saved',
+  save_failed_exported: 'One of these entries has been exported since you opened this screen, and an exported entry cannot be changed. Reload the page to see where things stand.',
+
+  confirm_working: 'Confirming…',
+  confirm_success: '{count} entries confirmed against tracking # {tracking}.',
+  confirm_unrouted: '{count} entries have no period, so they were left as drafts. Give them a period to settle them.',
+
+  confirm_needs_tracking_title: 'This track has no tracking number',
+  confirm_needs_tracking: 'Set the {period} tracking number before confirming — it is the number these entries settle against.',
+  confirm_blocked_title: 'Some entries need fixing first',
+  confirm_has_flags: 'The {period} track cannot be confirmed yet. Entries still to fix: {rows}.',
+  confirm_has_flags_hint: 'They are the rows marked red in the grid. Fix them and confirm again — warnings in amber do not block anything.',
+  confirm_nothing: 'Nothing new to confirm on the {period} track.',
+
+  confirm_dialog_title: 'Confirm the {period} track?',
+  confirm_dialog_body: 'This sends the {period} track to the managers for approval. Entries: {count}.',
+  confirm_dialog_note: 'You can still edit them afterwards, but a manager will have to approve them again. Only a manager can send them back to you.',
+
+  confirm_hint_ready: '{count} ready',
+  confirm_hint_flags: '{rows} need fixing',
+  confirm_hint_tracking: 'No tracking number',
+  confirm_hint_nothing: 'Nothing to confirm',
+
+  /* Track roll-up, per period (6.1). */
+  track_status_empty: 'Nothing yet',
+  track_status_draft: 'In progress',
+  track_status_confirmed: 'Awaiting approval',
+  track_status_approved: 'Approved',
+  track_status_returned: 'Returned',
+  track_status_exported: 'Exported',
+
+  /* Entry statuses (6.1). */
+  entry_status_draft: 'Draft',
+  entry_status_confirmed: 'Confirmed',
+  entry_status_approved: 'Approved',
+  entry_status_returned: 'Returned',
+  entry_status_exported: 'Exported',
+
+  /* --- the grid (6.6) --- */
+  col_day: 'Day',
+  col_project: 'Project',
+  col_category: 'Category',
+  col_item: 'Item description',
+  col_amount: 'Amount',
+  col_comment: 'Comment',
+  col_start_km: 'Start KM',
+  col_end_km: 'End KM',
+  col_fuel: 'Fuel',
+  col_area: 'Area',
+  col_driver: 'Driver',
+  col_city: 'City',
+  col_karta: 'Karta',
+
+  grid_row_number: 'Row',
+  grid_add_row: 'Add row',
+  grid_delete_row: 'Delete row',
+  grid_row_deleted: 'Row deleted.',
+  grid_row_locked: 'Exported — this row is locked.',
+  grid_total: 'Total',
+  grid_empty_title: 'No entries yet',
+  grid_empty_text: 'Add a row to start recording. Each new row carries down the team, project, month, day and period from the row above.',
+  grid_all_clear: 'Every row is ready to confirm.',
+  grid_banner_blocked: '{rows} rows cannot be confirmed until they are fixed.',
+  grid_banner_warnings: '{count} things worth checking. None of them block confirming.',
+
+  /* --- autofill and paste (6.6.1, 6.6.3) --- */
+  autofill_unknown: 'Not in the Site → Job Code list: {sites}. Fill the Job Code and period in yourself.',
+
+  paste_from_excel: 'Paste from Excel',
+  paste_title: 'Paste rows from Excel',
+  paste_intro: 'Copy the rows in Excel and paste them here. They are added to the bottom of the grid as drafts, with the Job Code and period filled in from the lookup.',
+  paste_columns_hint: 'Columns are read in this order:',
+  paste_label: 'Pasted rows',
+  paste_placeholder: 'Paste here…',
+  paste_append: 'Add rows',
+  paste_nothing: 'Nothing to add — paste some rows first.',
+  paste_added: '{count} rows added.',
+  paste_header_skipped: 'The header row was skipped.',
+  paste_truncated: '{count} rows were left out — paste them in a second batch.',
+
+  /* Validation codes — shared with apps-script/Validate.gs (6.3). */
+  valid_missing_site_id: 'No Site ID',
+  valid_missing_amount: 'No amount',
+  valid_missing_project: 'No project',
+  valid_missing_category: 'No category',
+  valid_missing_driver: 'No driver',
+  valid_unknown_site: 'Site not in the lookup',
+  valid_missing_job_code: 'No Job Code',
+  valid_missing_period: 'No period — this row settles against neither tracking number',
+  valid_job_code_count_mismatch: 'Site and Job Code counts do not match',
+  valid_km_gap: 'KM does not follow on from the last reading',
 
   /* --- admin: teams (3.4) --- */
   teams_subtitle: 'The named crews an entry can be filed under.',

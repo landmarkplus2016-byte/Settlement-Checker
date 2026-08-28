@@ -106,6 +106,41 @@ function requireCoordinator(session) {
   }
 }
 
+/**
+ * @param {Object} session
+ * @return {boolean} true when the caller is a manager. For handlers that serve
+ *         both roles and only narrow WHAT is returned, not whether it is.
+ */
+function isManagerSession(session) {
+  return !!session && normalizeKey(session.role) === 'manager';
+}
+
+/**
+ * The reference data every signed-in user may read: the active Teams, the active
+ * Lists, and the Site -> Job Code lookup.
+ *
+ * These three READS are deliberately not manager-only, and the reason is in
+ * CLAUDE.md itself. 3.4 lists them under the admin actions, but 6.6.3 requires a
+ * coordinator's grid to resolve a Site ID against SiteJC as he types, and 6.6.4
+ * requires project / category / area / team to be in-cell dropdowns. A
+ * coordinator who cannot read that data cannot be given either feature, so the
+ * two sections contradict each other and this resolves it the only way that
+ * leaves the app buildable.
+ *
+ * Nothing is given away by it: this is shared configuration with no personal
+ * data, no money and no spreadsheet ids, and it is data the coordinator would
+ * otherwise be typing in by hand from the same list. Every WRITE to these tabs
+ * stays manager-only (rule 5), and non-managers only ever see ACTIVE rows.
+ *
+ * @param {Object} session auth context.
+ * @throws {Object} appError('unauthenticated') when there is no session at all.
+ */
+function requireAnySession(session) {
+  if (!session || !normalizeKey(session.user_id)) {
+    throw appError('unauthenticated', 'missing_session');
+  }
+}
+
 /* ------------------------------------------------------------------ *
  * Resolving spreadsheets
  * ------------------------------------------------------------------ */

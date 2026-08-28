@@ -634,12 +634,15 @@ function toPublicTeam(row) {
  * @return {Object} { teams: [...], total }
  */
 function handleListTeams(session, payload) {
-  requireManager(session);
+  // Readable by any signed-in user — the grid's team dropdown (6.6.4) needs it.
+  // See requireAnySession() in Registry.gs for why, and note that a non-manager
+  // never sees an inactive team.
+  requireAnySession(session);
 
   var body = payload || {};
-  var includeInactive = (body.include_inactive === undefined)
-    ? true
-    : normalizeBoolean(body.include_inactive);
+  var includeInactive = isManagerSession(session)
+    ? ((body.include_inactive === undefined) ? true : normalizeBoolean(body.include_inactive))
+    : false;
 
   var rows = getTeamsRegistry();
   var teams = [];
@@ -798,7 +801,10 @@ function toPublicSiteJc(row) {
  * @return {Object} { sites: [...], total, returned }
  */
 function handleListSiteJc(session, payload) {
-  requireManager(session);
+  // Readable by any signed-in user: 6.6.3 makes this lookup the thing that fills
+  // in a Job Code and a period as a coordinator types a Site ID. See
+  // requireAnySession() in Registry.gs.
+  requireAnySession(session);
 
   var body = payload || {};
   var search = normalizeSiteId(body.search);
@@ -1111,16 +1117,18 @@ function validateSiteJcRow(raw) {
  * @return {Object} { lists: { projects: [...], ... } }
  */
 function handleListLists(session, payload) {
-  requireManager(session);
+  // Readable by any signed-in user — the grid's project / category / area /
+  // driver dropdowns (6.6.4). See requireAnySession() in Registry.gs.
+  requireAnySession(session);
 
   var body = payload || {};
   var only = normalizeKey(body.list_name).toLowerCase();
   if (only && LIST_NAMES.indexOf(only) === -1) {
     throw appError('validation_failed', 'invalid_list_name', { list_name: 'unknown_list' });
   }
-  var includeInactive = (body.include_inactive === undefined)
-    ? true
-    : normalizeBoolean(body.include_inactive);
+  var includeInactive = isManagerSession(session)
+    ? ((body.include_inactive === undefined) ? true : normalizeBoolean(body.include_inactive))
+    : false;
 
   var lists = {};
   var names = only ? [only] : LIST_NAMES;
@@ -1312,18 +1320,4 @@ function handleUpdateLists(session, payload) {
  */
 function hasField(obj, key) {
   return !!obj && Object.prototype.hasOwnProperty.call(obj, key);
-}
-
-/**
- * Grow a tab so `lastNeededRow` exists before setValues() addresses it.
- * getRange() throws rather than expanding when it runs past the sheet's declared
- * row count, and a freshly-made tab is often only 1000 rows — well under a real
- * SiteJC import.
- *
- * @param {GoogleAppsScript.Spreadsheet.Sheet} sheet
- * @param {number} lastNeededRow 1-based.
- */
-function ensureRowCapacity(sheet, lastNeededRow) {
-  var have = sheet.getMaxRows();
-  if (lastNeededRow > have) sheet.insertRowsAfter(have, lastNeededRow - have);
 }

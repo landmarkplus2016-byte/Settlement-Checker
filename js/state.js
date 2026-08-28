@@ -281,7 +281,9 @@ export function draftKey(settlementId, kind) {
  * @param {string} settlementId
  * @param {string} kind 'expense' | 'fuel'
  * @param {Array<Object>} rows
- * @return {boolean} false when the write was refused (quota, private mode).
+ * @return {string} the `saved_at` stamp that was written, or '' when the write
+ *   was refused (quota, private mode). Truthy on success either way, and the
+ *   stamp lets a caller recognise the record as its own afterwards.
  */
 export function saveDraft(settlementId, kind, rows) {
   const record = {
@@ -292,10 +294,12 @@ export function saveDraft(settlementId, kind, rows) {
   };
 
   try {
-    return writeLocal(draftKey(settlementId, kind), JSON.stringify(record));
+    return writeLocal(draftKey(settlementId, kind), JSON.stringify(record))
+      ? record.saved_at
+      : '';
   } catch (err) {
     console.warn('Could not serialise draft: ' + err);
-    return false;
+    return '';
   }
 }
 

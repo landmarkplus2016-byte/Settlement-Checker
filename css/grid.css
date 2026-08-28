@@ -1,0 +1,436 @@
+/*
+ * grid.css — the Excel-like entry grid (CLAUDE.md 6.6, 8.4).
+ *
+ * One of the app's two signature surfaces, and the one place the design is
+ * allowed to be dense: a coordinator types a month of entries into this, and
+ * every pixel of padding is a row that fell off the screen.
+ *
+ * Same two absolutes as everywhere else — tokens only (rule 23), logical
+ * properties only (rule 24). The grid scrolls horizontally on purpose; the
+ * FUEL layout is fourteen columns wide and there is no honest way to fit that
+ * on a laptop. The page around it must never scroll sideways with it.
+ */
+
+/* The settlement page is wider than the app's usual column — the grid needs it. */
+.page-wide { max-inline-size: 1600px; }
+
+/* ================================================================== *
+ * The scroll container
+ * ================================================================== */
+
+.grid-scroll {
+  overflow: auto;
+  max-block-size: 62vh;
+  border-block-start: 1px solid var(--color-border);
+  border-block-end: 1px solid var(--color-border);
+  background: var(--color-surface);
+}
+
+/*
+ * `separate` rather than `collapse`: a collapsed table drops the borders of a
+ * sticky header as it scrolls, and the header has to stay legible over rows.
+ * Borders are therefore drawn per cell, on two sides only.
+ */
+.grid {
+  border-collapse: separate;
+  border-spacing: 0;
+  inline-size: max-content;
+  min-inline-size: 100%;
+  font-size: 12.5px;
+}
+
+/* ================================================================== *
+ * Header and footer
+ * ================================================================== */
+
+.grid thead th {
+  position: sticky;
+  inset-block-start: 0;
+  z-index: 3;
+
+  padding: 7px 9px;
+  text-align: start;
+  white-space: nowrap;
+
+  background: var(--color-grid-header);
+  color: var(--color-text-secondary);
+  font-size: 10.5px;
+  font-weight: var(--fw-bold);
+  text-transform: uppercase;
+  letter-spacing: .04em;
+
+  border-block-end: 1px solid var(--color-border);
+  border-inline-end: 1px solid var(--color-grid-line);
+}
+
+.grid tfoot td {
+  position: sticky;
+  inset-block-end: 0;
+  z-index: 3;
+
+  padding: 8px 9px;
+  background: var(--color-surface-2);
+  border-block-start: 1px solid var(--color-border);
+  border-inline-end: 1px solid var(--color-grid-line);
+  font-weight: var(--fw-bold);
+}
+
+.grid-total-row .grid-total {
+  text-align: end;
+  color: var(--color-navy-2);
+  font-size: 13px;
+}
+
+/* ================================================================== *
+ * Cells
+ * ================================================================== */
+
+.grid tbody td {
+  padding: 0;
+  border-block-end: 1px solid var(--color-grid-line);
+  border-inline-end: 1px solid var(--color-grid-line);
+  vertical-align: middle;
+  background: inherit;
+}
+
+/*
+ * The row-number gutter stays put while the grid scrolls sideways, so a
+ * coordinator reading a wide fuel row never loses which row they are on.
+ * `inset-inline-start` keeps that working when the app flips to RTL.
+ */
+.grid .grid-gutter {
+  position: sticky;
+  inset-inline-start: 0;
+  z-index: 2;
+
+  inline-size: 40px;
+  min-inline-size: 40px;
+  padding: 6px 8px;
+  text-align: end;
+
+  background: var(--color-grid-header);
+  color: var(--color-text-muted);
+  font-size: 11px;
+  border-inline-end: 1px solid var(--color-border);
+}
+
+.grid thead .grid-gutter { z-index: 4; }
+
+.grid-status-col {
+  inline-size: 104px;
+  min-inline-size: 104px;
+  padding: 5px 8px;
+  white-space: nowrap;
+}
+
+.grid-actions-col {
+  inline-size: 44px;
+  min-inline-size: 44px;
+  text-align: center;
+  padding: 3px;
+}
+
+/* ================================================================== *
+ * The controls
+ *
+ * Borderless and transparent so the TABLE draws the grid lines, not the
+ * inputs — this is what makes it read as a spreadsheet rather than as a very
+ * long form.
+ * ================================================================== */
+
+.grid-input,
+.grid-select {
+  inline-size: 100%;
+  padding: 7px 9px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--color-text-primary);
+  font-size: 12.5px;
+  font-family: inherit;
+}
+
+.grid-input:focus,
+.grid-select:focus {
+  outline: 2px solid var(--color-primary);
+  outline-offset: -2px;
+  background: var(--color-surface);
+  position: relative;
+  z-index: 1;
+}
+
+.grid-input.is-numeric { text-align: end; }
+
+.grid-input:read-only {
+  color: var(--color-text-muted);
+  cursor: not-allowed;
+}
+
+.grid-select {
+  cursor: pointer;
+  appearance: none;
+  -webkit-appearance: none;
+}
+
+.grid-select:disabled {
+  color: var(--color-text-muted);
+  cursor: not-allowed;
+}
+
+/*
+ * The period cell carries the app's period colours (8.3) right in the grid.
+ * This is the field that decides which Tracking# a row settles against, so it
+ * is the one cell worth colouring on sight.
+ */
+.grid-period {
+  font-weight: var(--fw-bold);
+  font-size: 11.5px;
+}
+
+.grid-period.is-old { background: var(--color-old-bg); color: var(--color-old-fg); }
+.grid-period.is-new { background: var(--color-new-bg); color: var(--color-new-fg); }
+.grid-period.is-unset { color: var(--color-text-muted); }
+
+/* ================================================================== *
+ * Row and cell states
+ *
+ * A flag outranks a warning: the worse news wins the row.
+ * ================================================================== */
+
+.grid-row { background: var(--color-surface); }
+.grid-row:hover { background: var(--color-surface-2); }
+
+.grid-row.is-warned { background: var(--color-warning-tint); }
+.grid-row.is-flagged { background: var(--color-danger-tint); }
+
+.grid-row.is-warned .grid-gutter { box-shadow: inset 3px 0 0 0 var(--color-warning); }
+.grid-row.is-flagged .grid-gutter { box-shadow: inset 3px 0 0 0 var(--color-danger); }
+
+/* In RTL the marker belongs on the other edge of the gutter. */
+[dir="rtl"] .grid-row.is-warned .grid-gutter { box-shadow: inset -3px 0 0 0 var(--color-warning); }
+[dir="rtl"] .grid-row.is-flagged .grid-gutter { box-shadow: inset -3px 0 0 0 var(--color-danger); }
+
+/* An exported row is locked (rule 13) and reads as read-only at a glance. */
+.grid-row.is-locked,
+.grid-row.is-locked:hover {
+  background: var(--color-surface-3);
+  color: var(--color-text-muted);
+}
+
+.grid-cell.is-flagged { box-shadow: inset 0 0 0 1px var(--color-danger); }
+.grid-cell.is-warned  { box-shadow: inset 0 0 0 1px var(--color-warning); }
+
+.grid-note-dot {
+  color: var(--color-danger);
+  font-size: 9px;
+  margin-inline-start: 2px;
+  cursor: help;
+}
+
+.grid-lock { color: var(--color-text-muted); font-size: 11px; }
+
+.grid-empty-row td { padding: 0; background: var(--color-surface); }
+
+/* ================================================================== *
+ * The toolbar above the grid
+ * ================================================================== */
+
+.grid-toolbar {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+  padding: var(--space-3) var(--space-4);
+  border-block-end: 1px solid var(--color-border-2);
+}
+
+.grid-tabs {
+  border-block-end: 0;
+  margin-block-end: 0;
+}
+
+.grid-live-total {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  line-height: 1.2;
+}
+
+.grid-live-total .num { font-size: 15px; color: var(--color-navy-2); }
+
+/* ================================================================== *
+ * The validation banner
+ * ================================================================== */
+
+.grid-banner {
+  padding: var(--space-3) var(--space-4);
+  border-block-end: 1px solid var(--color-border-2);
+  font-size: 12px;
+}
+
+.grid-banner.is-clean {
+  color: var(--color-success);
+  background: var(--color-success-bg);
+  font-weight: var(--fw-semibold);
+}
+
+.grid-banner.is-warned  { background: var(--color-warning-tint); }
+.grid-banner.is-flagged { background: var(--color-danger-tint); }
+
+.grid-banner-head {
+  font-weight: var(--fw-bold);
+  margin-block-end: var(--space-2);
+}
+
+.grid-banner.is-warned .grid-banner-head  { color: var(--color-warning-strong); }
+.grid-banner.is-flagged .grid-banner-head { color: var(--color-danger); }
+
+.grid-banner-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+/* Each issue is a button: it jumps to the first row it is about. */
+.grid-issue {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 4px 10px;
+  border-radius: var(--radius-pill);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  font-size: 11.5px;
+  font-weight: var(--fw-semibold);
+  color: var(--color-text-secondary);
+}
+
+.grid-issue:hover {
+  border-color: var(--color-text-subtle);
+  color: var(--color-text-primary);
+}
+
+.grid-issue-dot {
+  inline-size: 7px;
+  block-size: 7px;
+  border-radius: var(--radius-pill);
+  flex: 0 0 auto;
+}
+
+.grid-issue.is-flag .grid-issue-dot    { background: var(--color-danger); }
+.grid-issue.is-warning .grid-issue-dot { background: var(--color-warning); }
+
+.grid-issue-count {
+  padding-inline: 5px;
+  border-radius: var(--radius-pill);
+  background: var(--color-surface-3);
+  font-size: 10.5px;
+  color: var(--color-text-muted);
+}
+
+/* ================================================================== *
+ * The two track cards in the header
+ * ================================================================== */
+
+.track-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: var(--space-4);
+}
+
+.track-card {
+  padding: var(--space-4);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-xl);
+  box-shadow: var(--shadow-sm);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+/* Old is amber, New is blue — the same two colours as everywhere else (8.3). */
+.track-card.is-old { border-block-start: 3px solid var(--color-old-fg); }
+.track-card.is-new { border-block-start: 3px solid var(--color-new-fg); }
+
+.track-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.track-counts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+}
+
+.track-count { white-space: nowrap; }
+
+/* ================================================================== *
+ * Save / Confirm Old / Confirm New
+ * ================================================================== */
+
+.settlement-actions {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+}
+
+/* A Confirm button and the one line saying whether it can run. */
+.confirm-action {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: var(--space-1);
+}
+
+.confirm-hint {
+  text-align: center;
+  color: var(--color-text-muted);
+  min-block-size: 15px;
+}
+
+.confirm-hint.is-ready   { color: var(--color-success); font-weight: var(--fw-semibold); }
+.confirm-hint.is-blocked { color: var(--color-danger); font-weight: var(--fw-semibold); }
+.confirm-hint.is-quiet   { color: var(--color-text-muted); }
+
+/* The Tracking# line inside the confirm dialog. */
+.confirm-track-line {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  background: var(--color-surface-2);
+  border: 1px solid var(--color-border-2);
+  border-radius: var(--radius-md);
+}
+
+/* ================================================================== *
+ * The paste-from-Excel dialog (6.6.1)
+ * ================================================================== */
+
+.paste-columns {
+  padding: var(--space-3);
+  background: var(--color-surface-2);
+  border: 1px solid var(--color-border-2);
+  border-radius: var(--radius-md);
+}
+
+.paste-columns .num { margin-block-start: 4px; line-height: 1.6; }
+
+/* Tall and monospaced: pasted rows are read as columns, not as prose. */
+.paste-textarea {
+  min-block-size: 180px;
+  font-family: 'Consolas', 'Courier New', monospace;
+  font-size: 12px;
+  white-space: pre;
+  overflow-wrap: normal;
+  overflow-x: auto;
+}
+
+@media (max-width: 640px) {
+  .grid-scroll { max-block-size: 50vh; }
+  .settlement-actions .btn { flex: 1 1 auto; }
+}

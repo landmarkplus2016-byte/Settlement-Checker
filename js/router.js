@@ -30,6 +30,8 @@ import { logout } from './auth/session.js';
 import { renderCoordinatorDashboard, bindCoordinatorDashboardEvents } from './coordinator/dashboard.js';
 import { renderManagerDashboard, bindManagerDashboardEvents } from './manager/dashboard.js';
 
+import { renderSettlementPage, bindSettlementPageEvents } from './coordinator/settlement.js';
+
 import { renderTeams, bindTeamsEvents } from './admin/teams.js';
 import { renderSiteJc, bindSiteJcEvents } from './admin/siteJc.js';
 import { renderUsers, bindUsersEvents } from './admin/users.js';
@@ -63,7 +65,6 @@ const ADMIN_DEFAULT = '#/admin/teams';
  * screen up.
  */
 const NOT_BUILT_YET = {
-  settlement:   { titleKey: 'settlement_title',    textKey: 'coming_in_stage_6' },
   approvals:    { titleKey: 'nav_approvals',       textKey: 'coming_in_stage_7' },
   export:       { titleKey: 'nav_export',          textKey: 'coming_in_stage_8' }
 };
@@ -253,6 +254,18 @@ function renderScreen(route, role, hash) {
       return paint(role, hash, renderManagerDashboard(), bindManagerDashboardEvents);
     }
     return paint(role, hash, renderCoordinatorDashboard(), bindCoordinatorDashboardEvents);
+  }
+
+  /*
+   * The settlement grid. The only route with a parameter, and the only screen
+   * that manages its own in-place cell updates rather than re-rendering (5.3) —
+   * it is still MOUNTED from here like everything else.
+   */
+  if (route.name === 'settlement') {
+    const settlementId = route.params.settlement_id;
+    return paint(role, hash, renderSettlementPage(settlementId), function () {
+      bindSettlementPageEvents(settlementId);
+    });
   }
 
   /*

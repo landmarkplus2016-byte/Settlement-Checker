@@ -45,8 +45,7 @@ function doPost(e) {
  * returns plain data; dispatch() wraps it in the success envelope. `session` is
  * null for the three public actions.
  *
- * Later stages fill in the coordinator (3.5), manager (3.6) and export (3.7)
- * actions here.
+ * Later stages fill in the manager (3.6) and export (3.7) actions here.
  */
 var ACTIONS = {
 
@@ -146,6 +145,41 @@ var ACTIONS = {
   update_lists: {
     auth: true,
     handler: function (session, payload) { return handleUpdateLists(session, payload); }
+  },
+
+  /*
+   * Coordinator (3.5) — all seven resolve the target spreadsheet from the
+   * SESSION and reject a non-coordinator, inside the handler (Coordinator.gs's
+   * coordinatorContext). The guard travels with the code that opens the sheet,
+   * so no route can be added here that skips it.
+   */
+  get_my_settlements: {
+    auth: true,
+    handler: function (session, payload) { return handleGetMySettlements(session, payload); }
+  },
+  create_settlement: {
+    auth: true,
+    handler: function (session, payload) { return handleCreateSettlement(session, payload); }
+  },
+  update_settlement: {
+    auth: true,
+    handler: function (session, payload) { return handleUpdateSettlement(session, payload); }
+  },
+  list_entries: {
+    auth: true,
+    handler: function (session, payload) { return handleListEntries(session, payload); }
+  },
+  save_entries: {
+    auth: true,
+    handler: function (session, payload) { return handleSaveEntries(session, payload); }
+  },
+  delete_entry: {
+    auth: true,
+    handler: function (session, payload) { return handleDeleteEntry(session, payload); }
+  },
+  confirm_track: {
+    auth: true,
+    handler: function (session, payload) { return handleConfirmTrack(session, payload); }
   }
 };
 
