@@ -351,8 +351,34 @@
 }
 
 /* ================================================================== *
- * Chrome — top bar used by the placeholder shells (Stage 4 builds the real ones)
+ * The two role shells (CLAUDE.md 5.1)
+ *
+ * Coordinator: a slim white top bar over the content.
+ * Manager:     a deep-navy sidebar beside the content.
  * ================================================================== */
+
+/* Manager: sidebar + content, side by side, each scrolling on its own. */
+.app-layout {
+  display: flex;
+  min-block-size: 100vh;
+}
+
+/* Coordinator: top bar stacked over content. */
+.app-column {
+  display: flex;
+  flex-direction: column;
+  min-block-size: 100vh;
+}
+
+.content {
+  flex: 1 1 auto;
+  min-inline-size: 0;      /* lets wide grids scroll instead of stretching the shell */
+  overflow-x: hidden;
+}
+
+/* ------------------------------------------------------------------ *
+ * Coordinator top bar
+ * ------------------------------------------------------------------ */
 
 .topbar {
   display: flex;
@@ -362,6 +388,37 @@
   background: var(--color-surface);
   border-block-end: 1px solid var(--color-border);
   box-shadow: var(--shadow-sm);
+  position: sticky;
+  inset-block-start: 0;
+  z-index: 100;
+}
+
+.topbar-nav {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+.topbar-link {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 7px 12px;
+  border-radius: var(--radius-md);
+  font-size: 12.5px;
+  font-weight: var(--fw-semibold);
+  color: var(--color-text-secondary);
+}
+
+.topbar-link:hover {
+  background: var(--color-primary-subtle);
+  color: var(--color-text-primary);
+}
+
+.topbar-link.is-active {
+  background: var(--color-primary-subtle);
+  color: var(--color-primary);
+  font-weight: var(--fw-bold);
 }
 
 .topbar-user {
@@ -382,6 +439,130 @@
   justify-content: center;
   font-size: 12px;
   font-weight: var(--fw-bold);
+}
+
+/* ------------------------------------------------------------------ *
+ * Manager sidebar (proportions from design/Settlement App.html)
+ * ------------------------------------------------------------------ */
+
+.sidebar {
+  inline-size: 230px;
+  flex: 0 0 230px;
+  background: var(--color-navy);
+  color: var(--color-text-subtle);
+  border-inline-end: 1px solid var(--color-navy-3);
+  display: flex;
+  flex-direction: column;
+  position: sticky;
+  inset-block-start: 0;
+  block-size: 100vh;
+}
+
+.sidebar-head {
+  padding: var(--space-5) 22px;
+  border-block-end: 1px solid var(--color-navy-3);
+}
+
+.sidebar-brand {
+  color: var(--color-primary);
+  font-weight: var(--fw-bold);
+  font-size: 14px;
+}
+
+.sidebar-tagline {
+  color: var(--color-sidebar-muted);
+  font-size: 11px;
+  margin-block-start: 2px;
+}
+
+.sidebar-nav {
+  padding: var(--space-3) 0;
+  flex: 1 1 auto;
+  overflow-y: auto;
+  font-size: 13px;
+}
+
+.nav-link {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 22px;
+  color: var(--color-text-subtle);
+  border-inline-start: 3px solid transparent;
+}
+
+.nav-link:hover {
+  color: var(--color-text-inverse);
+  background: var(--color-sidebar-hover);
+}
+
+.nav-link.is-active {
+  color: var(--color-text-inverse);
+  background: var(--color-sidebar-active);
+  border-inline-start-color: var(--color-primary);
+  font-weight: var(--fw-semibold);
+}
+
+.nav-icon {
+  inline-size: 16px;
+  text-align: center;
+  opacity: .85;
+  flex: 0 0 auto;
+}
+
+/* Admin's sub-tabs, revealed while an admin route is open. */
+.nav-sub {
+  padding-block: var(--space-1);
+  background: var(--color-sidebar-hover);
+}
+
+.nav-sub .nav-link {
+  padding-block: 7px;
+  padding-inline-start: 48px;
+  font-size: 12.5px;
+  color: var(--color-sidebar-muted);
+}
+
+.nav-sub .nav-link:hover { color: var(--color-text-inverse); background: none; }
+
+.nav-sub .nav-link.is-active {
+  color: var(--color-text-inverse);
+  background: none;
+  border-inline-start-color: transparent;
+}
+
+.sidebar-foot {
+  padding: var(--space-4) 22px;
+  border-block-start: 1px solid var(--color-navy-3);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.sidebar-user { display: flex; align-items: center; gap: 10px; }
+
+.sidebar-user-name {
+  color: var(--color-text-inverse);
+  font-size: 12.5px;
+  font-weight: var(--fw-semibold);
+  line-height: 1.3;
+}
+
+.sidebar-user-role {
+  color: var(--color-sidebar-muted);
+  font-size: 11px;
+}
+
+/* The sign-out button on the navy surface. */
+.btn-on-navy {
+  background: var(--color-sidebar-hover);
+  border-color: var(--color-navy-3);
+  color: var(--color-text-subtle);
+}
+.btn-on-navy:hover:not(:disabled) {
+  background: var(--color-sidebar-active);
+  color: var(--color-text-inverse);
+  border-color: var(--color-primary);
 }
 
 /* Language toggle — a two-button segmented control. */
@@ -444,4 +625,194 @@
   font-size: 11.5px;
   color: var(--color-text-muted);
   text-align: center;
+}
+
+/* The language toggle again, on the sidebar's navy. */
+.lang-toggle-on-navy {
+  border-color: var(--color-navy-3);
+  background: transparent;
+}
+
+.lang-toggle-on-navy button {
+  background: transparent;
+  color: var(--color-sidebar-muted);
+}
+
+.lang-toggle-on-navy button + button { border-inline-start-color: var(--color-navy-3); }
+
+.lang-toggle-on-navy button:hover {
+  background: var(--color-sidebar-hover);
+  color: var(--color-text-inverse);
+}
+
+.lang-toggle-on-navy button[aria-pressed="true"] {
+  background: var(--color-primary);
+  color: var(--color-text-inverse);
+}
+
+/* ================================================================== *
+ * Tables (CLAUDE.md 8.4)
+ *
+ * The plain list table. The Excel-like entry grid is a different surface
+ * entirely and lives in css/grid.css.
+ * ================================================================== */
+
+.table-wrap { overflow-x: auto; }
+
+.table { font-size: 13px; }
+
+.table th {
+  text-align: start;
+  padding: 10px 14px;
+  font-size: 11.5px;
+  font-weight: var(--fw-semibold);
+  color: var(--color-text-secondary);
+  text-transform: uppercase;
+  letter-spacing: .3px;
+  white-space: nowrap;
+  background: var(--color-surface-2);
+  border-block-end: 1px solid var(--color-border);
+}
+
+.table td {
+  padding: 11px 14px;
+  border-block-end: 1px solid var(--color-border-2);
+  vertical-align: middle;
+}
+
+.table tbody tr:last-child td { border-block-end: 0; }
+.table tbody tr:hover td { background: var(--color-surface-2); }
+
+.table-empty {
+  padding: var(--space-8) var(--space-5);
+  text-align: center;
+  color: var(--color-text-muted);
+}
+
+/* ================================================================== *
+ * Dashboard pieces
+ * ================================================================== */
+
+.stat-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  gap: var(--space-4);
+}
+
+.stat-card {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-xl);
+  box-shadow: var(--shadow-sm);
+  padding: 18px;
+}
+
+.stat-label {
+  font-size: 11.5px;
+  font-weight: var(--fw-semibold);
+  color: var(--color-text-secondary);
+  text-transform: uppercase;
+  letter-spacing: .3px;
+  margin-block-end: 5px;
+}
+
+.stat-value {
+  font-size: 24px;
+  font-weight: var(--fw-bold);
+  color: var(--color-navy-2);
+  line-height: 1.2;
+}
+
+/* A stat whose data action does not exist yet renders '—' in this tone. */
+.stat-value.is-pending { color: var(--color-text-muted); }
+
+.stat-foot {
+  font-size: 11.5px;
+  color: var(--color-text-muted);
+  margin-block-start: var(--space-2);
+}
+
+/* Quick actions — big navigation targets on the dashboards. */
+.action-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: var(--space-4);
+}
+
+.action-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: 18px;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-xl);
+  box-shadow: var(--shadow-sm);
+  color: var(--color-text-primary);
+  transition: border-color .15s ease, box-shadow .15s ease, transform .15s ease;
+}
+
+.action-card:hover {
+  border-color: var(--color-primary);
+  box-shadow: var(--shadow-md);
+  color: var(--color-text-primary);
+}
+
+.action-card-title {
+  font-size: 14px;
+  font-weight: var(--fw-bold);
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.action-card-text {
+  font-size: 12.5px;
+  color: var(--color-text-secondary);
+}
+
+/* Empty states and not-yet-built screens. */
+.empty-state {
+  padding: var(--space-8) var(--space-5);
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.empty-icon { font-size: 26px; opacity: .5; }
+
+.empty-title {
+  font-size: 14px;
+  font-weight: var(--fw-bold);
+  color: var(--color-text-primary);
+}
+
+.empty-text {
+  font-size: 12.5px;
+  color: var(--color-text-secondary);
+  max-inline-size: 460px;
+}
+
+/* The page's title row, with room for actions on the end. */
+.page-title-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+  margin-block-end: var(--space-5);
+}
+
+.page-subtitle {
+  font-size: 12.5px;
+  color: var(--color-text-secondary);
+  margin-block-start: 2px;
+}
+
+.section-title {
+  font-size: 13px;
+  font-weight: var(--fw-bold);
+  color: var(--color-text-primary);
+  margin-block-end: var(--space-3);
 }

@@ -66,15 +66,49 @@ export const ar = {
   login_password_required: 'أدخل كلمة المرور.',
   login_welcome_back: 'أهلاً بعودتك، {name}.',
 
-  /* --- placeholders until Stage 4 builds the real shells --- */
+  /* --- dashboards --- */
   dashboard_title: 'الرئيسية',
   signed_in_as: 'مسجّل الدخول باسم {name}',
-  placeholder_coordinator_dashboard: 'ستظهر تسوياتك هنا. لوحة المنسق وشاشة الإدخال تأتي في المرحلة التالية.',
-  placeholder_manager_dashboard: 'سيظهر هنا نشاط جميع المنسقين مجمّعاً. الاعتمادات والتصدير والإدارة تأتي في المرحلة التالية.',
+  coordinator_dashboard_subtitle: 'تسوياتك، تسوية واحدة لكل شهر.',
+  manager_dashboard_subtitle: 'جميع المنسقين في مكان واحد.',
+
+  my_settlements: 'تسوياتي',
+  settlement_title: 'التسوية',
+  col_settlement: 'التسوية',
+  col_month: 'الشهر',
+  col_account: 'الحساب',
+  col_old_track: 'رقم التتبع (قديم)',
+  col_new_track: 'رقم التتبع (جديد)',
+  no_settlements_title: 'لا توجد تسويات بعد',
+  no_settlements_text: 'بعد تفعيل الإدخال ستنشئ هنا تسوية واحدة لكل شهر، لكل منها رقم تتبع قديم وآخر جديد.',
+
+  quick_actions: 'إجراءات سريعة',
+  action_approvals_text: 'مراجعة واعتماد الإدخالات المؤكدة من جميع المنسقين.',
+  action_export_text: 'إنشاء ملفات الحسابات لفريق وفترة محددين.',
+  action_admin_text: 'الفرق، وجدول الموقع ← كود العمل، والمستخدمون، والقوائم.',
+
+  stat_pending_data: 'بانتظار البيانات',
+  stat_open_settlements: 'تسويات مفتوحة',
+  stat_draft_entries: 'إدخالات مسودة',
+  stat_awaiting_approval: 'بانتظار الاعتماد',
+  stat_returned_to_me: 'مُعادة إليّ',
+  stat_approved_unexported: 'معتمدة وغير مصدّرة',
+  stat_returned_open: 'مُعادة وقيد المعالجة',
+  stat_active_coordinators: 'منسقون نشطون',
+
+  /* --- routed but not yet built --- */
+  screen_not_built_title: 'لم تُبنَ بعد',
+  coming_in_stage_5: 'بيانات الإدارة — الفرق وجدول الموقع ← كود العمل والمستخدمون والقوائم — تأتي مع شاشات الإدارة.',
+  coming_in_stage_6: 'شاشة إدخال البيانات تأتي مع شاشات المنسق.',
+  coming_in_stage_7: 'الاعتمادات المجمّعة تأتي مع شاشة مراجعة المدير.',
+  coming_in_stage_8: 'أداة التصدير وقالب الحسابات يأتيان مع شاشة التصدير.',
+
   change_password_title: 'تغيير كلمة المرور',
   not_found_title: 'الصفحة غير موجودة',
   not_found_subtitle: 'هذه الشاشة غير موجودة.',
   go_to_dashboard: 'الذهاب إلى الرئيسية',
+  unknown_role_title: 'لا توجد صلاحية لهذا الحساب',
+  unknown_role_text: 'حسابك غير مُعرّف كمنسق أو كمدير. اطلب من أحد المديرين مراجعته ثم سجّل الدخول مرة أخرى.',
 
   /* --- change password (4.3) --- */
   change_password_subtitle: 'اختر كلمة مرور جديدة لحسابك.',

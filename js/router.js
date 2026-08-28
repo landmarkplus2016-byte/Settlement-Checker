@@ -1,32 +1,71 @@
 /**
- * router.js — hash routing (CLAUDE.md 5.2, rule 20).
+ * router.js — hash routing and the two role shells (CLAUDE.md 5.1, 5.2, 5.3;
+ * rule 20).
  *
  * GitHub Pages serves static files and has no server-side routing, so the route
  * is always read from location.hash.
  *
- * STAGE 3 STUB. Every authenticated route below renders a placeholder; Stage 4
- * replaces these with the real coordinator top-bar shell and manager sidebar
- * shell, and hands each route to its screen module. What is already real here
- * and must stay real:
- *   - unauthenticated → login, whatever the hash says
- *   - a coordinator on a manager route (or the reverse) → #/dashboard
- *   - re-render on language change
+ * Every render is a full re-render: the screen's render* function returns an
+ * HTML string, it goes into #app inside the role's shell, then the matching
+ * bind* functions attach listeners (5.3). The one screen that will opt out of
+ * this is the grid, which updates cells in place (6.5) — it will still be
+ * *mounted* from here, it just will not be re-rendered on every keystroke.
  *
- * The role check here is UX only. The server is the gate (rules 4, 5).
+ * The role checks here are UX. The server is the real gate (rules 4, 5): it
+ * resolves a coordinator's sheet from the session and re-checks `role` at the
+ * top of every manager action, so a forged hash buys nothing.
  */
 
-import { isAuthenticated, getRole, getUser, getDisplayName, mustChangePassword } from './state.js';
-import { t, getLang, setLang, LANG_CHANGE_EVENT } from './i18n/i18n.js';
-import { escapeHtml, mount, qs } from './utils/dom.js';
+import { isAuthenticated, getRole, mustChangePassword } from './state.js';
+import { t, LANG_CHANGE_EVENT } from './i18n/i18n.js';
+import { escapeHtml, mount } from './utils/dom.js';
+
 import { renderLogin, bindLoginEvents } from './auth/login.js';
 import { renderChangePassword, bindChangePasswordEvents } from './auth/changePassword.js';
+
+import { renderTopbar, bindTopbarEvents } from './components/topbar.js';
+import { renderSidebar, bindSidebarEvents } from './components/sidebar.js';
 import { logout } from './auth/session.js';
 
-/** Routes only a manager may open (5.2). */
-const MANAGER_ROUTES = ['#/approvals', '#/export', '#/admin'];
+import { renderCoordinatorDashboard, bindCoordinatorDashboardEvents } from './coordinator/dashboard.js';
+import { renderManagerDashboard, bindManagerDashboardEvents } from './manager/dashboard.js';
 
-/** Routes only a coordinator may open. */
-const COORDINATOR_ROUTES = ['#/settlement'];
+/**
+ * The route table — CLAUDE.md 5.2, in the order it lists them.
+ *
+ * `roles` is the whole cross-role rule: a hash whose route does not list the
+ * caller's role redirects to #/dashboard. `params` pulls the capture groups out
+ * of the pattern (only #/settlement/<id> has one).
+ */
+const ROUTES = [
+  { name: 'dashboard',    pattern: /^#\/dashboard$/,          roles: ['coordinator', 'manager'] },
+  { name: 'settlement',   pattern: /^#\/settlement\/(.+)$/,   roles: ['coordinator'], params: ['settlement_id'] },
+  { name: 'approvals',    pattern: /^#\/approvals$/,          roles: ['manager'] },
+  { name: 'export',       pattern: /^#\/export$/,             roles: ['manager'] },
+  { name: 'admin_teams',  pattern: /^#\/admin\/teams$/,       roles: ['manager'] },
+  { name: 'admin_sitejc', pattern: /^#\/admin\/sitejc$/,      roles: ['manager'] },
+  { name: 'admin_people', pattern: /^#\/admin\/people$/,      roles: ['manager'] },
+  { name: 'admin_lists',  pattern: /^#\/admin\/lists$/,       roles: ['manager'] }
+];
+
+/** Bare #/admin has no screen of its own; it opens the first sub-tab. */
+const ADMIN_DEFAULT = '#/admin/teams';
+
+/**
+ * Screens that Stage 4 routes to but does not build. Each maps to the i18n keys
+ * for its placeholder, and to the stage that will replace it. Removing an entry
+ * from here and adding a case to renderScreen() is the whole of wiring a real
+ * screen up.
+ */
+const NOT_BUILT_YET = {
+  settlement:   { titleKey: 'settlement_title',    textKey: 'coming_in_stage_6' },
+  approvals:    { titleKey: 'nav_approvals',       textKey: 'coming_in_stage_7' },
+  export:       { titleKey: 'nav_export',          textKey: 'coming_in_stage_8' },
+  admin_teams:  { titleKey: 'nav_teams',           textKey: 'coming_in_stage_5' },
+  admin_sitejc: { titleKey: 'nav_sitejc',          textKey: 'coming_in_stage_5' },
+  admin_people: { titleKey: 'nav_people',          textKey: 'coming_in_stage_5' },
+  admin_lists:  { titleKey: 'nav_lists',           textKey: 'coming_in_stage_5' }
+};
 
 /** Called when the user asks to re-point this device; set by main.js. */
 let onChangeUrl = null;
@@ -40,6 +79,10 @@ let listening = false;
  * must not paint over them.
  */
 let suspended = false;
+
+/* ------------------------------------------------------------------ *
+ * Lifecycle
+ * ------------------------------------------------------------------ */
 
 /**
  * Start routing. Re-entrant: boot() may run more than once (retry, changed
@@ -86,6 +129,10 @@ export function navigate(hash) {
   }
 }
 
+/* ------------------------------------------------------------------ *
+ * The route pass
+ * ------------------------------------------------------------------ */
+
 /**
  * Render whatever the current hash asks for.
  */
@@ -94,6 +141,7 @@ export function renderRoute() {
 
   const hash = window.location.hash || '#/dashboard';
 
+  // 1. Signed out — the login screen, whatever the hash says.
   if (!isAuthenticated()) {
     mount(renderLogin());
     bindLoginEvents({
@@ -106,149 +154,225 @@ export function renderRoute() {
   }
 
   /*
-   * "force_password_change sends the user to the change-password screen before
-   * anything else" (4.3). This is that gate, and it sits above every other
-   * check on purpose: a flagged user typing #/dashboard, #/approvals or any
-   * admin route into the address bar lands back here.
-   *
-   * Client-side, so it is UX, not security — the flag is only about making the
-   * user pick their own password, and every real permission is checked by the
-   * server anyway (rules 4, 5).
+   * 2. "force_password_change sends the user to the change-password screen
+   * before anything else" (4.3). Above every other check on purpose: a flagged
+   * user typing #/approvals into the address bar lands back here.
    */
   if (mustChangePassword() && hash.indexOf('#/change-password') !== 0) {
     return navigate('#/change-password');
   }
 
+  // 3. The change-password screen stands outside both shells.
   if (hash.indexOf('#/change-password') === 0) {
     mount(renderChangePassword());
-    bindChangePasswordEvents({
-      onSuccess: function () { navigate('#/dashboard'); }
-    });
+    bindChangePasswordEvents({ onSuccess: function () { navigate('#/dashboard'); } });
     return;
+  }
+
+  // 4. Bare #/admin is a shortcut to the first admin tab.
+  if (hash === '#/admin' || hash === '#/admin/') {
+    return navigate(ADMIN_DEFAULT);
   }
 
   const role = getRole();
 
-  // Wrong-role routes bounce to the dashboard (5.2).
-  if (matches(hash, MANAGER_ROUTES) && role !== 'manager') return navigate('#/dashboard');
-  if (matches(hash, COORDINATOR_ROUTES) && role !== 'coordinator') return navigate('#/dashboard');
-
-  if (hash === '#/login' || hash.indexOf('#/dashboard') === 0) {
-    return renderShell(
-      t('dashboard_title'),
-      role === 'manager'
-        ? t('placeholder_manager_dashboard')
-        : t('placeholder_coordinator_dashboard')
-    );
+  /*
+   * 5. A session whose role is neither of the two is a dead end, and it must be
+   * caught BEFORE the cross-role check below: that check redirects to
+   * #/dashboard, whose route lists both real roles, so an unknown role would
+   * fail it again and navigate() — already on that hash — would call straight
+   * back into here. An unbounded recursion, on the one path where nothing can
+   * ever render. Sign out instead.
+   */
+  if (role !== 'coordinator' && role !== 'manager') {
+    mount(unknownRoleScreen());
+    bindUnknownRoleEvents();
+    return;
   }
 
-  // Stage 4 gives each of these its own screen; until then a signed-in user on
-  // a valid-for-their-role route sees the placeholder rather than a dead page.
-  if (matches(hash, MANAGER_ROUTES) || matches(hash, COORDINATOR_ROUTES)) {
-    return renderShell(
-      t('dashboard_title'),
-      role === 'manager'
-        ? t('placeholder_manager_dashboard')
-        : t('placeholder_coordinator_dashboard')
-    );
+  const route = matchRoute(hash);
+
+  // 6. Unknown hash — inside the shell, so the user keeps their navigation.
+  if (!route) {
+    return paint(role, hash, notFoundScreen(), null);
   }
 
-  return renderShell(t('not_found_title'), t('not_found_subtitle'));
+  // 7. Cross-role route — redirect to the dashboard both roles share (5.2).
+  if (route.roles.indexOf(role) === -1) {
+    return navigate('#/dashboard');
+  }
+
+  renderScreen(route, role, hash);
 }
 
 /**
+ * Find the route for a hash.
  * @param {string} hash
- * @param {Array<string>} prefixes
- * @return {boolean}
+ * @return {{name: string, roles: Array<string>, params: Object}|null}
  */
-function matches(hash, prefixes) {
-  return prefixes.some(function (prefix) { return hash.indexOf(prefix) === 0; });
+function matchRoute(hash) {
+  for (let i = 0; i < ROUTES.length; i++) {
+    const route = ROUTES[i];
+    const found = route.pattern.exec(hash);
+    if (!found) continue;
+
+    const params = {};
+    (route.params || []).forEach(function (key, index) {
+      params[key] = decodeURIComponent(found[index + 1]);
+    });
+
+    return { name: route.name, roles: route.roles, params: params };
+  }
+  return null;
+}
+
+/**
+ * Render one matched route: pick the screen, paint it into the role's shell,
+ * then bind it (5.3).
+ *
+ * @param {Object} route from matchRoute().
+ * @param {string} role
+ * @param {string} hash
+ */
+function renderScreen(route, role, hash) {
+  if (route.name === 'dashboard') {
+    if (role === 'manager') {
+      return paint(role, hash, renderManagerDashboard(), bindManagerDashboardEvents);
+    }
+    return paint(role, hash, renderCoordinatorDashboard(), bindCoordinatorDashboardEvents);
+  }
+
+  /*
+   * Everything else is routed but not yet built. The placeholder renders inside
+   * the correct shell with the correct sidebar item highlighted, so the
+   * navigation is genuinely exercised — only the screen body is missing.
+   */
+  const pending = NOT_BUILT_YET[route.name];
+  if (pending) {
+    return paint(role, hash, pendingScreen(pending, route.params), null);
+  }
+
+  return paint(role, hash, notFoundScreen(), null);
 }
 
 /* ------------------------------------------------------------------ *
- * The Stage 3 placeholder shell
+ * The shells (5.1)
  * ------------------------------------------------------------------ */
 
 /**
- * A minimal signed-in frame: brand, user, language toggle, sign out, and a card
- * saying what will live here. Replaced wholesale in Stage 4 by
- * js/components/topbar.js and js/components/sidebar.js.
+ * Put a screen inside the shell for its role and wire everything.
  *
- * @param {string} title
- * @param {string} body
+ * Coordinator: slim top bar over the content.
+ * Manager:     navy sidebar beside the content.
+ *
+ * @param {string} role
+ * @param {string} hash the active route, for the nav highlight.
+ * @param {string} content the screen's HTML.
+ * @param {Function|null} bindContent the screen's bind* function.
  */
-function renderShell(title, body) {
-  const lang = getLang();
-  const user = getUser() || {};
-  const name = getDisplayName(lang);
-  const roleLabel = user.role === 'manager' ? t('role_manager') : t('role_coordinator');
+function paint(role, hash, content, bindContent) {
+  if (role === 'manager') {
+    mount(`
+      <div class="app-layout">
+        ${renderSidebar(hash)}
+        <main class="content">${content}</main>
+      </div>
+    `);
+    bindSidebarEvents();
+  } else {
+    mount(`
+      <div class="app-column">
+        ${renderTopbar(hash)}
+        <main class="content">${content}</main>
+      </div>
+    `);
+    bindTopbarEvents();
+  }
 
-  mount(`
-    <header class="topbar">
-      <div class="brand-mark">${escapeHtml(t('brand_mark'))}</div>
-      <div class="brand">
-        <div class="brand-name">${escapeHtml(t('brand_name'))}</div>
-        <div class="brand-tagline">${escapeHtml(t('brand_tagline'))}</div>
+  if (typeof bindContent === 'function') bindContent();
+}
+
+/* ------------------------------------------------------------------ *
+ * Filler screens
+ * ------------------------------------------------------------------ */
+
+/**
+ * A routed-but-not-yet-built screen.
+ * @param {{titleKey: string, textKey: string}} pending
+ * @param {Object} params route params, shown when there are any.
+ * @return {string} HTML
+ */
+function pendingScreen(pending, params) {
+  const settlementId = params && params.settlement_id ? params.settlement_id : '';
+
+  return `
+    <div class="page">
+      <div class="page-title-row">
+        <h1>${escapeHtml(t(pending.titleKey))}</h1>
+        ${settlementId ? `<span class="badge badge-neutral num">${escapeHtml(settlementId)}</span>` : ''}
       </div>
 
-      <div class="spacer"></div>
-
-      <div class="lang-toggle" id="shell-lang">
-        <button type="button" data-lang="en" aria-pressed="${lang === 'en'}">${escapeHtml(t('lang_en'))}</button>
-        <button type="button" data-lang="ar" aria-pressed="${lang === 'ar'}">${escapeHtml(t('lang_ar'))}</button>
+      <div class="card">
+        <div class="empty-state">
+          <div class="empty-icon" aria-hidden="true">▨</div>
+          <div class="empty-title">${escapeHtml(t('screen_not_built_title'))}</div>
+          <div class="empty-text">${escapeHtml(t(pending.textKey))}</div>
+        </div>
       </div>
-
-      <div class="topbar-user">
-        <span class="text-small text-bold">${escapeHtml(name)}</span>
-        <span class="text-tiny text-muted">${escapeHtml(roleLabel)}</span>
-      </div>
-      <div class="avatar">${escapeHtml(initial(name))}</div>
-
-      <button class="btn btn-secondary btn-sm" id="shell-logout" type="button">
-        ${escapeHtml(t('sign_out'))}
-      </button>
-    </header>
-
-    <main class="page">
-      <div class="page-header">
-        <h1>${escapeHtml(title)}</h1>
-        <span class="badge badge-neutral">${escapeHtml(roleLabel)}</span>
-      </div>
-
-      <div class="card card-padded stack-2">
-        <div class="text-secondary">${escapeHtml(t('signed_in_as', { name: name }))}</div>
-        <p class="text-secondary">${escapeHtml(body)}</p>
-      </div>
-    </main>
-  `);
-
-  bindShellEvents();
+    </div>
+  `;
 }
 
 /**
- * Wire the placeholder shell's chrome.
+ * A signed-in session whose role is neither `coordinator` nor `manager` — a
+ * mistyped Users row, or a role removed after the user logged in. Deliberately
+ * shell-less: neither shell would be right, and offering navigation that cannot
+ * work would be worse than offering none.
+ *
+ * @return {string} HTML
  */
-function bindShellEvents() {
-  const langToggle = qs('#shell-lang');
-  if (langToggle) {
-    langToggle.addEventListener('click', function (event) {
-      const button = event.target.closest('button[data-lang]');
-      if (button) setLang(button.dataset.lang);
-    });
-  }
+function unknownRoleScreen() {
+  return `
+    <div class="screen-centered">
+      <div class="auth-card">
+        <div class="auth-head">
+          <div class="brand-mark">${escapeHtml(t('brand_mark'))}</div>
+          <div class="auth-title">${escapeHtml(t('unknown_role_title'))}</div>
+          <div class="auth-subtitle">${escapeHtml(t('unknown_role_text'))}</div>
+        </div>
+        <button class="btn btn-primary btn-block" id="unknown-role-signout" type="button">
+          ${escapeHtml(t('sign_out'))}
+        </button>
+      </div>
+    </div>
+  `;
+}
 
-  const logoutButton = qs('#shell-logout');
-  if (logoutButton) {
-    logoutButton.addEventListener('click', function () { logout(); });
-  }
+/** Wire the unknown-role screen's one action. */
+function bindUnknownRoleEvents() {
+  const button = document.getElementById('unknown-role-signout');
+  if (button) button.addEventListener('click', function () { logout(); });
 }
 
 /**
- * First character of a display name, for the avatar.
- * @param {string} name
- * @return {string}
+ * An unrecognised hash.
+ * @return {string} HTML
  */
-function initial(name) {
-  const trimmed = String(name || '').trim();
-  return trimmed ? trimmed.charAt(0).toUpperCase() : '?';
+function notFoundScreen() {
+  return `
+    <div class="page">
+      <div class="page-title-row">
+        <h1>${escapeHtml(t('not_found_title'))}</h1>
+      </div>
+
+      <div class="card">
+        <div class="empty-state">
+          <div class="empty-icon" aria-hidden="true">?</div>
+          <div class="empty-title">${escapeHtml(t('not_found_title'))}</div>
+          <div class="empty-text">${escapeHtml(t('not_found_subtitle'))}</div>
+          <a class="btn btn-primary mt-4" href="#/dashboard">${escapeHtml(t('go_to_dashboard'))}</a>
+        </div>
+      </div>
+    </div>
+  `;
 }

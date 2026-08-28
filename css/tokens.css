@@ -73,4 +73,9 @@
 
   /* modal scrim — the navy of the shadows, at scrim opacity */
   --color-overlay:rgba(16,24,64,.45);
+
+  /* manager sidebar — the navy surface has its own muted/hover/active tones */
+  --color-sidebar-muted:#6b74a8;
+  --color-sidebar-hover:rgba(255,255,255,.06);
+  --color-sidebar-active:rgba(255,255,255,.08);
 }

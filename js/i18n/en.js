@@ -68,15 +68,49 @@ export const en = {
   login_password_required: 'Enter your password.',
   login_welcome_back: 'Welcome back, {name}.',
 
-  /* --- placeholders until Stage 4 builds the real shells --- */
+  /* --- dashboards --- */
   dashboard_title: 'Dashboard',
   signed_in_as: 'Signed in as {name}',
-  placeholder_coordinator_dashboard: 'Your settlements will appear here. The coordinator dashboard and the entry grid arrive in the next stage.',
-  placeholder_manager_dashboard: 'Consolidated coordinator activity will appear here. Approvals, export and admin arrive in the next stage.',
+  coordinator_dashboard_subtitle: 'Your settlements, one per month.',
+  manager_dashboard_subtitle: 'Every coordinator, consolidated.',
+
+  my_settlements: 'My settlements',
+  settlement_title: 'Settlement',
+  col_settlement: 'Settlement',
+  col_month: 'Month',
+  col_account: 'Account',
+  col_old_track: 'Old tracking #',
+  col_new_track: 'New tracking #',
+  no_settlements_title: 'No settlements yet',
+  no_settlements_text: 'Once entry is switched on you will create one settlement per month here, each with its own Old and New tracking number.',
+
+  quick_actions: 'Quick actions',
+  action_approvals_text: 'Review and approve confirmed entries from every coordinator.',
+  action_export_text: 'Build the finance files for a team and period.',
+  action_admin_text: 'Teams, the Site → Job Code lookup, people and lists.',
+
+  stat_pending_data: 'Awaiting data',
+  stat_open_settlements: 'Open settlements',
+  stat_draft_entries: 'Draft entries',
+  stat_awaiting_approval: 'Awaiting approval',
+  stat_returned_to_me: 'Returned to me',
+  stat_approved_unexported: 'Approved, not exported',
+  stat_returned_open: 'Returned, open',
+  stat_active_coordinators: 'Active coordinators',
+
+  /* --- routed but not yet built --- */
+  screen_not_built_title: 'Not built yet',
+  coming_in_stage_5: 'Admin data — teams, the Site → Job Code lookup, people and lists — arrives with the admin screens.',
+  coming_in_stage_6: 'The entry grid arrives with the coordinator screens.',
+  coming_in_stage_7: 'Consolidated approvals arrive with the manager review screen.',
+  coming_in_stage_8: 'The export builder and the finance template arrive with the export screen.',
+
   change_password_title: 'Change your password',
   not_found_title: 'Page not found',
   not_found_subtitle: 'That screen does not exist.',
   go_to_dashboard: 'Go to dashboard',
+  unknown_role_title: 'This account has no role',
+  unknown_role_text: 'Your account is not set up as a coordinator or a manager. Ask a manager to check it, then sign in again.',
 
   /* --- change password (4.3) --- */
   change_password_subtitle: 'Choose a new password for your account.',
