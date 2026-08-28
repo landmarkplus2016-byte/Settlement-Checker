@@ -44,8 +44,6 @@ function doPost(e) {
  * The routing table. Every handler is called as handler(session, payload) and
  * returns plain data; dispatch() wraps it in the success envelope. `session` is
  * null for the three public actions.
- *
- * A later stage fills in the export (3.7) actions here.
  */
 var ACTIONS = {
 
@@ -204,6 +202,30 @@ var ACTIONS = {
   approve_batch: {
     auth: true,
     handler: function (session, payload) { return handleApproveBatch(session, payload); }
+  },
+
+  /*
+   * Export (3.7) — manager-only, enforced inside Export.gs. `export_query` only
+   * reads; `export_commit` is the atomic claim that stamps rows `exported` and
+   * is the ONLY writer of that status anywhere in the app (rule 16).
+   */
+  export_query: {
+    auth: true,
+    handler: function (session, payload) { return handleExportQuery(session, payload); }
+  },
+  export_commit: {
+    auth: true,
+    handler: function (session, payload) { return handleExportCommit(session, payload); }
+  },
+
+  /*
+   * Not in 3.7's list of two. 7.3 requires the Export screen to show the log of
+   * what has already gone out, and no action in 3.7 can read it — this is the
+   * read for that screen, and nothing else. See handleListExportLog().
+   */
+  list_export_log: {
+    auth: true,
+    handler: function (session, payload) { return handleListExportLog(session, payload); }
   }
 };
 

@@ -5,13 +5,20 @@
  * global `XLSX`. It is not a module, so nothing can import it; this file wraps
  * the global so no screen ever names it directly.
  *
- * STAGE 5 needs the READ half only — the Site→JC "Upload Excel" path, where the
- * client parses an .xlsx and posts JSON to `bulk_import_site_jc` (3.4). The
- * write half (building the finance files) arrives with the export screen.
+ * Two halves:
+ *   - READING, for the Site→JC "Upload Excel" path, where the client parses an
+ *     .xlsx and posts JSON to `bulk_import_site_jc` (3.4).
+ *   - WRITING, for the finance files (7.2). The export screen hands over sheets
+ *     that js/manager/exportTemplate.js has already laid out; this file turns
+ *     them into a workbook and puts it in the user's downloads.
  *
  * Reading is deliberately forgiving about headers and strict about nothing: this
  * file's job is to turn a spreadsheet into rows. Deciding whether a row is
  * *valid* belongs to the screen that asked for it.
+ *
+ * Writing knows nothing about settlements, teams or tracking numbers. It takes
+ * a grid and writes a grid — what goes IN the grid, and what the file is called,
+ * belong to the template (rule 21).
  */
 
 /** How the file was read, for the caller's error message. */
@@ -162,4 +169,127 @@ export function pickField(row, aliases) {
     }
   }
   return '';
+}
+
+/* ================================================================== *
+ * Writing — the finance files (7.2)
+ * ================================================================== */
+
+/**
+ * Excel's own limit on a tab name: 31 characters, and none of `[ ] : * ? / \`.
+ * A rejected name fails the whole write, so names are sanitised rather than
+ * trusted.
+ */
+const MAX_SHEET_NAME = 31;
+
+/**
+ * Build a workbook from laid-out sheets.
+ *
+ * @param {Array<Object>} sheets each `{name, aoa, merges?, cols?}` —
+ *        `aoa` is an array of row arrays, `merges` are SheetJS ranges
+ *        (`{s:{r,c}, e:{r,c}}`), `cols` are widths (`{wch}`).
+ * @param {Object} [options]
+ * @param {boolean} [options.rtl=false] open the sheets right-to-left, for Arabic.
+ * @return {Object} a SheetJS workbook.
+ * @throws {SheetError} xlsx_unavailable | export_no_sheets
+ */
+export function buildWorkbook(sheets, options) {
+  if (!isXlsxAvailable()) throw new SheetError('xlsx_unavailable');
+
+  const list = sheets || [];
+  if (!list.length) throw new SheetError('export_no_sheets');
+
+  const opts = options || {};
+  const book = window.XLSX.utils.book_new();
+  const used = [];
+
+  list.forEach(function (spec, index) {
+    const sheet = window.XLSX.utils.aoa_to_sheet(spec.aoa || [[]]);
+
+    if (spec.merges && spec.merges.length) sheet['!merges'] = spec.merges;
+    if (spec.cols && spec.cols.length) sheet['!cols'] = spec.cols;
+
+    const name = uniqueSheetName(spec.name || ('Sheet' + (index + 1)), used);
+    used.push(name);
+
+    window.XLSX.utils.book_append_sheet(book, sheet, name);
+  });
+
+  /*
+   * The workbook's reading direction, not the data's. In Arabic the whole
+   * finance file should open with column A on the right, the way the original
+   * workbook does — the numbers inside it stay Western and LTR either way (8.1).
+   */
+  if (opts.rtl) book.Workbook = { Views: [{ RTL: true }] };
+
+  return book;
+}
+
+/**
+ * Build a workbook and hand it to the browser as a download.
+ *
+ * `XLSX.writeFile` does the whole job — serialise, make a Blob, click a link,
+ * revoke the URL. Doing it by hand would be the same code with more ways to leak
+ * an object URL.
+ *
+ * @param {Array<Object>} sheets as buildWorkbook() takes them.
+ * @param {string} fileName including the `.xlsx` extension. The template owns
+ *        this name (js/manager/exportTemplate.js) — this file does not invent one.
+ * @param {Object} [options] passed to buildWorkbook().
+ * @return {string} the file name actually used.
+ * @throws {SheetError} xlsx_unavailable | export_no_sheets | export_write_failed
+ */
+export function downloadWorkbook(sheets, fileName, options) {
+  const book = buildWorkbook(sheets, options);
+  const name = safeFileName(fileName);
+
+  try {
+    window.XLSX.writeFile(book, name, { compression: true });
+  } catch (err) {
+    throw new SheetError('export_write_failed');
+  }
+
+  return name;
+}
+
+/**
+ * A tab name Excel will accept, and that is not already in this workbook.
+ *
+ * A duplicate name is not a cosmetic problem: `book_append_sheet` throws on one,
+ * which would fail the download after the manager has already committed.
+ *
+ * @param {string} name
+ * @param {Array<string>} used names already taken in this workbook.
+ * @return {string}
+ */
+function uniqueSheetName(name, used) {
+  const cleaned = String(name || 'Sheet')
+    .replace(/[[\]:*?/\\]/g, ' ')
+    .trim()
+    .substring(0, MAX_SHEET_NAME) || 'Sheet';
+
+  if (used.indexOf(cleaned) === -1) return cleaned;
+
+  for (let n = 2; n < 100; n++) {
+    const suffix = ' (' + n + ')';
+    const candidate = cleaned.substring(0, MAX_SHEET_NAME - suffix.length) + suffix;
+    if (used.indexOf(candidate) === -1) return candidate;
+  }
+
+  return cleaned.substring(0, MAX_SHEET_NAME - 4) + ' (x)';
+}
+
+/**
+ * Strip anything a filesystem would object to, and guarantee the extension.
+ * @param {string} fileName
+ * @return {string}
+ */
+function safeFileName(fileName) {
+  const cleaned = String(fileName || '')
+    .replace(/[\\/:*?"<>|]+/g, '-')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  if (!cleaned) return 'export.xlsx';
+  return /\.xlsx$/i.test(cleaned) ? cleaned : cleaned + '.xlsx';
 }

@@ -413,6 +413,69 @@ export const ar = {
 
   approved_by_stamp: 'بواسطة {name}',
 
+  /* --- manager: export (3.7, 7) ---
+   *
+   * نصوص داخل إطار المعاينة — أسماء الأوراق وعناوين الأعمدة وعلامة القديم/الجديد
+   * وتذييل الاعتماد — غير مترجمة عمداً: هي نص ملف المالية نفسه ويجب أن يكون واحداً
+   * في اللغتين، وإلا أنتج مديران ملفين مختلفين للدفعة نفسها.
+   */
+  export_subtitle: 'أنشئ ملفات المالية لفريق وشهر واحد — القديم والجديد، عادي أو حسب الموقع.',
+
+  export_pick_team: 'اختر فريقاً…',
+  export_pick_month: 'اختر شهراً…',
+  export_report_type: 'نوع التقرير',
+  export_report_normal: 'عادي',
+  export_report_persite: 'حسب الموقع',
+  export_exclude_exported: 'إخفاء المُصدَّر سابقاً',
+  export_exclude_exported_hint: 'عند التفعيل لا يُعرض أي بند سبق تصديره إلى المالية مرة أخرى. أوقفه فقط لإعادة بناء ملف فقدته المالية.',
+  export_generate: 'إنشاء',
+  export_generating: 'جارٍ الإنشاء…',
+  export_needs_team_month: 'اختر الفريق والشهر أولاً.',
+
+  export_start_title: 'لم يُنشأ شيء بعد',
+  export_start_text: 'اختر فريقاً وشهراً ثم اضغط إنشاء. تحصل على ملف لكل فترة — القديم والجديد يُسوَّى كل منهما على حدة وله رقم تتبع خاص به.',
+
+  export_period_file: 'ملف {period}',
+  export_nothing_title: 'لا شيء للتصدير',
+  export_nothing_text: 'لا يوجد بند معتمد يطابق هذا الفريق والشهر والفترة. تظهر البنود هنا بعد اعتماد المدير لها.',
+
+  export_rows_summary: '{rows} بنداً في الملف · سيُعلَّم {claimable} كمُصدَّر · {file}',
+  export_preview_capped: 'يُعرض أول {shown} من {total} بنداً. الملف يحتوي عليها جميعاً.',
+
+  export_download: 'تنزيل الملف',
+  export_downloaded: 'تم تنزيل {file}',
+  export_confirm: 'تأكيد التصدير',
+
+  export_confirm_title: 'تعليم هذه البنود كمُصدَّرة؟',
+  export_confirm_text: 'سيُعلَّم {count} بنداً معتمداً في ملف {period} لفريق {team}، {month} كمُصدَّر.',
+  export_confirm_tracking: 'رقم التتبع {tracking} · تقرير {type}',
+  export_confirm_not_downloaded: 'لم تنزّل هذا الملف بعد. بعد التأكيد لن تظهر هذه البنود في الاستعلام — نزّل الملف أولاً.',
+  export_confirm_note: 'لا يمكن التراجع. البند المُصدَّر مقفل: لا يُعدَّل ولا يُعاد اعتماده ولا يُصدَّر مرة ثانية.',
+  export_confirm_button: 'تصدير {count}',
+  export_committed: 'تم تصدير {count} بنداً في الدفعة {batch}.',
+  export_commit_nothing: 'لم يتبقَّ شيء للتصدير — هذه البنود صُدِّرت بالفعل.',
+
+  export_already_exported: '{count} من البنود هنا صُدِّرت بالفعل. تظهر لأن «إخفاء المُصدَّر سابقاً» متوقف، ولن تُصدَّر مرة أخرى.',
+  export_claimable_zero: 'كل ما هنا صُدِّر بالفعل. يمكنك تنزيل الملف، لكن لا يوجد ما يُعلَّم.',
+  export_tracking_conflict: 'هذه البنود تؤول إلى أكثر من رقم تتبع: {numbers}. راجع التسويات قبل إرسال هذا الملف.',
+  export_no_tracking: 'هذه التسويات بلا رقم تتبع لهذه الفترة: {settlements}. التصدير موقوف حتى يضبطه المنسّق — سيخرج التذييل فارغاً ولا يمكن تغيير الرقم بعد ذلك.',
+  export_sweep_incomplete: 'تعذّرت قراءة بعض المنسّقين، فهذا الملف ناقص: {names}. التصدير موقوف حتى يُعالَج ذلك.',
+
+  export_blocked_tracking: 'إحدى التسويات في هذه الدفعة بلا رقم تتبع لهذه الفترة.',
+  export_blocked_sweep: 'تعذّرت قراءة جدول أحد المنسّقين، فهذه الدفعة ناقصة.',
+
+  /* سجل ما خرج بالفعل (7.3). */
+  export_log_title: 'الدفعات المُصدَّرة',
+  export_log_subtitle: 'الأحدث أولاً',
+  export_log_empty_title: 'لم يُصدَّر شيء بعد',
+  export_log_empty_text: 'يظهر هنا كل تصدير مؤكَّد برقم دفعته، لترى ما أُرسل إلى المالية بالفعل.',
+
+  col_batch: 'الدفعة',
+  col_tracking: 'رقم التتبع',
+  col_report_type: 'التقرير',
+  col_rows: 'البنود',
+  col_exported_by: 'صُدِّر بواسطة',
+
   /* --- routed but not yet built --- */
   screen_not_built_title: 'لم تُبنَ بعد',
   coming_in_stage_5: 'بيانات الإدارة — الفرق وجدول الموقع ← كود العمل والمستخدمون والقوائم — تأتي مع شاشات الإدارة.',
@@ -498,6 +561,15 @@ export const ar = {
   err_msg_filter_required: 'اختر فريقاً أو منسّقاً أو شهراً أو فترة قبل الاعتماد الجماعي.',
   err_msg_batch_too_large: 'عدد البنود أكبر مما يسمح به الاعتماد الجماعي الواحد. ضيّق التصفية وحاول مجدداً.',
   err_msg_invalid_period: 'هذه ليست فترة — استخدم القديم أو الجديد.',
+  err_msg_busy: 'هناك تصدير أو اعتماد جارٍ الآن. حاول بعد لحظات.',
+
+  /* --- errors: the export actions (3.7) --- */
+  err_msg_invalid_export_filter: 'اختر الفريق والشهر والفترة قبل التصدير.',
+  err_msg_invalid_report_type: 'اختر «عادي» أو «حسب الموقع».',
+  err_msg_tracking_no_missing: 'إحدى التسويات في هذه الدفعة بلا رقم تتبع لهذه الفترة. يجب ضبطه قبل تصدير هذه البنود.',
+  err_msg_coordinator_sheet_unreadable: 'تعذّرت قراءة جدول أحد المنسّقين، فكانت الدفعة ستخرج ناقصة. لم يُصدَّر شيء. أبلغ المطوّر.',
+  err_msg_export_too_large: 'عدد البنود أكبر مما يسمح به التصدير الواحد. ضيّقه إلى فريق وشهر واحد وحاول مجدداً.',
+  err_msg_invalid_limit: 'هذا ليس عدداً صحيحاً من البنود للعرض.',
 
   /* --- errors: reading an uploaded file (js/utils/xlsx.js) --- */
   err_msg_xlsx_unavailable: 'لم يُحمَّل قارئ ملفات Excel. تحقق من الاتصال وأعد تحميل الصفحة.',
@@ -506,5 +578,9 @@ export const ar = {
   err_msg_import_parse_failed: 'هذا الملف ليس جدول بيانات يستطيع التطبيق قراءته.',
   err_msg_import_no_sheets: 'لا توجد أوراق في هذا الملف.',
   err_msg_import_sheet_missing: 'هذه الورقة غير موجودة في الملف.',
-  err_msg_import_sheet_empty: 'هذه الورقة فارغة.'
+  err_msg_import_sheet_empty: 'هذه الورقة فارغة.',
+
+  /* --- errors: writing the finance file (js/utils/xlsx.js) --- */
+  err_msg_export_no_sheets: 'لم يكن هناك ما يوضع في الملف.',
+  err_msg_export_write_failed: 'تعذّر بناء الملف. أعد تحميل الصفحة وحاول مجدداً.'
 };

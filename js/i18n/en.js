@@ -415,6 +415,71 @@ export const en = {
 
   approved_by_stamp: 'by {name}',
 
+  /* --- manager: export (3.7, 7) ---
+   *
+   * The text INSIDE the preview frame — the tab names, the column headers, the
+   * OLD/NEW marker, the Arabic approval footer — is not here and is not
+   * translated. It is the finance file's own text and must be the same in both
+   * languages, or two managers would produce two different files for one batch.
+   * See the header of js/manager/exportTemplate.js.
+   */
+  export_subtitle: 'Build the finance files for one team and month — old and new, normal or per-site.',
+
+  export_pick_team: 'Choose a team…',
+  export_pick_month: 'Choose a month…',
+  export_report_type: 'Report type',
+  export_report_normal: 'Normal',
+  export_report_persite: 'Per-site',
+  export_exclude_exported: 'Hide already-exported',
+  export_exclude_exported_hint: 'On, an entry that has already gone to finance is never offered again. Turn it off only to rebuild a file finance has lost.',
+  export_generate: 'Generate',
+  export_generating: 'Generating…',
+  export_needs_team_month: 'Choose a team and a month first.',
+
+  export_start_title: 'Nothing generated yet',
+  export_start_text: 'Pick a team and a month, then Generate. You get one file per period — old and new are settled separately and carry their own tracking number.',
+
+  export_period_file: '{period} file',
+  export_nothing_title: 'Nothing to export',
+  export_nothing_text: 'No approved entry matches this team, month and period. Entries appear here once a manager has approved them.',
+
+  export_rows_summary: '{rows} rows in the file · {claimable} will be marked exported · {file}',
+  export_preview_capped: 'Showing the first {shown} of {total} rows. The file contains all of them.',
+
+  export_download: 'Download file',
+  export_downloaded: 'Downloaded {file}',
+  export_confirm: 'Confirm export',
+
+  export_confirm_title: 'Mark these entries exported?',
+  export_confirm_text: 'This marks the {count} approved entries in the {period} file for {team}, {month} as exported.',
+  export_confirm_tracking: 'Tracking # {tracking} · {type} report',
+  export_confirm_not_downloaded: 'You have not downloaded this file yet. After confirming, these entries stop appearing in the query — download it first.',
+  export_confirm_note: 'There is no undo. An exported entry is locked: it cannot be edited, re-approved, or exported a second time.',
+  export_confirm_button: 'Export {count}',
+  export_committed: '{count} entries exported as {batch}.',
+  export_commit_nothing: 'Nothing left to export — those entries had already gone out.',
+
+  export_already_exported: '{count} entries here have already been exported. They are shown because “hide already-exported” is off, and they will not be exported again.',
+  export_claimable_zero: 'Everything here has already been exported. You can still download the file, but there is nothing left to mark.',
+  export_tracking_conflict: 'These entries resolve to more than one tracking number: {numbers}. Check the settlements before sending this file.',
+  export_no_tracking: 'These settlements have no tracking number for this period: {settlements}. Export is blocked until a coordinator sets it — the footer would go out blank and the number cannot be changed afterwards.',
+  export_sweep_incomplete: 'Some coordinators could not be read, so this file is incomplete: {names}. Export is blocked until that is fixed.',
+
+  export_blocked_tracking: 'A settlement in this batch has no tracking number for this period.',
+  export_blocked_sweep: 'A coordinator’s sheet could not be read, so this batch is incomplete.',
+
+  /* The log of what has already gone out (7.3). */
+  export_log_title: 'Exported batches',
+  export_log_subtitle: 'Most recent first',
+  export_log_empty_title: 'Nothing exported yet',
+  export_log_empty_text: 'Every confirmed export appears here with its batch number, so you can see what finance has already been sent.',
+
+  col_batch: 'Batch',
+  col_tracking: 'Tracking #',
+  col_report_type: 'Report',
+  col_rows: 'Rows',
+  col_exported_by: 'Exported by',
+
   /* --- routed but not yet built --- */
   screen_not_built_title: 'Not built yet',
   coming_in_stage_5: 'Admin data — teams, the Site → Job Code lookup, people and lists — arrives with the admin screens.',
@@ -500,6 +565,15 @@ export const en = {
   err_msg_filter_required: 'Choose a team, coordinator, month or period before approving in bulk.',
   err_msg_batch_too_large: 'That is more entries than one bulk approval allows. Narrow the filter and try again.',
   err_msg_invalid_period: 'That is not a period — use old or new.',
+  err_msg_busy: 'Someone else is exporting or approving right now. Try again in a moment.',
+
+  /* --- errors: the export actions (3.7) --- */
+  err_msg_invalid_export_filter: 'Choose a team, a month and a period before exporting.',
+  err_msg_invalid_report_type: 'Choose Normal or Per-site.',
+  err_msg_tracking_no_missing: 'A settlement in this batch has no tracking number for this period. It has to be set before these entries can be exported.',
+  err_msg_coordinator_sheet_unreadable: 'A coordinator’s spreadsheet could not be read, so this batch would be incomplete. Nothing was exported. Tell the developer.',
+  err_msg_export_too_large: 'That is more entries than one export allows. Narrow it to one team and month and try again.',
+  err_msg_invalid_limit: 'That is not a valid number of rows to show.',
 
   /* --- errors: reading an uploaded file (js/utils/xlsx.js) --- */
   err_msg_xlsx_unavailable: 'The spreadsheet reader did not load. Check your connection and reload the page.',
@@ -508,5 +582,9 @@ export const en = {
   err_msg_import_parse_failed: 'That file is not a spreadsheet the app can read.',
   err_msg_import_no_sheets: 'That file has no sheets in it.',
   err_msg_import_sheet_missing: 'That sheet is not in the file.',
-  err_msg_import_sheet_empty: 'That sheet is empty.'
+  err_msg_import_sheet_empty: 'That sheet is empty.',
+
+  /* --- errors: writing the finance file (js/utils/xlsx.js) --- */
+  err_msg_export_no_sheets: 'There was nothing to put in the file.',
+  err_msg_export_write_failed: 'The file could not be built. Reload the page and try again.'
 };

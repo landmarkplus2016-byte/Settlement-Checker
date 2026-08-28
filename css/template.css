@@ -1,0 +1,284 @@
+/*
+ * template.css — the export preview (CLAUDE.md 7.2, 8.4).
+ *
+ * This is one of the two signature surfaces in the app (the grid is the other).
+ * It has one job: make the preview read like the finance file it becomes, so a
+ * manager can check a batch here instead of downloading it, opening Excel, and
+ * scrolling. The frame, the big Old/New marker, the totals row and the Arabic
+ * approval footer are all in the same places they are in the .xlsx.
+ *
+ * It deliberately looks like PAPER, not like the rest of the app: a hard border,
+ * square-ish corners, tighter type, no card shadow. The surrounding chrome is
+ * the application; this block is a document sitting on it.
+ *
+ * Rules that hold here as everywhere: no hex outside tokens.css (rule 23), and
+ * logical properties only — the app flips to RTL (rule 24). Numbers, Site IDs,
+ * Job Codes and money stay LTR inside an RTL page via `.num` (8.1).
+ */
+
+/* ------------------------------------------------------------------ *
+ * Warnings above the preview
+ * ------------------------------------------------------------------ */
+
+.tpl-warnings {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  margin-block-end: var(--space-5);
+}
+
+/* ------------------------------------------------------------------ *
+ * The sheet
+ * ------------------------------------------------------------------ */
+
+.tpl {
+  border: 1px solid var(--color-navy);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface);
+  overflow: hidden;
+  margin-block-end: var(--space-6);
+}
+
+.tpl:last-child { margin-block-end: 0; }
+
+/* ------------------------------------------------------------------ *
+ * The header block (Name / Account / Total) and the big marker
+ * ------------------------------------------------------------------ */
+
+.tpl-head {
+  display: flex;
+  align-items: stretch;
+  gap: var(--space-4);
+  border-block-end: 1px solid var(--color-navy);
+  background: var(--color-surface-3);
+}
+
+.tpl-head-main {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: var(--space-4) var(--space-5);
+}
+
+.tpl-title {
+  font-size: 1.05rem;
+  font-weight: var(--fw-black);
+  color: var(--color-navy);
+  letter-spacing: .02em;
+  margin-block-end: var(--space-3);
+}
+
+.tpl-meta {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: var(--space-1) var(--space-4);
+  margin: 0;
+}
+
+/*
+ * Each label/value pair is its own row of the grid. `display: contents` lets the
+ * <div> that groups them for semantics disappear from the layout, so every label
+ * lines up in one column and every value in the next — the way the header block
+ * of the workbook does.
+ */
+.tpl-meta-row { display: contents; }
+
+.tpl-meta-label {
+  font-size: .75rem;
+  font-weight: var(--fw-semibold);
+  text-transform: uppercase;
+  letter-spacing: .04em;
+  color: var(--color-text-muted);
+}
+
+.tpl-meta-value {
+  margin: 0;
+  font-size: .85rem;
+  font-weight: var(--fw-semibold);
+  color: var(--color-text-primary);
+  overflow-wrap: anywhere;
+}
+
+/*
+ * The big Old/New marker (7.2). Amber for old, blue for new — the same two
+ * colours the badges use everywhere else in the app (8.3), so a manager reads
+ * the period before he reads the word.
+ */
+.tpl-marker {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 7rem;
+  padding-inline: var(--space-5);
+  border-inline-start: 1px solid var(--color-navy);
+
+  font-size: 1.6rem;
+  font-weight: var(--fw-black);
+  letter-spacing: .12em;
+
+  /* Latin OLD/NEW, kept LTR even on an RTL page. */
+  direction: ltr;
+}
+
+.tpl-old .tpl-marker { background: var(--color-old-bg); color: var(--color-old-fg); }
+.tpl-new .tpl-marker { background: var(--color-new-bg); color: var(--color-new-fg); }
+
+/* ------------------------------------------------------------------ *
+ * The table
+ * ------------------------------------------------------------------ */
+
+/*
+ * The one place in the app where horizontal scrolling is right: the fuel layout
+ * is twelve columns and squeezing it would stop it looking like the sheet.
+ */
+.tpl-table-wrap { overflow-x: auto; }
+
+.tpl-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: .8rem;
+  white-space: nowrap;
+}
+
+.tpl-table th,
+.tpl-table td {
+  padding: var(--space-2) var(--space-3);
+  border-inline-end: 1px solid var(--color-grid-line);
+  border-block-end: 1px solid var(--color-grid-line);
+  text-align: start;
+}
+
+.tpl-table th:last-child,
+.tpl-table td:last-child { border-inline-end: 0; }
+
+.tpl-table thead th {
+  background: var(--color-navy);
+  color: var(--color-text-inverse);
+  font-size: .72rem;
+  font-weight: var(--fw-semibold);
+  text-transform: uppercase;
+  letter-spacing: .04em;
+  border-inline-end-color: var(--color-navy-3);
+}
+
+.tpl-table tbody tr:nth-child(even) { background: var(--color-surface-2); }
+
+/* Numbers, ids and money read left-to-right in both languages (8.1). */
+.tpl-table .num { text-align: end; }
+.tpl-table td.num { font-variant-numeric: tabular-nums; }
+.tpl-table .tpl-money { font-weight: var(--fw-semibold); }
+
+/*
+ * A row the per-site report divided out of a multi-site line (6.4). Tinted, not
+ * boxed: on a per-site file most rows are split, and a heavy treatment would
+ * make the exceptions — the whole lines — look like the anomaly.
+ */
+.tpl-table tbody tr.is-split { background: var(--color-primary-subtle); }
+.tpl-table tbody tr.is-split:nth-child(even) { background: var(--color-primary-subtle); }
+
+.tpl-table tfoot td {
+  background: var(--color-surface-3);
+  border-block-start: 2px solid var(--color-navy);
+  border-block-end: 0;
+  font-weight: var(--fw-bold);
+  color: var(--color-navy);
+}
+
+.tpl-table tfoot .tpl-total-label {
+  text-align: end;
+  text-transform: uppercase;
+  letter-spacing: .04em;
+  font-size: .72rem;
+  color: var(--color-text-secondary);
+}
+
+/* The preview shows the first page of rows; the file always gets all of them. */
+.tpl-more {
+  padding: var(--space-3) var(--space-4);
+  border-block-end: 1px solid var(--color-grid-line);
+  background: var(--color-surface-2);
+  font-size: .75rem;
+  color: var(--color-text-muted);
+  text-align: center;
+}
+
+/* ------------------------------------------------------------------ *
+ * The approval footer (7.2)
+ * ------------------------------------------------------------------ */
+
+.tpl-foot {
+  padding: var(--space-4) var(--space-5) var(--space-5);
+  border-block-start: 1px solid var(--color-navy);
+  background: var(--color-surface-3);
+}
+
+.tpl-foot-line {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin-block-end: var(--space-6);
+  font-size: .8rem;
+}
+
+.tpl-foot-label {
+  font-weight: var(--fw-semibold);
+  text-transform: uppercase;
+  letter-spacing: .04em;
+  font-size: .72rem;
+  color: var(--color-text-muted);
+}
+
+.tpl-foot-value {
+  font-weight: var(--fw-bold);
+  color: var(--color-navy);
+}
+
+/*
+ * المدير المسؤل · مدير الحسابات · إعتماد — the three signature blocks, spread
+ * across the width exactly as they are in the workbook and in the .xlsx.
+ */
+.tpl-signatures {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--space-6);
+}
+
+.tpl-sign {
+  flex: 1 1 0;
+  max-width: 12rem;
+  text-align: center;
+}
+
+.tpl-sign-rule {
+  border-block-end: 1px solid var(--color-text-secondary);
+  margin-block-end: var(--space-2);
+  height: var(--space-5);
+}
+
+.tpl-sign-label {
+  font-size: .8rem;
+  font-weight: var(--fw-semibold);
+  color: var(--color-text-primary);
+
+  /* Always Arabic, in both languages — it is the file's own text, not chrome. */
+  direction: rtl;
+}
+
+/* ------------------------------------------------------------------ *
+ * Narrow screens
+ * ------------------------------------------------------------------ */
+
+@media (max-width: 720px) {
+  .tpl-head { flex-direction: column; gap: 0; }
+
+  .tpl-marker {
+    min-width: 0;
+    padding-block: var(--space-2);
+    border-inline-start: 0;
+    border-block-start: 1px solid var(--color-navy);
+    font-size: 1.2rem;
+  }
+
+  .tpl-signatures { gap: var(--space-3); }
+  .tpl-sign-label { font-size: .72rem; }
+}

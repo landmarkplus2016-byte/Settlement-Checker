@@ -30,6 +30,7 @@ import { logout } from './auth/session.js';
 import { renderCoordinatorDashboard, bindCoordinatorDashboardEvents } from './coordinator/dashboard.js';
 import { renderManagerDashboard, bindManagerDashboardEvents } from './manager/dashboard.js';
 import { renderApprovals, bindApprovalsEvents } from './manager/approvals.js';
+import { renderExport, bindExportEvents } from './manager/export.js';
 
 import { renderSettlementPage, bindSettlementPageEvents } from './coordinator/settlement.js';
 
@@ -60,14 +61,13 @@ const ROUTES = [
 const ADMIN_DEFAULT = '#/admin/teams';
 
 /**
- * Screens that Stage 4 routes to but does not build. Each maps to the i18n keys
- * for its placeholder, and to the stage that will replace it. Removing an entry
- * from here and adding a case to renderScreen() is the whole of wiring a real
- * screen up.
+ * Screens that are routed but not built. Each maps to the i18n keys for its
+ * placeholder; removing an entry from here and adding a case to renderScreen()
+ * is the whole of wiring a real screen up.
+ *
+ * Empty now — every route in 5.2 has a screen.
  */
-const NOT_BUILT_YET = {
-  export:       { titleKey: 'nav_export',          textKey: 'coming_in_stage_8' }
-};
+const NOT_BUILT_YET = {};
 
 /**
  * The four admin tabs (5.2). Each is a { render, bind } pair, keyed by route
@@ -259,6 +259,11 @@ function renderScreen(route, role, hash) {
   // The consolidated review screen (3.6). Manager-only, enforced server-side.
   if (route.name === 'approvals') {
     return paint(role, hash, renderApprovals(), bindApprovalsEvents);
+  }
+
+  // The export builder (3.7). Manager-only, enforced server-side.
+  if (route.name === 'export') {
+    return paint(role, hash, renderExport(), bindExportEvents);
   }
 
   /*
