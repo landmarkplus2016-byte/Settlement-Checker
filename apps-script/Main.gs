@@ -45,8 +45,8 @@ function doPost(e) {
  * returns plain data; dispatch() wraps it in the success envelope. `session` is
  * null for the three public actions.
  *
- * Later stages fill in the coordinator (3.5), manager (3.6), export (3.7) and
- * admin (3.4) actions here.
+ * Later stages fill in the coordinator (3.5), manager (3.6) and export (3.7)
+ * actions here.
  */
 var ACTIONS = {
 
@@ -75,15 +75,77 @@ var ACTIONS = {
   },
 
   /*
-   * Admin (3.4). Only this one is live — the change-password screen needs it
-   * (4.3). Stage 5.1 adds the other ten alongside it.
+   * Admin (3.4) — all manager-only, enforced by requireManager() inside each
+   * handler in Admin.gs rather than here, so the guard travels with the code
+   * that does the writing (rule 5).
    *
-   * Not manager-only at this level: the handler distinguishes changing your own
-   * password from changing someone else's. See Admin.gs.
+   * reset_user_password is the one exception and is NOT manager-only at any
+   * level: the handler distinguishes changing your own password (any role — the
+   * forced-reset flow of 4.3) from changing someone else's (manager-only).
    */
+
+  /* people / the coordinator registry */
+  list_users: {
+    auth: true,
+    handler: function (session, payload) { return handleListUsers(session, payload); }
+  },
+  create_user: {
+    auth: true,
+    handler: function (session, payload) { return handleCreateUser(session, payload); }
+  },
+  update_user: {
+    auth: true,
+    handler: function (session, payload) { return handleUpdateUser(session, payload); }
+  },
   reset_user_password: {
     auth: true,
     handler: function (session, payload) { return handleResetUserPassword(session, payload); }
+  },
+  deactivate_user: {
+    auth: true,
+    handler: function (session, payload) { return handleDeactivateUser(session, payload); }
+  },
+
+  /* teams */
+  list_teams: {
+    auth: true,
+    handler: function (session, payload) { return handleListTeams(session, payload); }
+  },
+  create_team: {
+    auth: true,
+    handler: function (session, payload) { return handleCreateTeam(session, payload); }
+  },
+  update_team: {
+    auth: true,
+    handler: function (session, payload) { return handleUpdateTeam(session, payload); }
+  },
+
+  /* the Site -> Job Code lookup */
+  list_site_jc: {
+    auth: true,
+    handler: function (session, payload) { return handleListSiteJc(session, payload); }
+  },
+  upsert_site_jc: {
+    auth: true,
+    handler: function (session, payload) { return handleUpsertSiteJc(session, payload); }
+  },
+  bulk_import_site_jc: {
+    auth: true,
+    handler: function (session, payload) { return handleBulkImportSiteJc(session, payload); }
+  },
+  delete_site_jc: {
+    auth: true,
+    handler: function (session, payload) { return handleDeleteSiteJc(session, payload); }
+  },
+
+  /* dropdown reference data */
+  list_lists: {
+    auth: true,
+    handler: function (session, payload) { return handleListLists(session, payload); }
+  },
+  update_lists: {
+    auth: true,
+    handler: function (session, payload) { return handleUpdateLists(session, payload); }
   }
 };
 

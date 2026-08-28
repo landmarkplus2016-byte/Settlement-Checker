@@ -816,3 +816,257 @@
   color: var(--color-text-primary);
   margin-block-end: var(--space-3);
 }
+
+/* ================================================================== *
+ * Admin screens (CLAUDE.md 5.2)
+ *
+ * Same two absolutes as everywhere else: tokens only, logical properties
+ * only. The period select below is the one place a control is coloured by
+ * its value — Old amber, New blue (8.3).
+ * ================================================================== */
+
+/* A filter bar above a list. */
+.toolbar {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+  margin-block-end: var(--space-4);
+}
+
+.toolbar-search { inline-size: 280px; max-inline-size: 100%; }
+.toolbar-select { inline-size: auto; }
+
+/* The trailing actions column of a list table. */
+th.col-actions,
+td.col-actions {
+  text-align: end;
+  inline-size: 1%;
+  white-space: nowrap;
+}
+
+.cell-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-2);
+}
+
+/* The count under a table. */
+.table-foot {
+  padding: var(--space-3) var(--space-5);
+  border-block-start: 1px solid var(--color-border-2);
+  background: var(--color-surface-2);
+  font-size: 11.5px;
+  color: var(--color-text-muted);
+}
+
+/*
+ * The inline period control on the Site → Job Code table. Coloured like the
+ * badge it replaces, so a table of periods still reads at a glance. The native
+ * dropdown arrow is left alone on purpose — the browser places it on the
+ * correct side in both directions, which a background image would not.
+ */
+.period-select {
+  inline-size: auto;
+  padding-block: 3px;
+  padding-inline: var(--space-2);
+  border: 1px solid transparent;
+  border-radius: var(--radius-lg);
+  font-size: 11px;
+  font-weight: var(--fw-bold);
+  cursor: pointer;
+}
+
+.period-select.is-old { background: var(--color-old-bg); color: var(--color-old-fg); }
+.period-select.is-new { background: var(--color-new-bg); color: var(--color-new-fg); }
+
+.period-select:disabled { opacity: .6; cursor: wait; }
+
+/* A list still loading. */
+.loading-block {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-3);
+  padding: var(--space-8);
+  color: var(--color-text-secondary);
+  font-size: 12.5px;
+}
+
+/* ------------------------------------------------------------------ *
+ * Dialog forms
+ * ------------------------------------------------------------------ */
+
+.form-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-4);
+}
+
+.form-grid .field-full { grid-column: 1 / -1; }
+
+@media (max-width: 560px) {
+  .form-grid { grid-template-columns: 1fr; }
+}
+
+/* A checkbox and its label, side by side and clickable as one. */
+.check-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  cursor: pointer;
+}
+
+.check-row span {
+  font-size: 12.5px;
+  color: var(--color-text-secondary);
+}
+
+.check-row input { cursor: pointer; }
+
+/* The wider dialog, for the import preview. */
+.modal-lg { max-inline-size: 640px; }
+
+/* ------------------------------------------------------------------ *
+ * The Excel import preview
+ * ------------------------------------------------------------------ */
+
+.import-stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+  gap: var(--space-3);
+}
+
+.import-stat {
+  padding: var(--space-3);
+  background: var(--color-surface-2);
+  border: 1px solid var(--color-border-2);
+  border-radius: var(--radius-md);
+}
+
+.import-stat-value {
+  font-size: 20px;
+  font-weight: var(--fw-bold);
+  color: var(--color-navy-2);
+  line-height: 1.2;
+}
+
+.import-stat-label {
+  font-size: 11.5px;
+  color: var(--color-text-secondary);
+  margin-block-start: 2px;
+}
+
+.problem-list {
+  max-block-size: 210px;
+  overflow-y: auto;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+}
+
+.problem-row {
+  padding: 7px var(--space-3);
+  font-size: 12px;
+  border-block-end: 1px solid var(--color-border-2);
+}
+
+.problem-row:last-child { border-block-end: 0; }
+
+/* ------------------------------------------------------------------ *
+ * Tabs — the Lists screen's five lists
+ * ------------------------------------------------------------------ */
+
+.tabs {
+  display: flex;
+  gap: var(--space-1);
+  flex-wrap: wrap;
+  border-block-end: 1px solid var(--color-border);
+  margin-block-end: var(--space-5);
+}
+
+.tab {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-4);
+  margin-block-end: -1px;
+  border-block-end: 2px solid transparent;
+  font-size: 12.5px;
+  font-weight: var(--fw-semibold);
+  color: var(--color-text-secondary);
+}
+
+.tab:hover { color: var(--color-text-primary); }
+
+.tab.is-active {
+  color: var(--color-primary);
+  border-block-end-color: var(--color-primary);
+  font-weight: var(--fw-bold);
+}
+
+.tab-count {
+  padding-block: 1px;
+  padding-inline: 6px;
+  border-radius: var(--radius-pill);
+  background: var(--color-surface-3);
+  font-size: 10.5px;
+  font-weight: var(--fw-bold);
+  color: var(--color-text-muted);
+}
+
+.tab.is-active .tab-count {
+  background: var(--color-primary-light);
+  color: var(--color-primary);
+}
+
+/* ------------------------------------------------------------------ *
+ * The Lists option editor
+ * ------------------------------------------------------------------ */
+
+.option-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding-block: var(--space-2);
+  border-block-end: 1px solid var(--color-border-2);
+}
+
+.option-row:last-child { border-block-end: 0; }
+
+.option-index {
+  flex: 0 0 auto;
+  inline-size: 24px;
+  text-align: end;
+  font-size: 11.5px;
+  color: var(--color-text-muted);
+}
+
+.option-row .input { flex: 1 1 auto; min-inline-size: 0; }
+
+.option-row .check-row { flex: 0 0 auto; }
+
+/* A square, quiet button for the reorder and remove controls. */
+.icon-btn {
+  flex: 0 0 auto;
+  inline-size: 28px;
+  block-size: 28px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-sm);
+  color: var(--color-text-muted);
+  font-size: 12px;
+  transition: background-color .15s ease, color .15s ease;
+}
+
+.icon-btn:hover:not(:disabled) {
+  background: var(--color-surface-3);
+  color: var(--color-text-primary);
+}
+
+.icon-btn:disabled { opacity: .3; cursor: not-allowed; }
+
+.icon-btn-danger:hover:not(:disabled) {
+  background: var(--color-danger-bg);
+  color: var(--color-danger);
+}

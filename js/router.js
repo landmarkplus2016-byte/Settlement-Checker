@@ -30,6 +30,11 @@ import { logout } from './auth/session.js';
 import { renderCoordinatorDashboard, bindCoordinatorDashboardEvents } from './coordinator/dashboard.js';
 import { renderManagerDashboard, bindManagerDashboardEvents } from './manager/dashboard.js';
 
+import { renderTeams, bindTeamsEvents } from './admin/teams.js';
+import { renderSiteJc, bindSiteJcEvents } from './admin/siteJc.js';
+import { renderUsers, bindUsersEvents } from './admin/users.js';
+import { renderLists, bindListsEvents } from './admin/lists.js';
+
 /**
  * The route table — CLAUDE.md 5.2, in the order it lists them.
  *
@@ -60,11 +65,19 @@ const ADMIN_DEFAULT = '#/admin/teams';
 const NOT_BUILT_YET = {
   settlement:   { titleKey: 'settlement_title',    textKey: 'coming_in_stage_6' },
   approvals:    { titleKey: 'nav_approvals',       textKey: 'coming_in_stage_7' },
-  export:       { titleKey: 'nav_export',          textKey: 'coming_in_stage_8' },
-  admin_teams:  { titleKey: 'nav_teams',           textKey: 'coming_in_stage_5' },
-  admin_sitejc: { titleKey: 'nav_sitejc',          textKey: 'coming_in_stage_5' },
-  admin_people: { titleKey: 'nav_people',          textKey: 'coming_in_stage_5' },
-  admin_lists:  { titleKey: 'nav_lists',           textKey: 'coming_in_stage_5' }
+  export:       { titleKey: 'nav_export',          textKey: 'coming_in_stage_8' }
+};
+
+/**
+ * The four admin tabs (5.2). Each is a { render, bind } pair, keyed by route
+ * name — they are identical in shape, so listing them beats four more branches
+ * in renderScreen().
+ */
+const ADMIN_SCREENS = {
+  admin_teams:  { render: renderTeams,  bind: bindTeamsEvents },
+  admin_sitejc: { render: renderSiteJc, bind: bindSiteJcEvents },
+  admin_people: { render: renderUsers,  bind: bindUsersEvents },
+  admin_lists:  { render: renderLists,  bind: bindListsEvents }
 };
 
 /** Called when the user asks to re-point this device; set by main.js. */
@@ -240,6 +253,16 @@ function renderScreen(route, role, hash) {
       return paint(role, hash, renderManagerDashboard(), bindManagerDashboardEvents);
     }
     return paint(role, hash, renderCoordinatorDashboard(), bindCoordinatorDashboardEvents);
+  }
+
+  /*
+   * The admin tabs. Each renders a shell with a loading body synchronously, then
+   * its bind* fetches and fills it — paint() takes a string, so a screen that
+   * needs data cannot render it on the first pass (5.3).
+   */
+  const admin = ADMIN_SCREENS[route.name];
+  if (admin) {
+    return paint(role, hash, admin.render(), admin.bind);
   }
 
   /*
