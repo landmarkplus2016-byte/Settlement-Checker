@@ -16,9 +16,18 @@ import { api } from '../api.js';
 import { t, errorMessage } from '../i18n/i18n.js';
 import { escapeHtml, qs } from '../utils/dom.js';
 import { renderLoading, renderLoadError, renderEmpty } from '../components/table.js';
+import { openModal } from '../components/modal.js';
+import { toastSuccess } from '../components/toast.js';
 
 /** The settlements from the last load. */
 let settlements = [];
+
+/**
+ * `Lists.months`, fetched the first time the New-settlement dialog opens and
+ * kept for the life of the screen. The month must be one of these — the server
+ * rejects anything else as `unknown_month` — so it is a select, never free text.
+ */
+let monthOptions = null;
 
 /**
  * The coordinator dashboard.
@@ -32,6 +41,10 @@ export function renderCoordinatorDashboard() {
           <h1>${escapeHtml(t('dashboard_title'))}</h1>
           <div class="page-subtitle">${escapeHtml(t('coordinator_dashboard_subtitle'))}</div>
         </div>
+        <span class="spacer"></span>
+        <button class="btn btn-primary" type="button" data-action="new-settlement">
+          ${escapeHtml(t('settlement_new'))}
+        </button>
       </div>
 
       <div class="stat-row" id="coordinator-stats">
@@ -60,6 +73,7 @@ export function bindCoordinatorDashboardEvents() {
 
   page.addEventListener('click', function (event) {
     if (event.target.closest('[data-action="retry"]')) load();
+    if (event.target.closest('[data-action="new-settlement"]')) openNewSettlement();
   });
 
   load();
@@ -87,6 +101,128 @@ async function load() {
     settlements = [];
     body.innerHTML = renderLoadError(errorMessage(err));
   }
+}
+
+/* ------------------------------------------------------------------ *
+ * Creating a settlement — the way into the grid
+ * ------------------------------------------------------------------ */
+
+/**
+ * The New-settlement dialog.
+ *
+ * A settlement is one coordinator + one month (rule 9), and it is the container
+ * every entry hangs off — so this is the only door into the grid. It carries the
+ * account and the two tracking numbers, because those are batch-level facts set
+ * once for the month, not per row.
+ *
+ * Both tracking numbers are optional here. `confirm_track` refuses to move a
+ * track whose number is unset (3.5), so a coordinator can start typing entries
+ * on the day he opens the month and fill in the numbers when finance issues
+ * them — the header on the settlement screen edits them later.
+ */
+async function openNewSettlement() {
+  if (!monthOptions) {
+    try {
+      const data = await api.call('list_lists', { list_name: 'months' });
+      monthOptions = ((data && data.lists && data.lists.months) || [])
+        .map(function (option) { return option.value; });
+    } catch (err) {
+      monthOptions = [];
+    }
+  }
+
+  const year = String(new Date().getFullYear());
+
+  openModal({
+    title: t('settlement_new'),
+    confirmLabel: t('create'),
+
+    bodyHtml: `
+      <div class="field">
+        <label class="label" for="new-month">${escapeHtml(t('col_month'))}</label>
+        ${renderMonthControl()}
+      </div>
+
+      <div class="field">
+        <label class="label" for="new-account">${escapeHtml(t('col_account'))}</label>
+        <input class="input num" id="new-account" type="text" maxlength="40"
+               placeholder="${escapeHtml(t('settlement_account_placeholder'))}">
+      </div>
+
+      <div class="field">
+        <label class="label" for="new-old-tracking">${escapeHtml(t('settlement_old_tracking'))}</label>
+        <input class="input num" id="new-old-tracking" type="number" min="1" step="1"
+               placeholder="${escapeHtml(t('settlement_tracking_optional'))}">
+      </div>
+
+      <div class="field">
+        <label class="label" for="new-new-tracking">${escapeHtml(t('settlement_new_tracking'))}</label>
+        <input class="input num" id="new-new-tracking" type="number" min="1" step="1"
+               placeholder="${escapeHtml(t('settlement_tracking_optional'))}">
+      </div>
+    `,
+
+    onConfirm: async function (ctx) {
+      const month = ctx.value('#new-month');
+      const account = ctx.value('#new-account');
+
+      // Checked here only to save a round trip; Coordinator.gs validates both
+      // again and owns the answer.
+      if (!month) {
+        ctx.setError(t('settlement_month_required'));
+        return false;
+      }
+      if (!account) {
+        ctx.setError(t('settlement_account_required'));
+        return false;
+      }
+
+      const data = await api.call('create_settlement', {
+        month: month,
+        account: account,
+        fiscal_year: year,
+        old_tracking_no: ctx.value('#new-old-tracking'),
+        new_tracking_no: ctx.value('#new-new-tracking')
+      });
+
+      const created = data && data.settlement;
+      if (!created) return;
+
+      toastSuccess(t('settlement_created'));
+
+      // Straight into the grid — creating a month and then hunting for its row
+      // is a step with no purpose.
+      location.hash = '#/settlement/' + encodeURIComponent(created.settlement_id);
+    }
+  });
+}
+
+/**
+ * The month field.
+ *
+ * Normally a select over `Lists.months`, so a typed "Augst" cannot become a
+ * second August. On a fresh install that list is empty, and the server accepts
+ * any non-empty label precisely so the app is usable before an admin has been
+ * near the Lists screen (isKnownMonthLabel in Coordinator.gs) — so we fall back
+ * to a text box rather than a select with nothing in it.
+ *
+ * @return {string} HTML
+ */
+function renderMonthControl() {
+  if (!monthOptions.length) {
+    return `
+      <input class="input" id="new-month" type="text" maxlength="20"
+             placeholder="${escapeHtml(t('settlement_month_placeholder'))}">
+      <div class="field-hint">${escapeHtml(t('settlement_no_months'))}</div>`;
+  }
+
+  return `
+    <select class="select" id="new-month">
+      <option value="">${escapeHtml(t('settlement_pick_month'))}</option>
+      ${monthOptions.map(function (month) {
+        return `<option value="${escapeHtml(month)}">${escapeHtml(month)}</option>`;
+      }).join('')}
+    </select>`;
 }
 
 /* ------------------------------------------------------------------ *

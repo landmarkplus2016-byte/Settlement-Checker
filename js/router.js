@@ -23,7 +23,6 @@ import { escapeHtml, mount } from './utils/dom.js';
 import { renderLogin, bindLoginEvents } from './auth/login.js';
 import { renderChangePassword, bindChangePasswordEvents } from './auth/changePassword.js';
 
-import { renderTopbar, bindTopbarEvents } from './components/topbar.js';
 import { renderSidebar, bindSidebarEvents } from './components/sidebar.js';
 import { logout } from './auth/session.js';
 
@@ -302,14 +301,15 @@ function renderScreen(route, role, hash) {
 }
 
 /* ------------------------------------------------------------------ *
- * The shells (5.1)
+ * The shell (5.1)
  * ------------------------------------------------------------------ */
 
 /**
- * Put a screen inside the shell for its role and wire everything.
+ * Put a screen inside the shell and wire everything.
  *
- * Coordinator: slim top bar over the content.
- * Manager:     navy sidebar beside the content.
+ * One shell for both roles — the navy sidebar beside the content. What differs
+ * is only what the rail lists, which renderSidebar() decides from the session's
+ * role. `role` is still passed because the shell reads it there.
  *
  * @param {string} role
  * @param {string} hash the active route, for the nav highlight.
@@ -317,23 +317,13 @@ function renderScreen(route, role, hash) {
  * @param {Function|null} bindContent the screen's bind* function.
  */
 function paint(role, hash, content, bindContent) {
-  if (role === 'manager') {
-    mount(`
-      <div class="app-layout">
-        ${renderSidebar(hash)}
-        <main class="content">${content}</main>
-      </div>
-    `);
-    bindSidebarEvents();
-  } else {
-    mount(`
-      <div class="app-column">
-        ${renderTopbar(hash)}
-        <main class="content">${content}</main>
-      </div>
-    `);
-    bindTopbarEvents();
-  }
+  mount(`
+    <div class="app-layout">
+      ${renderSidebar(hash)}
+      <main class="content">${content}</main>
+    </div>
+  `);
+  bindSidebarEvents();
 
   if (typeof bindContent === 'function') bindContent();
 }

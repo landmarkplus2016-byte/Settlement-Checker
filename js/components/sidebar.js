@@ -1,12 +1,18 @@
 /**
- * sidebar.js — the manager shell's chrome (CLAUDE.md 5.1).
+ * sidebar.js — the app shell's chrome, for BOTH roles (CLAUDE.md 5.1).
  *
- * "A left sidebar (Dashboard, Approvals, Export, Admin) + content. Admin has
- * sub-tabs: Teams, Site→JC, People, Lists."
+ * Manager: "Dashboard, Approvals, Export, Admin". Admin has sub-tabs: Teams,
+ * Site→JC, People, Lists.
+ * Coordinator: Dashboard, plus the settlement he currently has open.
  *
- * Deep navy, per 8.3 — the manager shell is the one place that surface appears.
- * Proportions (230px, 10px/22px links, the 3px active rail) come from
- * design/Settlement App.html.
+ * The coordinator used to get a slim top bar instead, on the reasoning that two
+ * screens do not need a nav rail. The project owner asked for one shell: the
+ * coordinator sees the same navy rail the manager does, so the app looks like
+ * one product rather than two. His rail is shorter because his job is smaller —
+ * that is the only difference.
+ *
+ * Deep navy, per 8.3. Proportions (230px, 10px/22px links, the 3px active rail)
+ * come from design/Settlement App.html.
  *
  * The Admin sub-tabs are revealed only while an admin route is open: Admin
  * itself links to the first tab, so one click gets you in and the sub-list then
@@ -18,18 +24,24 @@ import { getUser, getDisplayName } from '../state.js';
 import { t, getLang, setLang } from '../i18n/i18n.js';
 import { escapeHtml, qs } from '../utils/dom.js';
 import { logout } from '../auth/session.js';
-import { roleLabel, initial } from './topbar.js';
 
 /**
- * The four top-level destinations (5.2). `match` is the hash prefix that counts
- * as "you are here" — Admin matches every #/admin/* route, not just its link.
+ * The top-level destinations per role (5.2). `match` is the hash prefix that
+ * counts as "you are here" — Admin matches every #/admin/* route, not just its
+ * own link.
  */
-const NAV_ITEMS = [
-  { href: '#/dashboard', match: '#/dashboard', labelKey: 'nav_dashboard', icon: '▦' },
-  { href: '#/approvals', match: '#/approvals', labelKey: 'nav_approvals', icon: '✓' },
-  { href: '#/export',    match: '#/export',    labelKey: 'nav_export',    icon: '↧' },
-  { href: '#/admin/teams', match: '#/admin',   labelKey: 'nav_admin',     icon: '⚙' }
-];
+const NAV_BY_ROLE = {
+  manager: [
+    { href: '#/dashboard', match: '#/dashboard', labelKey: 'nav_dashboard', icon: '▦' },
+    { href: '#/approvals', match: '#/approvals', labelKey: 'nav_approvals', icon: '✓' },
+    { href: '#/export',    match: '#/export',    labelKey: 'nav_export',    icon: '↧' },
+    { href: '#/admin/teams', match: '#/admin',   labelKey: 'nav_admin',     icon: '⚙' }
+  ],
+
+  coordinator: [
+    { href: '#/dashboard', match: '#/dashboard', labelKey: 'nav_dashboard', icon: '▦' }
+  ]
+};
 
 /** Admin's sub-tabs, in the order 5.1 lists them. */
 const ADMIN_TABS = [
@@ -40,7 +52,7 @@ const ADMIN_TABS = [
 ];
 
 /**
- * The manager sidebar.
+ * The sidebar for the signed-in user's role.
  *
  * @param {string} activeHash the current route, for the active highlight.
  * @return {string} HTML
@@ -52,7 +64,9 @@ export function renderSidebar(activeHash) {
   const user = getUser() || {};
   const inAdmin = hash.indexOf('#/admin') === 0;
 
-  const links = NAV_ITEMS.map(function (item) {
+  const items = NAV_BY_ROLE[user.role] || NAV_BY_ROLE.coordinator;
+
+  const links = items.map(function (item) {
     const active = hash.indexOf(item.match) === 0;
     const link = `
       <a class="nav-link${active ? ' is-active' : ''}" href="${item.href}"
@@ -64,6 +78,17 @@ export function renderSidebar(activeHash) {
     if (item.match === '#/admin' && inAdmin) {
       return link + `<div class="nav-sub">${renderAdminTabs(hash)}</div>`;
     }
+
+    /*
+     * The open settlement hangs under Dashboard, because that is where it was
+     * opened from and #/settlement/<id> has no nav entry of its own. It appears
+     * only while it is open — there is nothing to link to otherwise.
+     */
+    if (item.match === '#/dashboard' && user.role === 'coordinator') {
+      const open = openSettlementId(hash);
+      if (open) return link + `<div class="nav-sub">${renderOpenSettlement(open)}</div>`;
+    }
+
     return link;
   }).join('');
 
@@ -102,6 +127,33 @@ export function renderSidebar(activeHash) {
 }
 
 /**
+ * The settlement id in `#/settlement/<id>`, or '' on any other route.
+ * @param {string} hash
+ * @return {string}
+ */
+function openSettlementId(hash) {
+  const match = /^#\/settlement\/(.+)$/.exec(hash || '');
+  return match ? decodeURIComponent(match[1]) : '';
+}
+
+/**
+ * The open settlement, as a sub-link under Dashboard. Always the active item —
+ * it is only rendered while you are standing on it.
+ *
+ * The id keeps `.num` so it stays LTR in Arabic (8.1).
+ *
+ * @param {string} settlementId
+ * @return {string} HTML
+ */
+function renderOpenSettlement(settlementId) {
+  return `
+    <a class="nav-link is-active" href="#/settlement/${encodeURIComponent(settlementId)}"
+       aria-current="page">
+      <span class="num">${escapeHtml(settlementId)}</span>
+    </a>`;
+}
+
+/**
  * The Admin sub-tab list.
  * @param {string} hash the current route.
  * @return {string} HTML
@@ -132,4 +184,22 @@ export function bindSidebarEvents() {
   if (logoutButton) {
     logoutButton.addEventListener('click', function () { logout(); });
   }
+}
+
+/**
+ * @param {string} role
+ * @return {string} translated role name.
+ */
+export function roleLabel(role) {
+  return role === 'manager' ? t('role_manager') : t('role_coordinator');
+}
+
+/**
+ * First character of a display name, for the avatar.
+ * @param {string} name
+ * @return {string}
+ */
+export function initial(name) {
+  const trimmed = String(name || '').trim();
+  return trimmed ? trimmed.charAt(0).toUpperCase() : '?';
 }

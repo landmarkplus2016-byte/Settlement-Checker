@@ -388,12 +388,16 @@ A time-driven Apps Script trigger deletes expired Sessions rows.
 
 ## 5.1 Two roles, one shell
 
-After login the shell renders by role:
+After login both roles get the **same shell** — the deep-navy left sidebar beside a content area. Only what the rail lists differs:
 
-- **Coordinator shell:** a slim top bar + a content area. Screens: **Dashboard** (his settlements), **Settlement** (the grid).
-- **Manager shell:** a left sidebar (Dashboard, Approvals, Export, Admin) + content. Admin has sub-tabs: Teams, Site→JC, People, Lists.
+- **Coordinator:** Dashboard (his settlements), plus the settlement he currently has open as a sub-item. Screens: **Dashboard**, **Settlement** (the grid).
+- **Manager:** Dashboard, Approvals, Export, Admin. Admin has sub-tabs: Teams, Site→JC, People, Lists.
 
-The role comes from the session and is never chosen in the UI.
+The role comes from the session and is never chosen in the UI. `renderSidebar()` reads it and picks the nav; `paint()` in `router.js` has no role branch.
+
+> The coordinator had a slim white top bar until 2026-08-28, on the reasoning that two screens do not need a nav rail. The project owner asked for one shell so the app reads as one product. `js/components/topbar.js` is gone; `roleLabel()` and `initial()` moved into `sidebar.js`.
+
+**Getting into the grid:** the coordinator dashboard's **New settlement** button (`create_settlement`) is the only way a settlement comes into being, and a settlement row is the only way into `#/settlement/<id>`. Without that button a coordinator with no settlements has no route to the entry grid at all.
 
 ## 5.2 Routing
 
@@ -572,7 +576,7 @@ Derived from the approved reference (`design/Settlement_App.html`): a vivid indi
 }
 ```
 
-- **Coordinator vs manager tint:** both use the indigo primary. The manager shell's sidebar is the deep navy; the coordinator's top bar is white with the navy brand. No second accent — spend the boldness on the grid and the export template, keep the chrome quiet.
+- **Coordinator vs manager tint:** no difference. Both use the indigo primary over the same deep-navy sidebar (5.1). No second accent, no per-role tint — spend the boldness on the grid and the export template, keep the chrome quiet.
 - **Period colours are semantic** — Old is amber, New is blue, everywhere (badges, markers, export headers).
 
 ## 8.4 Components
@@ -615,7 +619,7 @@ settlement-checker/
       explode.js                 # per-site split (Section 6.4)
       xlsx.js                    # SheetJS wrappers
     components/
-      topbar.js  sidebar.js  modal.js  toast.js  badge.js  table.js
+      sidebar.js  modal.js  toast.js  badge.js  table.js
     auth/
       login.js  session.js  changePassword.js
     coordinator/
