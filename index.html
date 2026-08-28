@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html lang="en" dir="ltr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <meta name="description" content="Settlement Checker — expense and fuel settlement for the telecom operations team.">
+
+  <!-- The visible title is replaced at boot from get_config.app_name (js/main.js). -->
+  <title>Settlement Checker</title>
+
+  <!-- Design tokens first: every other stylesheet reads from them. -->
+  <link rel="stylesheet" href="css/tokens.css">
+  <link rel="stylesheet" href="css/base.css">
+  <link rel="stylesheet" href="css/components.css">
+  <link rel="stylesheet" href="css/grid.css">
+  <link rel="stylesheet" href="css/template.css">
+  <link rel="stylesheet" href="css/print.css" media="print">
+
+  <!--
+    SheetJS, pinned. The only third-party dependency in the project and the only
+    <script> that is not one of ours (CLAUDE.md, Tech Stack). Not a module — it
+    publishes the global `XLSX`, which js/utils/xlsx.js wraps.
+  -->
+  <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
+</head>
+<body>
+  <div id="app"></div>
+
+  <!-- The whole app boots from here; every other file is imported as a module. -->
+  <script type="module" src="js/main.js"></script>
+</body>
+</html>

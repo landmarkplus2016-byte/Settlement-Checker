@@ -1,0 +1,447 @@
+/*
+ * components.css — the shared primitives: buttons, cards, badges, form
+ * controls, alerts, modal, toast, spinner.
+ *
+ * Same two absolutes as base.css: tokens only (no hex), logical properties only
+ * (no left/right) — the app runs RTL in Arabic.
+ *
+ * Proportions follow design/Settlement App.html: 8px control radii, 14px card
+ * radii, navy-tinted shadows, bold small labels.
+ */
+
+/* ================================================================== *
+ * Buttons
+ * ================================================================== */
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  padding: 9px 14px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+  color: var(--color-text-primary);
+  font-size: 12.5px;
+  font-weight: var(--fw-bold);
+  line-height: 1.2;
+  white-space: nowrap;
+  transition: background-color .15s ease, border-color .15s ease, color .15s ease, box-shadow .15s ease;
+}
+
+.btn:disabled,
+.btn[aria-disabled="true"] {
+  opacity: .55;
+  cursor: not-allowed;
+}
+
+/* Primary — the indigo action. One per screen region. */
+.btn-primary {
+  background: var(--color-primary);
+  border-color: var(--color-primary);
+  color: var(--color-text-inverse);
+  box-shadow: var(--shadow-sm);
+}
+.btn-primary:hover:not(:disabled) {
+  background: var(--color-primary-hover);
+  border-color: var(--color-primary-hover);
+}
+
+/* Secondary — bordered, white. */
+.btn-secondary {
+  background: var(--color-surface);
+  border-color: var(--color-border);
+  color: var(--color-text-primary);
+  box-shadow: var(--shadow-sm);
+}
+.btn-secondary:hover:not(:disabled) {
+  border-color: var(--color-text-subtle);
+  background: var(--color-surface-2);
+}
+
+/* Ghost — chrome actions (language toggle, sign out). */
+.btn-ghost {
+  background: transparent;
+  border-color: transparent;
+  color: var(--color-text-secondary);
+  font-weight: var(--fw-semibold);
+}
+.btn-ghost:hover:not(:disabled) {
+  background: var(--color-primary-subtle);
+  color: var(--color-text-primary);
+}
+
+.btn-danger {
+  background: var(--color-danger-bg);
+  border-color: var(--color-danger-bg);
+  color: var(--color-danger);
+}
+.btn-danger:hover:not(:disabled) { border-color: var(--color-danger); }
+
+.btn-block { display: flex; inline-size: 100%; }
+.btn-sm { padding: 6px 10px; font-size: 11.5px; }
+.btn-lg { padding: 11px 18px; font-size: 13.5px; }
+
+/* ================================================================== *
+ * Cards
+ * ================================================================== */
+
+.card {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-xl);
+  box-shadow: var(--shadow-sm);
+  overflow: hidden;
+}
+
+.card-padded { padding: var(--space-5); }
+
+.card-header {
+  padding: var(--space-4) var(--space-5);
+  border-block-end: 1px solid var(--color-border-2);
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.card-title { font-size: 14px; font-weight: var(--fw-bold); }
+
+.card-body   { padding: var(--space-5); }
+.card-footer {
+  padding: var(--space-4) var(--space-5);
+  border-block-start: 1px solid var(--color-border-2);
+  background: var(--color-surface-2);
+}
+
+/* ================================================================== *
+ * Badges
+ * ================================================================== */
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: 3px 10px;
+  border-radius: var(--radius-lg);
+  font-size: 11px;
+  font-weight: var(--fw-bold);
+  line-height: 1.5;
+  background: var(--color-surface-3);
+  color: var(--color-text-secondary);
+  white-space: nowrap;
+}
+
+/* Period markers — Old is amber, New is blue, everywhere (CLAUDE.md 8.3). */
+.badge-old { background: var(--color-old-bg); color: var(--color-old-fg); }
+.badge-new { background: var(--color-new-bg); color: var(--color-new-fg); }
+
+/* Lifecycle statuses (CLAUDE.md 6.1). */
+.badge-draft     { background: var(--color-surface-3);   color: var(--color-text-secondary); }
+.badge-confirmed { background: var(--color-info-bg);     color: var(--color-info); }
+.badge-approved  { background: var(--color-success-bg);  color: var(--color-success); }
+.badge-returned  { background: var(--color-danger-bg);   color: var(--color-danger); }
+.badge-exported  { background: var(--color-primary);     color: var(--color-text-inverse); }
+
+.badge-neutral { background: var(--color-primary-subtle); color: var(--color-navy-3); }
+
+/* ================================================================== *
+ * Form controls
+ * ================================================================== */
+
+.field { display: flex; flex-direction: column; gap: var(--space-2); }
+
+.label {
+  font-size: 11.5px;
+  font-weight: var(--fw-bold);
+  color: var(--color-text-secondary);
+  letter-spacing: .02em;
+}
+
+.input,
+.select,
+.textarea {
+  inline-size: 100%;
+  padding: 9px 11px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+  color: var(--color-text-primary);
+  font-size: 13px;
+  transition: border-color .15s ease, box-shadow .15s ease;
+}
+
+.input::placeholder,
+.textarea::placeholder { color: var(--color-text-muted); }
+
+.input:hover:not(:disabled),
+.select:hover:not(:disabled),
+.textarea:hover:not(:disabled) { border-color: var(--color-text-subtle); }
+
+.input:focus,
+.select:focus,
+.textarea:focus {
+  outline: none;
+  border-color: var(--color-border-focus);
+  box-shadow: 0 0 0 3px var(--color-primary-light);
+}
+
+.input:disabled,
+.select:disabled,
+.textarea:disabled {
+  background: var(--color-surface-3);
+  color: var(--color-text-muted);
+  cursor: not-allowed;
+}
+
+.textarea { min-block-size: 78px; resize: vertical; }
+
+.select { cursor: pointer; }
+
+/* An invalid control and its message. */
+.input-error,
+.input.is-invalid,
+.select.is-invalid { border-color: var(--color-danger); }
+
+.field-error {
+  font-size: 11.5px;
+  font-weight: var(--fw-semibold);
+  color: var(--color-danger);
+}
+
+.field-hint {
+  font-size: 11.5px;
+  color: var(--color-text-muted);
+}
+
+/* ================================================================== *
+ * Alerts
+ * ================================================================== */
+
+.alert {
+  padding: 10px 14px;
+  border-radius: var(--radius-md);
+  font-size: 12.5px;
+  font-weight: var(--fw-semibold);
+}
+
+.alert-danger  { background: var(--color-danger-bg);  color: var(--color-danger); }
+.alert-warning { background: var(--color-warning-bg); color: var(--color-warning); }
+.alert-success { background: var(--color-success-bg); color: var(--color-success); }
+.alert-info    { background: var(--color-info-bg);    color: var(--color-info); }
+
+/* ================================================================== *
+ * Spinner
+ * ================================================================== */
+
+.spinner {
+  inline-size: 15px;
+  block-size: 15px;
+  border: 2px solid var(--color-primary-light);
+  border-block-start-color: var(--color-primary);
+  border-radius: var(--radius-pill);
+  animation: sc-spin .6s linear infinite;
+}
+
+.spinner-on-primary {
+  border-color: var(--color-primary-light);
+  border-block-start-color: var(--color-text-inverse);
+}
+
+@keyframes sc-spin { to { transform: rotate(360deg); } }
+
+@media (prefers-reduced-motion: reduce) {
+  .spinner { animation-duration: 1.6s; }
+  * { transition-duration: .01ms !important; }
+}
+
+/* ================================================================== *
+ * Modal
+ * ================================================================== */
+
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: var(--color-overlay);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-5);
+  z-index: 9000;
+}
+
+.modal {
+  inline-size: 100%;
+  max-inline-size: 520px;
+  max-block-size: calc(100vh - 80px);
+  overflow-y: auto;
+  background: var(--color-surface);
+  border-radius: var(--radius-xl);
+  box-shadow: var(--shadow-lg);
+}
+
+.modal-header {
+  padding: var(--space-4) var(--space-5);
+  border-block-end: 1px solid var(--color-border-2);
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.modal-title { font-size: 15px; font-weight: var(--fw-bold); }
+.modal-body  { padding: var(--space-5); }
+
+.modal-footer {
+  padding: var(--space-4) var(--space-5);
+  border-block-start: 1px solid var(--color-border-2);
+  background: var(--color-surface-2);
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-2);
+}
+
+.modal-close {
+  color: var(--color-text-muted);
+  font-size: 18px;
+  line-height: 1;
+  padding: var(--space-1);
+  border-radius: var(--radius-sm);
+}
+.modal-close:hover { color: var(--color-text-primary); background: var(--color-surface-3); }
+
+/* ================================================================== *
+ * Toast
+ * ================================================================== */
+
+.toast-host {
+  position: fixed;
+  inset-block-end: var(--space-6);
+  inset-inline-end: var(--space-6);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  z-index: 9500;
+  pointer-events: none;
+}
+
+.toast {
+  pointer-events: auto;
+  min-inline-size: 240px;
+  max-inline-size: 380px;
+  padding: 11px 15px;
+  border-radius: var(--radius-md);
+  background: var(--color-navy);
+  color: var(--color-text-inverse);
+  font-size: 12.5px;
+  font-weight: var(--fw-semibold);
+  box-shadow: var(--shadow-lg);
+  border-inline-start: 3px solid var(--color-primary);
+  animation: sc-toast-in .18s ease-out;
+}
+
+.toast-success { border-inline-start-color: var(--color-success); }
+.toast-error   { border-inline-start-color: var(--color-danger); }
+.toast-warning { border-inline-start-color: var(--color-warning); }
+
+.toast.is-leaving { opacity: 0; transition: opacity .2s ease; }
+
+@keyframes sc-toast-in {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: none; }
+}
+
+/* ================================================================== *
+ * Chrome — top bar used by the placeholder shells (Stage 4 builds the real ones)
+ * ================================================================== */
+
+.topbar {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  padding: var(--space-3) var(--space-6);
+  background: var(--color-surface);
+  border-block-end: 1px solid var(--color-border);
+  box-shadow: var(--shadow-sm);
+}
+
+.topbar-user {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  line-height: 1.25;
+}
+
+.avatar {
+  inline-size: 30px;
+  block-size: 30px;
+  border-radius: var(--radius-pill);
+  background: var(--color-primary);
+  color: var(--color-text-inverse);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  font-weight: var(--fw-bold);
+}
+
+/* Language toggle — a two-button segmented control. */
+.lang-toggle {
+  display: inline-flex;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+  overflow: hidden;
+}
+
+.lang-toggle button {
+  padding: 5px 11px;
+  font-size: 11.5px;
+  font-weight: var(--fw-bold);
+  color: var(--color-text-secondary);
+  background: var(--color-surface);
+}
+
+.lang-toggle button + button { border-inline-start: 1px solid var(--color-border); }
+
+.lang-toggle button:hover { background: var(--color-surface-3); }
+
+.lang-toggle button[aria-pressed="true"] {
+  background: var(--color-primary);
+  color: var(--color-text-inverse);
+}
+
+/* ================================================================== *
+ * Auth / setup card (login, script-url, fatal boot error)
+ * ================================================================== */
+
+.auth-card {
+  inline-size: 100%;
+  max-inline-size: 400px;
+  padding: var(--space-7);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-xl);
+  box-shadow: var(--shadow-lg);
+}
+
+.auth-head {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-2);
+  text-align: center;
+  margin-block-end: var(--space-6);
+}
+
+.auth-title { font-size: 19px; font-weight: var(--fw-bold); }
+
+.auth-subtitle {
+  font-size: 12.5px;
+  color: var(--color-text-secondary);
+}
+
+.auth-footnote {
+  font-size: 11.5px;
+  color: var(--color-text-muted);
+  text-align: center;
+}

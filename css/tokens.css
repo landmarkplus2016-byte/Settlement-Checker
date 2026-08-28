@@ -1,0 +1,76 @@
+/*
+ * tokens.css — the single source of colour, radius, shadow and type in the app
+ * (CLAUDE.md 8.3, rule 23).
+ *
+ * NOTHING outside this file may write a hex colour. Every other stylesheet
+ * references var(--color-*). If a value is missing here, add it here.
+ */
+
+:root{
+  /* brand / structure */
+  --color-navy:#0f1942;          /* sidebar, headers, brand */
+  --color-navy-2:#1a1d2e;        /* darkest text */
+  --color-navy-3:#232c63;        /* navy accents */
+
+  /* primary action (indigo) */
+  --color-primary:#3d5af1;
+  --color-primary-hover:#2d47d4;
+  --color-primary-light:#dbeafe;
+  --color-primary-subtle:#eef0f6;
+
+  /* surfaces */
+  --color-bg:#faf9f5;            /* warm off-white app bg */
+  --color-surface:#ffffff;
+  --color-surface-2:#fafbfd;
+  --color-surface-3:#f5f6fa;
+
+  /* text */
+  --color-text-primary:#1a1d2e;
+  --color-text-secondary:#4a5a72;
+  --color-text-muted:#9095b0;
+  --color-text-subtle:#aab2d8;
+  --color-text-inverse:#ffffff;
+
+  /* borders */
+  --color-border:#e2e4ed;
+  --color-border-2:#eef0f6;
+  --color-border-focus:#3d5af1;
+
+  /* status */
+  --color-success:#15803d; --color-success-bg:#dcfce7;
+  --color-info:#1e40af;    --color-info-bg:#dbeafe;
+  --color-warning:#b45309; --color-warning-bg:#fef3c7; --color-warning-strong:#92400e;
+  --color-danger:#991b1b;  --color-danger-bg:#fee2e2;
+
+  /* period markers */
+  --color-old-bg:#fef3c7; --color-old-fg:#92400e;
+  --color-new-bg:#dbeafe; --color-new-fg:#1e40af;
+
+  /* shadows — navy-tinted, per the reference */
+  --shadow-sm:0 1px 2px rgba(16,24,64,.05);
+  --shadow-md:0 1px 4px rgba(16,24,64,.10);
+  --shadow-lg:0 8px 24px rgba(16,24,64,.14);
+
+  /* radii */
+  --radius-sm:6px; --radius-md:8px; --radius-lg:12px; --radius-xl:14px; --radius-pill:999px;
+
+  /* type */
+  --font:'Segoe UI',system-ui,-apple-system,'Tahoma',sans-serif;
+  --fw-medium:500; --fw-semibold:600; --fw-bold:700; --fw-black:800;
+
+  /* spacing scale: 4 8 12 16 20 24 32 40 */
+}
+
+/*
+ * Additions to the Section 8.3 block above. Kept separate so the block stays a
+ * verbatim copy of CLAUDE.md, and kept *here* so rule 23 holds: no stylesheet
+ * outside this file may name a colour or a raw spacing step.
+ */
+:root{
+  /* the spacing scale named in the comment above, as variables */
+  --space-1:4px;  --space-2:8px;  --space-3:12px; --space-4:16px;
+  --space-5:20px; --space-6:24px; --space-7:32px; --space-8:40px;
+
+  /* modal scrim — the navy of the shadows, at scrim opacity */
+  --color-overlay:rgba(16,24,64,.45);
+}

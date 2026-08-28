@@ -72,6 +72,18 @@ var ACTIONS = {
   update_config: {
     auth: true,
     handler: function (session, payload) { return handleUpdateConfig(session, payload); }
+  },
+
+  /*
+   * Admin (3.4). Only this one is live — the change-password screen needs it
+   * (4.3). Stage 5.1 adds the other ten alongside it.
+   *
+   * Not manager-only at this level: the handler distinguishes changing your own
+   * password from changing someone else's. See Admin.gs.
+   */
+  reset_user_password: {
+    auth: true,
+    handler: function (session, payload) { return handleResetUserPassword(session, payload); }
   }
 };
 

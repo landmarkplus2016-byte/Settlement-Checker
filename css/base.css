@@ -1,0 +1,195 @@
+/*
+ * base.css — reset, document defaults, typography and the handful of layout
+ * primitives every screen uses.
+ *
+ * Two absolutes here (CLAUDE.md rules 23, 24):
+ *   - no hex colours: everything is var(--color-*) from tokens.css
+ *   - logical properties only: margin-inline-start, inset-inline-end, …
+ *     never left/right, because the app flips to RTL for Arabic.
+ */
+
+/* ------------------------------------------------------------------ *
+ * Reset
+ * ------------------------------------------------------------------ */
+
+*, *::before, *::after { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  padding: 0;
+  min-height: 100%;
+}
+
+html { -webkit-text-size-adjust: 100%; }
+
+body {
+  font-family: var(--font);
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--color-text-primary);
+  background: var(--color-bg);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+h1, h2, h3, h4, h5, h6, p, figure, blockquote, dl, dd { margin: 0; }
+ul, ol { margin: 0; padding: 0; list-style: none; }
+
+img, svg { display: block; max-width: 100%; }
+
+button, input, select, textarea { font: inherit; color: inherit; }
+button { cursor: pointer; background: none; border: 0; padding: 0; }
+
+table { border-collapse: collapse; width: 100%; }
+
+a {
+  color: var(--color-primary);
+  text-decoration: none;
+  cursor: pointer;
+}
+a:hover { color: var(--color-primary-hover); }
+
+/* ------------------------------------------------------------------ *
+ * Typography
+ * ------------------------------------------------------------------ */
+
+h1 { font-size: 22px; font-weight: var(--fw-bold);     letter-spacing: -0.01em; }
+h2 { font-size: 18px; font-weight: var(--fw-bold); }
+h3 { font-size: 15px; font-weight: var(--fw-semibold); }
+
+.text-secondary { color: var(--color-text-secondary); }
+.text-muted     { color: var(--color-text-muted); }
+.text-small     { font-size: 12.5px; }
+.text-tiny      { font-size: 11px; }
+.text-bold      { font-weight: var(--fw-bold); }
+.text-center    { text-align: center; }
+
+/*
+ * Numbers, money, Site IDs, Job Codes and Tracking#s stay left-to-right even in
+ * Arabic (CLAUDE.md 8.1). `isolate` keeps a number from re-ordering the Arabic
+ * text around it.
+ */
+.num {
+  direction: ltr;
+  unicode-bidi: isolate;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ------------------------------------------------------------------ *
+ * Focus — one visible ring everywhere
+ * ------------------------------------------------------------------ */
+
+:focus { outline: none; }
+
+:focus-visible {
+  outline: 2px solid var(--color-border-focus);
+  outline-offset: 2px;
+  border-radius: var(--radius-sm);
+}
+
+::selection {
+  background: var(--color-primary-light);
+  color: var(--color-navy-2);
+}
+
+/* ------------------------------------------------------------------ *
+ * Scrollbars (mirrors design/Settlement App.html)
+ * ------------------------------------------------------------------ */
+
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb {
+  background: var(--color-border);
+  border-radius: var(--radius-sm);
+  border: 2px solid var(--color-bg);
+}
+::-webkit-scrollbar-thumb:hover { background: var(--color-text-muted); }
+
+/* ------------------------------------------------------------------ *
+ * App root and layout primitives
+ * ------------------------------------------------------------------ */
+
+#app { min-height: 100vh; }
+
+/* A single centred column — login, the script-url setup screen, fatal errors. */
+.screen-centered {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-6);
+  gap: var(--space-5);
+}
+
+.page {
+  padding: var(--space-6);
+  max-width: 1280px;
+  margin-inline: auto;
+}
+
+.page-header {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  margin-block-end: var(--space-5);
+}
+
+.stack   { display: flex; flex-direction: column; gap: var(--space-3); }
+.stack-2 { display: flex; flex-direction: column; gap: var(--space-2); }
+.stack-5 { display: flex; flex-direction: column; gap: var(--space-5); }
+
+.row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+.row-tight { display: flex; align-items: center; gap: var(--space-2); }
+.row-end   { justify-content: flex-end; }
+
+.spacer { flex: 1 1 auto; }
+
+.hidden { display: none !important; }
+
+.sr-only {
+  position: absolute;
+  width: 1px; height: 1px;
+  padding: 0; margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* ------------------------------------------------------------------ *
+ * The brand wordmark (login, top bar, sidebar)
+ * ------------------------------------------------------------------ */
+
+.brand { display: flex; flex-direction: column; gap: 2px; }
+
+.brand-name {
+  font-size: 17px;
+  font-weight: var(--fw-black);
+  color: var(--color-navy);
+  letter-spacing: -0.01em;
+}
+
+.brand-tagline {
+  font-size: 11px;
+  font-weight: var(--fw-semibold);
+  color: var(--color-text-muted);
+}
+
+.brand-mark {
+  inline-size: 34px;
+  block-size: 34px;
+  border-radius: var(--radius-md);
+  background: var(--color-navy);
+  color: var(--color-text-inverse);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: var(--fw-black);
+  font-size: 14px;
+  box-shadow: var(--shadow-sm);
+}
