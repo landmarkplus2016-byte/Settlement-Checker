@@ -7,6 +7,10 @@
  *   3. get_config — the one call made before anyone signs in (3.3)
  *   4. adopt the server's primary_language unless the user has chosen one
  *   5. hand over to the router, which shows login or the role shell
+ *
+ * Plus the two PWA one-liners (9.2): register the service worker and paint the
+ * browser chrome from the design tokens. Both are fire-and-forget and neither
+ * is allowed to hold up or break the sequence above.
  */
 
 import { api, ApiError } from './api.js';
@@ -209,7 +213,62 @@ function renderBootError(err) {
 }
 
 /* ------------------------------------------------------------------ *
+ * PWA (9.2)
+ * ------------------------------------------------------------------ */
+
+/**
+ * Register the service worker.
+ *
+ * Relative path on purpose: it sets the worker's SCOPE to the directory the app
+ * is served from, which on GitHub Pages is `/<repo>/`, not the domain root.
+ *
+ * Every failure is swallowed. A worker is a nicety — it makes the shell open
+ * instantly and offline — and an app that refuses to start because a cache
+ * could not be registered would be strictly worse than one with no cache. It is
+ * also absent by design on `file://` and on plain http, where the API is not
+ * available at all.
+ */
+function registerServiceWorker() {
+  if (!('serviceWorker' in navigator)) return;
+
+  window.addEventListener('load', function () {
+    navigator.serviceWorker.register('./service-worker.js').catch(function (err) {
+      console.warn('Service worker not registered: ' + (err && err.message));
+    });
+  });
+}
+
+/**
+ * Paint the browser's own chrome (the Android address bar, the desktop title
+ * bar of an installed window) with the app's navy.
+ *
+ * Done here rather than as a `<meta name="theme-color">` in index.html so the
+ * colour is READ from css/tokens.css instead of being written down a second
+ * time — rule 23 holds for the browser chrome as much as for the page.
+ * manifest.json cannot do this; JSON has no access to CSS, so its `theme_color`
+ * is a literal that has to be kept in step by hand.
+ */
+function applyThemeColor() {
+  const navy = getComputedStyle(document.documentElement)
+    .getPropertyValue('--color-navy')
+    .trim();
+
+  if (!navy) return;
+
+  let meta = document.querySelector('meta[name="theme-color"]');
+  if (!meta) {
+    meta = document.createElement('meta');
+    meta.setAttribute('name', 'theme-color');
+    document.head.appendChild(meta);
+  }
+  meta.setAttribute('content', navy);
+}
+
+/* ------------------------------------------------------------------ *
  * Go
  * ------------------------------------------------------------------ */
+
+applyThemeColor();
+registerServiceWorker();
 
 boot();

@@ -86,7 +86,8 @@ export function renderSidebar(activeHash) {
         </div>
 
         <div class="row-tight">
-          <div class="lang-toggle lang-toggle-on-navy" id="sidebar-lang">
+          <div class="lang-toggle lang-toggle-on-navy" id="sidebar-lang"
+               role="group" aria-label="${escapeHtml(t('language'))}">
             <button type="button" data-lang="en" aria-pressed="${lang === 'en'}">${escapeHtml(t('lang_en'))}</button>
             <button type="button" data-lang="ar" aria-pressed="${lang === 'ar'}">${escapeHtml(t('lang_ar'))}</button>
           </div>

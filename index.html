@@ -9,6 +9,18 @@
   <!-- The visible title is replaced at boot from get_config.app_name (js/main.js). -->
   <title>Settlement Checker</title>
 
+  <!--
+    PWA (CLAUDE.md 9.2). Relative, like every other path here: GitHub Pages
+    serves a project repo from a subdirectory, not the domain root.
+
+    There is no <meta name="theme-color"> hex here on purpose — js/main.js sets
+    it from --color-navy so the browser chrome cannot drift from the tokens
+    (rule 23). manifest.json has to carry its own literals; JSON cannot read CSS.
+  -->
+  <link rel="manifest" href="manifest.json">
+  <link rel="icon" href="icons/icon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="icons/icon.svg">
+
   <!-- Design tokens first: every other stylesheet reads from them. -->
   <link rel="stylesheet" href="css/tokens.css">
   <link rel="stylesheet" href="css/base.css">

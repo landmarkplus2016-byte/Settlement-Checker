@@ -443,7 +443,7 @@ export const en = {
   export_nothing_title: 'Nothing to export',
   export_nothing_text: 'No approved entry matches this team, month and period. Entries appear here once a manager has approved them.',
 
-  export_rows_summary: '{rows} rows in the file · {claimable} will be marked exported · {file}',
+  export_rows_summary: '{rows} rows in the file · {claimable} will be marked exported ·',
   export_preview_capped: 'Showing the first {shown} of {total} rows. The file contains all of them.',
 
   export_download: 'Download file',

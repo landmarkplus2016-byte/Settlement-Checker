@@ -169,6 +169,13 @@
 .tpl-table .tpl-money { font-weight: var(--fw-semibold); }
 
 /*
+ * Site IDs, Job Codes and the split indicator take `.num` for its direction —
+ * `377/442` must not reorder to `442/377` on an Arabic page — but they are
+ * identifiers, not figures, so the alignment goes back to the start of the line.
+ */
+.tpl-table .tpl-id { text-align: start; }
+
+/*
  * A row the per-site report divided out of a multi-site line (6.4). Tinted, not
  * boxed: on a per-site file most rows are split, and a heavy treatment would
  * make the exceptions — the whole lines — look like the anomaly.

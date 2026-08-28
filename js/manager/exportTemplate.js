@@ -65,17 +65,23 @@ const BLANK = '';
 /**
  * The two column layouts of 7.2, in the workbook's order.
  *
- * `type` drives both renderers: `money` is a number shown to two decimals and
- * summed in the totals row, `num` is a number that is never summed (a day, an
- * odometer reading), `text` is everything else.
+ * `type` drives both renderers:
+ *   - `money` — a number shown to two decimals and summed in the totals row.
+ *   - `num`   — a number that is never summed (a day, an odometer reading).
+ *   - `id`    — a Site ID or Job Code. Stored and written as TEXT, so `3799`
+ *               never becomes the number 3799 and stop matching the `K3799`
+ *               beside it, but rendered left-to-right in the preview: 8.1 keeps
+ *               Site IDs and Job Codes LTR in Arabic, and a multi-site cell like
+ *               `377/442` would otherwise reorder to `442/377` on an RTL page.
+ *   - `text`  — everything else.
  */
 const COLUMNS = {
   expenses: [
     { key: 'month', label: 'Month', type: 'text', width: 10 },
     { key: 'day', label: 'Day', type: 'num', width: 6 },
     { key: 'project', label: 'Project', type: 'text', width: 12 },
-    { key: 'site_id', label: 'Site ID', type: 'text', width: 14 },
-    { key: 'job_code', label: 'Job Code', type: 'text', width: 14 },
+    { key: 'site_id', label: 'Site ID', type: 'id', width: 14 },
+    { key: 'job_code', label: 'Job Code', type: 'id', width: 14 },
     { key: 'category', label: 'Category', type: 'text', width: 16 },
     { key: 'item_description', label: 'Item Description', type: 'text', width: 34 },
     { key: 'amount', label: 'Amount', type: 'money', width: 12 }
@@ -85,8 +91,8 @@ const COLUMNS = {
     { key: 'month', label: 'Month', type: 'text', width: 10 },
     { key: 'day', label: 'Day', type: 'num', width: 6 },
     { key: 'project', label: 'Project', type: 'text', width: 12 },
-    { key: 'site_id', label: 'Site ID', type: 'text', width: 14 },
-    { key: 'job_code', label: 'Job Code', type: 'text', width: 14 },
+    { key: 'site_id', label: 'Site ID', type: 'id', width: 14 },
+    { key: 'job_code', label: 'Job Code', type: 'id', width: 14 },
     { key: 'start_km', label: 'Start KM', type: 'num', width: 11 },
     { key: 'end_km', label: 'End KM', type: 'num', width: 11 },
     { key: 'fuel_amount', label: 'Fuel', type: 'money', width: 12 },
@@ -105,7 +111,7 @@ const COLUMNS = {
  * amount is a third of what the coordinator typed. Only the per-site report
  * carries it — the Normal report has no split rows to mark.
  */
-const SPLIT_COLUMN = { key: 'split_label', label: 'Split', type: 'text', width: 8 };
+const SPLIT_COLUMN = { key: 'split_label', label: 'Split', type: 'id', width: 8 };
 
 /** Which kind each sheet holds, and which entry list it reads. */
 const SHEET_KINDS = [

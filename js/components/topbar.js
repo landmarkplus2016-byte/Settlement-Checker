@@ -42,7 +42,7 @@ export function renderTopbar(activeHash) {
 
       <div class="spacer"></div>
 
-      <div class="lang-toggle" id="topbar-lang">
+      <div class="lang-toggle" id="topbar-lang" role="group" aria-label="${escapeHtml(t('language'))}">
         <button type="button" data-lang="en" aria-pressed="${lang === 'en'}">${escapeHtml(t('lang_en'))}</button>
         <button type="button" data-lang="ar" aria-pressed="${lang === 'ar'}">${escapeHtml(t('lang_ar'))}</button>
       </div>

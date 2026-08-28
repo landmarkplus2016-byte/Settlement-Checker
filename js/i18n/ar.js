@@ -439,7 +439,7 @@ export const ar = {
   export_nothing_title: 'لا شيء للتصدير',
   export_nothing_text: 'لا يوجد بند معتمد يطابق هذا الفريق والشهر والفترة. تظهر البنود هنا بعد اعتماد المدير لها.',
 
-  export_rows_summary: '{rows} بنداً في الملف · سيُعلَّم {claimable} كمُصدَّر · {file}',
+  export_rows_summary: '{rows} بنداً في الملف · سيُعلَّم {claimable} كمُصدَّر ·',
   export_preview_capped: 'يُعرض أول {shown} من {total} بنداً. الملف يحتوي عليها جميعاً.',
 
   export_download: 'تنزيل الملف',

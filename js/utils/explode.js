@@ -398,10 +398,12 @@ export function testExplode() {
 
   const failed = cases.filter(function (c) { return !c.ok; });
 
-  console.log(
-    '%cexplode.js — ' + (cases.length - failed.length) + '/' + cases.length + ' passed',
-    failed.length ? 'color:#991b1b;font-weight:700' : 'color:#15803d;font-weight:700'
-  );
+  // Plain console methods rather than %c styling: a hex colour has exactly one
+  // home in this project and it is css/tokens.css (rule 23). The console already
+  // colours an error red.
+  const summary = 'explode.js — ' + (cases.length - failed.length) + '/' + cases.length + ' passed';
+  if (failed.length) console.error(summary);
+  else console.log(summary);
 
   failed.forEach(function (c) {
     console.error('FAILED: ' + c.name + '\n  expected ' + c.want + '\n  got      ' + c.got);

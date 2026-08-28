@@ -635,7 +635,10 @@ function renderPanel(period) {
       <span class="card-title">${escapeHtml(t('export_period_file', { period: t('period_' + period) }))}</span>
       <span class="spacer"></span>
       ${doc && doc.tracking_no
-        ? `<span class="num text-bold">${escapeHtml(t('col_tracking'))} ${escapeHtml(doc.tracking_no)}</span>`
+        ? `<span class="cell-line">
+             <span class="text-tiny text-muted">${escapeHtml(t('col_tracking'))}</span>
+             <span class="num text-bold">${escapeHtml(doc.tracking_no)}</span>
+           </span>`
         : `<span class="text-tiny text-muted">${escapeHtml(t('tracking_placeholder'))}</span>`}
     </div>
   `;
@@ -670,10 +673,12 @@ function renderPanel(period) {
         <span class="text-tiny text-muted">
           ${escapeHtml(t('export_rows_summary', {
             rows: doc.row_count,
-            claimable: doc.claimable,
-            file: doc.file_name
+            claimable: doc.claimable
           }))}
         </span>
+
+        <!-- The file name is Latin and stays LTR inside an Arabic line (8.1). -->
+        <span class="text-tiny text-muted num">${escapeHtml(doc.file_name)}</span>
 
         <span class="spacer"></span>
 
@@ -713,7 +718,7 @@ function renderPanelWarnings(period, state, doc) {
   // and `export_commit` will refuse rather than claim a partial batch.
   const unreadable = (query.errors || []).concat(query.skipped || []);
   if (unreadable.length) {
-    out.push(alert('danger', t('export_sweep_incomplete', {
+    out.push(renderAlert('danger', t('export_sweep_incomplete', {
       names: unreadable.map(function (problem) { return problem.user_id; }).join(t('list_separator'))
     })));
   }
@@ -722,26 +727,26 @@ function renderPanelWarnings(period, state, doc) {
   // footer would go out blank, and the number cannot be corrected afterwards.
   const missing = header.missing_tracking || [];
   if (missing.length) {
-    out.push(alert('danger', t('export_no_tracking', {
+    out.push(renderAlert('danger', t('export_no_tracking', {
       settlements: missing.map(function (item) { return item.settlement_id; }).join(t('list_separator'))
     })));
   }
 
   // Two coordinators on the same team with different numbers for one period.
   if ((header.tracking_numbers || []).length > 1) {
-    out.push(alert('warning', t('export_tracking_conflict', {
+    out.push(renderAlert('warning', t('export_tracking_conflict', {
       numbers: (header.tracking_numbers || []).join(t('list_separator'))
     })));
   }
 
   // Rows that already went out, showing only because exclude-exported is off.
   if (doc.already_exported) {
-    out.push(alert('info', t('export_already_exported', { count: doc.already_exported })));
+    out.push(renderAlert('info', t('export_already_exported', { count: doc.already_exported })));
   }
 
   // Everything here has been exported already; there is nothing left to claim.
   if (!doc.claimable && doc.row_count) {
-    out.push(alert('info', t('export_claimable_zero')));
+    out.push(renderAlert('info', t('export_claimable_zero')));
   }
 
   if (!out.length) return '';
@@ -753,7 +758,7 @@ function renderPanelWarnings(period, state, doc) {
  * @param {string} message already translated.
  * @return {string} HTML
  */
-function alert(variant, message) {
+function renderAlert(variant, message) {
   return `<div class="alert alert-${variant}">${escapeHtml(message)}</div>`;
 }
 
@@ -899,6 +904,16 @@ function renderTemplate(sheet) {
 function cellClass(type) {
   if (type === 'money') return 'num tpl-money';
   if (type === 'num') return 'num';
+
+  /*
+   * Site IDs, Job Codes and the split indicator: `.num` for the direction, then
+   * `.tpl-id` to put the alignment back to the start of the line. They read
+   * left-to-right like a number (8.1) — `377/442` must never come out `442/377`
+   * on an Arabic page — but they are identifiers, not figures, and right-aligning
+   * a column of them would look wrong beside the text columns.
+   */
+  if (type === 'id') return 'num tpl-id';
+
   if (type === 'label') return 'tpl-total-label';
   return '';
 }
