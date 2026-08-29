@@ -22,6 +22,7 @@ import { escapeHtml, qs, setMessage, setBusy } from '../utils/dom.js';
 import { sha256Hex } from '../utils/hash.js';
 import { logout } from './session.js';
 import { toastSuccess } from '../components/toast.js';
+import { renderBrandMark } from '../components/brandMark.js';
 
 /**
  * The shortest password we will send. Length is the only strength rule we can
@@ -43,7 +44,7 @@ export function renderChangePassword() {
       <form class="auth-card" id="change-password-form" novalidate>
 
         <div class="auth-head">
-          <div class="brand-mark">${escapeHtml(t('brand_mark'))}</div>
+          ${renderBrandMark()}
           <div class="auth-title">${escapeHtml(t('change_password_title'))}</div>
           <div class="auth-subtitle">
             ${escapeHtml(forced ? t('change_password_forced_subtitle') : t('change_password_subtitle'))}

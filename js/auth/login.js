@@ -15,6 +15,7 @@ import { t, getLang, setLang, errorMessage } from '../i18n/i18n.js';
 import { escapeHtml, qs, setMessage, setBusy } from '../utils/dom.js';
 import { sha256Hex } from '../utils/hash.js';
 import { toastSuccess } from '../components/toast.js';
+import { renderBrandMark } from '../components/brandMark.js';
 
 /**
  * The sign-in screen.
@@ -28,7 +29,7 @@ export function renderLogin() {
       <form class="auth-card" id="login-form" novalidate autocomplete="on">
 
         <div class="auth-head">
-          <div class="brand-mark">${escapeHtml(t('brand_mark'))}</div>
+          ${renderBrandMark()}
           <div class="auth-title">${escapeHtml(t('login_title'))}</div>
           <div class="auth-subtitle">${escapeHtml(t('login_subtitle'))}</div>
         </div>

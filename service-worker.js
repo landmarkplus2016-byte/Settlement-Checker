@@ -65,7 +65,7 @@
  * "new version available" prompt. Any string that changes will do; a date plus
  * a counter reads best in DevTools.
  */
-const APP_VERSION = '2026.08.29-1';
+const APP_VERSION = '2026.08.29-2';
 
 /** This version's cache. Anything not named this is deleted on activate. */
 const CACHE_NAME = 'settlement-checker-' + APP_VERSION;
@@ -101,9 +101,11 @@ const PRECACHE = [
   './icons/maskable-512.png',
   './icons/apple-touch-icon.png',
 
-  // The sidebar logo. Part of the shell: without it the rail opens with a hole
-  // in it on the first offline load.
+  // The sidebar logo and the watermark behind the app. Part of the shell:
+  // without them the rail opens with a hole in it and the page opens bare on the
+  // first offline load.
   './assets/lmp-logo-white.png',
+  './assets/app-background.jpg',
 
   './css/tokens.css',
   './css/base.css',
@@ -131,6 +133,7 @@ const PRECACHE = [
   './js/utils/xlsx.js',
 
   './js/components/sidebar.js',
+  './js/components/brandMark.js',
   './js/components/modal.js',
   './js/components/toast.js',
   './js/components/badge.js',

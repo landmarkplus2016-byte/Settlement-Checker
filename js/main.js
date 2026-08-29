@@ -21,6 +21,7 @@ import { t, getLang, setLang, errorMessage } from './i18n/i18n.js';
 import { escapeHtml, mount, qs, setMessage, setBusy } from './utils/dom.js';
 import { startRouter, setRouterSuspended } from './router.js';
 import { initAppUpdates } from './updates.js';
+import { renderBrandMark } from './components/brandMark.js';
 
 /**
  * Run the boot sequence. Safe to call again — "Try again" and "Change server
@@ -75,7 +76,7 @@ function renderSetupScreen() {
       <form class="auth-card" id="setup-form" novalidate>
 
         <div class="auth-head">
-          <div class="brand-mark">${escapeHtml(t('brand_mark'))}</div>
+          ${renderBrandMark()}
           <div class="auth-title">${escapeHtml(t('setup_title'))}</div>
           <div class="auth-subtitle">${escapeHtml(t('setup_subtitle'))}</div>
         </div>
@@ -188,7 +189,7 @@ function renderBootError(err) {
     <div class="screen-centered">
       <div class="auth-card">
         <div class="auth-head">
-          <div class="brand-mark">${escapeHtml(t('brand_mark'))}</div>
+          ${renderBrandMark()}
           <div class="auth-title">${escapeHtml(t('boot_failed_title'))}</div>
           <div class="auth-subtitle">${escapeHtml(t('boot_failed_subtitle'))}</div>
         </div>

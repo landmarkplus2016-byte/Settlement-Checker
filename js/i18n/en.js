@@ -15,7 +15,6 @@ export const en = {
   brand_logo_alt: 'Landmark Plus',
   brand_name: 'Settlement',
   brand_tagline: 'Expense & Fuel · Ops',
-  brand_mark: 'SC',
 
   nav_dashboard: 'Dashboard',
   nav_approvals: 'Approvals',

@@ -1,0 +1,17 @@
+/*
+ * print.css — what a printed page must not carry.
+ *
+ * Loaded with media="print" from index.html, so nothing here touches the screen.
+ *
+ * The app is not a print surface: finance gets .xlsx files (7.2), not printouts.
+ * The one thing worth stating is that the watermark stays off paper — a 35%
+ * picture behind a table costs ink and makes figures harder to read, which is
+ * the opposite of why someone printed it.
+ */
+
+@media print {
+  body::before { display: none !important; }
+
+  /* Chrome and Edge omit backgrounds on paper by default; be explicit. */
+  html { background: none !important; }
+}

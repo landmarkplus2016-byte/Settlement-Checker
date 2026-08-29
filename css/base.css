@@ -20,16 +20,47 @@ html, body {
   min-height: 100%;
 }
 
-html { -webkit-text-size-adjust: 100%; }
+/*
+ * The page colour lives on <html>, not on <body>, so the watermark below has
+ * something to sit ON. A background on <body> is propagated to the canvas and
+ * painted before any negative-z layer, which would hide the image completely.
+ */
+html {
+  -webkit-text-size-adjust: 100%;
+  background: var(--color-bg);
+}
 
 body {
   font-family: var(--font);
   font-size: 14px;
   line-height: 1.5;
   color: var(--color-text-primary);
-  background: var(--color-bg);
+  background: transparent;
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
+}
+
+/*
+ * The watermark — the money-and-spreadsheet artwork behind everything, at 35%.
+ *
+ * One fixed layer for the whole app rather than a background per screen: it is
+ * behind the sign-in card and behind the content area after login, and it does
+ * not scroll or repeat with either. The sidebar and every card are opaque, so
+ * nothing anyone has to READ is sitting on a picture.
+ */
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+
+  background-image: url('../assets/app-background.jpg');
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
+
+  opacity: .35;
+  pointer-events: none;
 }
 
 h1, h2, h3, h4, h5, h6, p, figure, blockquote, dl, dd { margin: 0; }
@@ -184,16 +215,14 @@ h3 { font-size: 15px; font-weight: var(--fw-semibold); }
   color: var(--color-text-muted);
 }
 
+/*
+ * The app mark — the PWA icon itself (js/components/brandMark.js), so the tab,
+ * the installed launcher and the sign-in card all show one picture. No navy
+ * plate behind it: the artwork is navy on transparency, and a navy box would
+ * swallow it.
+ */
 .brand-mark {
-  inline-size: 34px;
-  block-size: 34px;
-  border-radius: var(--radius-md);
-  background: var(--color-navy);
-  color: var(--color-text-inverse);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-weight: var(--fw-black);
-  font-size: 14px;
-  box-shadow: var(--shadow-sm);
+  inline-size: 56px;
+  block-size: 56px;
+  object-fit: contain;
 }

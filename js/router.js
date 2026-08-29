@@ -24,6 +24,7 @@ import { renderLogin, bindLoginEvents } from './auth/login.js';
 import { renderChangePassword, bindChangePasswordEvents } from './auth/changePassword.js';
 
 import { renderSidebar, bindSidebarEvents } from './components/sidebar.js';
+import { renderBrandMark } from './components/brandMark.js';
 import { logout } from './auth/session.js';
 
 import { renderCoordinatorDashboard, bindCoordinatorDashboardEvents } from './coordinator/dashboard.js';
@@ -389,7 +390,7 @@ function unknownRoleScreen() {
     <div class="screen-centered">
       <div class="auth-card">
         <div class="auth-head">
-          <div class="brand-mark">${escapeHtml(t('brand_mark'))}</div>
+          ${renderBrandMark()}
           <div class="auth-title">${escapeHtml(t('unknown_role_title'))}</div>
           <div class="auth-subtitle">${escapeHtml(t('unknown_role_text'))}</div>
         </div>

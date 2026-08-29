@@ -13,7 +13,6 @@ export const ar = {
   brand_logo_alt: 'لاندمارك بلس',
   brand_name: 'التسويات',
   brand_tagline: 'المصروفات والوقود · العمليات',
-  brand_mark: 'ت',
 
   nav_dashboard: 'الرئيسية',
   nav_approvals: 'الاعتمادات',

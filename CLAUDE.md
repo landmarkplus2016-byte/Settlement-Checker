@@ -605,10 +605,12 @@ settlement-checker/
     apple-touch-icon.png         # iOS, opaque ground (iOS fills alpha with black)
   assets/
     lmp-logo-white.png           # the company logo, sidebar head
+    app-background.jpg           # the 35% watermark behind the whole app
   design/
     Settlement_App.html          # approved visual reference (read-only)
     lmp-logo-white-master.png    # logo master; icons/ and assets/ are derived from these
     app-icon-master.png
+    app-background-master.jpg
   css/
     tokens.css                   # ALL colors/radii/shadows live here
     base.css
@@ -630,7 +632,7 @@ settlement-checker/
       explode.js                 # per-site split (Section 6.4)
       xlsx.js                    # xlsx-js-style wrappers + cell styling
     components/
-      sidebar.js  modal.js  toast.js  badge.js  table.js
+      sidebar.js  modal.js  toast.js  badge.js  table.js  brandMark.js
     auth/
       login.js  session.js  changePassword.js
     coordinator/
