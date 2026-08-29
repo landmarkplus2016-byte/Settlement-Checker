@@ -13,7 +13,7 @@ A two-role web app that replaces the Excel workbook coordinators currently use t
 - **1 developer (project owner):** The only person with direct Google Sheet and Apps Script access. Everyone else uses the app.
 - Hosted on **GitHub Pages** (static site — no server).
 - **Google Sheets** as the sole database: one shared **config spreadsheet** plus **one spreadsheet per coordinator**, all reached through a **single Google Apps Script Web App**.
-- **No Firebase. No npm. No build tools. No frameworks.** Pure HTML, CSS, and vanilla JavaScript, served as-is. Third-party libraries (SheetJS) via CDN only.
+- **No Firebase. No npm. No build tools. No frameworks.** Pure HTML, CSS, and vanilla JavaScript, served as-is. Third-party libraries (xlsx-js-style) via CDN only.
 
 ---
 
@@ -44,7 +44,7 @@ Intentionally framework-free and build-tool-free, exactly like the OHS Platform 
 - **No npm, no package.json, no node_modules, no bundler.**
 - **No React, no Vue, no framework** — UI is plain JS functions that return HTML strings (template literals) inserted via `innerHTML`.
 - **No Tailwind** — plain CSS files using CSS custom properties (design tokens) in `css/tokens.css`.
-- **Third-party libs via CDN only** — SheetJS (`xlsx`) is loaded with a pinned `<script src="https://cdn...">` in `index.html`. Nothing else.
+- **Third-party libs via CDN only** — **xlsx-js-style** (the `XLSX` global) is loaded with a pinned `<script src="https://cdn...">` in `index.html`. Nothing else. It is SheetJS with cell styling: the free SheetJS build silently drops fonts, fills and borders on write, which made the finance file look nothing like the preview it mirrors (7.2). Same API, so both the export and the Site→JC import run on it.
 - **Routing** — hash-based (`#/dashboard`, `#/settlement/<id>`, `#/approvals`, `#/export`, `#/admin/teams`), read from `location.hash`.
 - **i18n** — plain JS objects with `en` and `ar` keys. Every visible string goes through `t('key')`.
 - **Backend** — a single Google Apps Script Web App deployment, reached only through `js/api.js`.
@@ -324,7 +324,7 @@ The Apps Script keeps a per-request cache of: the config map, the `Users` regist
 
 - **`list_users`** / **`create_user`** / **`update_user`** / **`reset_user_password`** / **`deactivate_user`** — manage the Users tab (which *is* the registry). `create_user`/`update_user` set `coordinator_sheet_id` for coordinators. Cannot deactivate the last active manager.
 - **`list_teams`** / **`create_team`** / **`update_team`** — add or toggle `active`. Never hard-delete.
-- **`list_site_jc`** / **`upsert_site_jc`** / **`bulk_import_site_jc`** / **`delete_site_jc`** — the lookup. `bulk_import_site_jc` takes rows parsed from an uploaded Excel (client parses with SheetJS, sends JSON) and upserts by `site_id`. `period` is required on every row.
+- **`list_site_jc`** / **`upsert_site_jc`** / **`bulk_import_site_jc`** / **`delete_site_jc`** — the lookup. `bulk_import_site_jc` takes rows parsed from an uploaded Excel (client parses with xlsx-js-style, sends JSON) and upserts by `site_id`. `period` is required on every row.
 - **`list_lists`** / **`update_lists`** — dropdown reference data.
 
 ## 3.5 Coordinator — own sheet only (7)
@@ -348,7 +348,7 @@ Every one resolves the target spreadsheet from the session, and rejects if `role
 
 ## 3.7 Export — manager-only (2)
 
-- **`export_query`** — `{team, month, period, exclude_exported}` → the `approved` rows for that team+month+period across all coordinators (excluding `exported` unless told otherwise), plus the resolved Tracking# and the coordinator name for the header. The client renders Normal or Per-site and builds the `.xlsx` with SheetJS. The **per-site explosion is computed client-side** for display and the file (Section 6.4), because it is a pure transform of returned rows.
+- **`export_query`** — `{team, month, period, exclude_exported}` → the `approved` rows for that team+month+period across all coordinators (excluding `exported` unless told otherwise), plus the resolved Tracking# and the coordinator name for the header. The client renders Normal or Per-site and builds the `.xlsx` with xlsx-js-style. The **per-site explosion is computed client-side** for display and the file (Section 6.4), because it is a pure transform of returned rows.
 - **`export_commit`** — `{team, month, period, report_type}` → **re-selects the same predicate server-side**, stamps those rows `exported` + `export_batch_id` + `exported_at`, writes an `ExportLog` row, returns `{batch_id, row_count}`. This is the atomic claim (rule 16). The client only downloads the file it already built; the commit is what makes the rows disappear from future queries.
 
 ## 3.8 Cross-cutting rules
@@ -493,11 +493,11 @@ Per team + month, each period can produce two report types, so up to four files:
 
 Each file reproduces the two entry layouts:
 
-- **Expenses Tracking** sheet: header block (Name, Account, Total) + the big **Old/New** marker; columns Month, Day, Project, Site ID, Job Code, Category, Item Description, Amount; the Arabic approval footer with **Tracking#** and date.
+- **Expenses Tracking** sheet: header block (Name, Account, Total) + the big **Old/New** marker; columns Month, Day, Project, Site ID, Job Code, Category, Item Description, Amount, Comment; the Arabic approval footer with **Tracking#** and date.
 - **Fuel Tracking** sheet: header (Fuel total, marker); columns Month, Day, Project, Site ID, Job Code, Start KM, End KM, Fuel, Area, Driver, City, Karta; same footer.
 - **Per-site** report type: the same two sheets, but every multi-site line is exploded per Section 6.4, with a "split" indicator column.
 
-Built client-side with SheetJS from the `export_query` rows. `js/manager/exportTemplate.js` owns the header/footer construction; `js/utils/xlsx.js` owns the SheetJS calls.
+Built client-side with xlsx-js-style from the `export_query` rows. `js/manager/exportTemplate.js` owns the header/footer construction **and the file's formatting** — fills, fonts, borders, row heights and the `#,##0.00` money format, with every colour read from `css/tokens.css` at export time so rule 23 holds inside the .xlsx too. `js/utils/xlsx.js` owns the library calls and paints the styles onto the cells.
 
 ## 7.3 Dedup and the log
 
@@ -628,7 +628,7 @@ settlement-checker/
       dates.js  money.js  dom.js
       validate.js                # grid validation (Section 6.3)
       explode.js                 # per-site split (Section 6.4)
-      xlsx.js                    # SheetJS wrappers
+      xlsx.js                    # xlsx-js-style wrappers + cell styling
     components/
       sidebar.js  modal.js  toast.js  badge.js  table.js
     auth/

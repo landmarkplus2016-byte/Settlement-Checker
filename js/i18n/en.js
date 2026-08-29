@@ -476,7 +476,7 @@ export const en = {
   export_confirm_title: 'Mark these entries exported?',
   export_confirm_text: 'This marks the {count} approved entries in the {period} file for {team}, {month} as exported.',
   export_confirm_tracking: 'Tracking # {tracking} · {type} report',
-  export_confirm_not_downloaded: 'You have not downloaded this file yet. After confirming, these entries stop appearing in the query — download it first.',
+  export_confirm_not_downloaded: 'This file has not been downloaded yet, so confirming will download it first and then mark the entries.',
   export_confirm_note: 'There is no undo. An exported entry is locked: it cannot be edited, re-approved, or exported a second time.',
   export_confirm_button: 'Export {count}',
   export_committed: '{count} entries exported as {batch}.',

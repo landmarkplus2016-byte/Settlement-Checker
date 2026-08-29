@@ -1,9 +1,15 @@
 /**
- * xlsx.js — the only file that touches SheetJS (CLAUDE.md 9.1).
+ * xlsx.js — the only file that touches the spreadsheet library (CLAUDE.md 9.1).
  *
- * SheetJS is loaded from a pinned CDN <script> in index.html and publishes the
- * global `XLSX`. It is not a module, so nothing can import it; this file wraps
- * the global so no screen ever names it directly.
+ * The library is **xlsx-js-style**, loaded from a pinned CDN <script> in
+ * index.html, publishing the global `XLSX`. It is not a module, so nothing can
+ * import it; this file wraps the global so no screen ever names it directly.
+ *
+ * It is SheetJS with cell styling added, and the styling is the whole reason it
+ * is here: the free SheetJS build writes values, merges and column widths and
+ * silently DROPS fonts, fills and borders, so the finance file came out as bare
+ * black text — nothing like the preview it is supposed to mirror (7.2). The API
+ * is otherwise SheetJS's, which is why the reading half below is unchanged.
  *
  * Two halves:
  *   - READING, for the Site→JC "Upload Excel" path, where the client parses an
@@ -185,9 +191,10 @@ const MAX_SHEET_NAME = 31;
 /**
  * Build a workbook from laid-out sheets.
  *
- * @param {Array<Object>} sheets each `{name, aoa, merges?, cols?}` —
- *        `aoa` is an array of row arrays, `merges` are SheetJS ranges
- *        (`{s:{r,c}, e:{r,c}}`), `cols` are widths (`{wch}`).
+ * @param {Array<Object>} sheets each `{name, aoa, merges?, cols?, rows?, styles?}` —
+ *        `aoa` is an array of row arrays, `merges` are ranges
+ *        (`{s:{r,c}, e:{r,c}}`), `cols` are widths (`{wch}`), `rows` are heights
+ *        (`{hpt}`), and `styles` are `{s, e, style}` rectangles (see applyStyles).
  * @param {Object} [options]
  * @param {boolean} [options.rtl=false] open the sheets right-to-left, for Arabic.
  * @return {Object} a SheetJS workbook.
@@ -208,6 +215,9 @@ export function buildWorkbook(sheets, options) {
 
     if (spec.merges && spec.merges.length) sheet['!merges'] = spec.merges;
     if (spec.cols && spec.cols.length) sheet['!cols'] = spec.cols;
+    if (spec.rows && spec.rows.length) sheet['!rows'] = spec.rows;
+
+    applyStyles(sheet, spec.styles);
 
     const name = uniqueSheetName(spec.name || ('Sheet' + (index + 1)), used);
     used.push(name);
@@ -250,6 +260,70 @@ export function downloadWorkbook(sheets, fileName, options) {
   }
 
   return name;
+}
+
+/**
+ * Paint one sheet's styles.
+ *
+ * A rule is a rectangle plus a style object, and every cell inside the rectangle
+ * gets it — not just the top-left one. That matters for merged blocks: Excel
+ * takes a merge's FILL from its first cell but draws each cell's own BORDERS, so
+ * a header block styled only at its corner comes out with the outline missing.
+ *
+ * Styles merge per cell rather than replacing, so the template can lay down a
+ * row's fill and border once and then refine one column with a number format
+ * without having to restate everything (js/manager/exportTemplate.js).
+ *
+ * @param {Object} sheet a SheetJS worksheet.
+ * @param {Array<{s: Object, e: Object, style: Object}>} styles
+ */
+function applyStyles(sheet, styles) {
+  const list = styles || [];
+  if (!list.length) return;
+
+  const utils = window.XLSX.utils;
+
+  list.forEach(function (rule) {
+    for (let r = rule.s.r; r <= rule.e.r; r++) {
+      for (let c = rule.s.c; c <= rule.e.c; c++) {
+        const address = utils.encode_cell({ r: r, c: c });
+
+        // An empty cell still has to EXIST to carry a fill or a border. The
+        // layout writes '' into every cell it uses, so this is the safety net
+        // for a rule that reaches past them, not the normal path.
+        if (!sheet[address]) {
+          sheet[address] = { t: 's', v: '' };
+          growRef(sheet, r, c);
+        }
+
+        sheet[address].s = Object.assign({}, sheet[address].s, rule.style);
+      }
+    }
+  });
+}
+
+/**
+ * Widen `!ref` to include a cell.
+ *
+ * Anything outside the range is invisible to Excel however well it is styled —
+ * SheetJS writes only what `!ref` covers.
+ *
+ * @param {Object} sheet
+ * @param {number} r
+ * @param {number} c
+ */
+function growRef(sheet, r, c) {
+  const utils = window.XLSX.utils;
+  const range = sheet['!ref']
+    ? utils.decode_range(sheet['!ref'])
+    : { s: { r: r, c: c }, e: { r: r, c: c } };
+
+  range.s.r = Math.min(range.s.r, r);
+  range.s.c = Math.min(range.s.c, c);
+  range.e.r = Math.max(range.e.r, r);
+  range.e.c = Math.max(range.e.c, c);
+
+  sheet['!ref'] = utils.encode_range(range);
 }
 
 /**

@@ -11,11 +11,14 @@
  *     independently (rule 10) and carry their own Tracking# (6.2), so they are
  *     queried, previewed, downloaded and committed separately. Neither waits on
  *     the other, and nothing on this screen lets them be confused.
- *   - **Download and Confirm are two different acts.** Downloading is free and
- *     repeatable. Confirming is `export_commit`, which stamps the rows
- *     `exported` server-side — after which they are locked (rule 13) and will
- *     never appear in another query. So the file is built first and the claim is
- *     made second, deliberately, behind a dialog that says what it costs.
+ *   - **The file always comes before the claim.** Downloading is free and
+ *     repeatable — nothing server-side happens. Confirming is `export_commit`,
+ *     which stamps the rows `exported` (rule 13): irreversible, and they never
+ *     appear in a query again. So Confirm DOWNLOADS the file itself when the
+ *     manager has not already taken it, and only claims the rows once that has
+ *     succeeded. The two buttons are still separate acts — a manager may want
+ *     the file and not the claim — but there is no order of clicks that ends in
+ *     exported rows and no file.
  *   - **The preview is the file.** Both are rendered from one document model
  *     (exportTemplate.js), including the per-site explosion (6.4). What the
  *     manager reads on screen is what lands in finance's inbox.
@@ -37,7 +40,7 @@ import { formatMoney } from '../utils/money.js';
 import { openModal } from '../components/modal.js';
 import { toastSuccess, toastError } from '../components/toast.js';
 import { renderLoading, renderLoadError, renderEmpty, renderPeriodBadge } from '../components/table.js';
-import { downloadWorkbook, isXlsxAvailable } from '../utils/xlsx.js';
+import { downloadWorkbook, isXlsxAvailable, SheetError } from '../utils/xlsx.js';
 import { buildExportDocument, documentToSheets } from './exportTemplate.js';
 
 /** The two tracks, in the order the screen shows them. */
@@ -340,33 +343,45 @@ async function loadLog() {
  * times as he likes, before or after committing — it is only paper until
  * `export_commit` claims the rows.
  *
+ * It THROWS rather than reporting, because it has two callers with opposite
+ * needs: the Download button, which only has to say what went wrong, and the
+ * commit, which must not claim rows when the file it is claiming them for could
+ * not be produced.
+ *
+ * @param {string} period 'old' | 'new'
+ * @return {string} the file name handed to the browser.
+ * @throws {SheetError} xlsx_unavailable | export_no_sheets | export_write_failed
+ */
+function buildAndDownload(period) {
+  const state = periods[period];
+  if (!state || !state.doc || !state.doc.has_rows) throw new SheetError('export_no_sheets');
+  if (!isXlsxAvailable()) throw new SheetError('xlsx_unavailable');
+
+  const name = downloadWorkbook(
+    documentToSheets(state.doc),
+    state.doc.file_name,
+    // The whole workbook opens right-to-left in Arabic; the numbers inside it
+    // stay Western and LTR either way (8.1).
+    { rtl: isRtl() }
+  );
+
+  // Read by the confirm dialog, which uses it to decide whether the file still
+  // has to be produced — nothing on the panel changes, so nothing is repainted.
+  state.downloaded = true;
+
+  return name;
+}
+
+/**
+ * The Download button.
  * @param {string} period 'old' | 'new'
  */
 function download(period) {
   const state = periods[period];
   if (!state || !state.doc || !state.doc.has_rows) return;
 
-  if (!isXlsxAvailable()) {
-    toastError(t('err_msg_xlsx_unavailable'));
-    return;
-  }
-
   try {
-    const name = downloadWorkbook(
-      documentToSheets(state.doc),
-      state.doc.file_name,
-      // The whole workbook opens right-to-left in Arabic; the numbers inside it
-      // stay Western and LTR either way (8.1).
-      { rtl: isRtl() }
-    );
-
-    // Read only by the confirm dialog, which decides whether to warn that the
-    // file has not been saved yet — nothing on the panel changes, so nothing is
-    // repainted.
-    state.downloaded = true;
-
-    toastSuccess(t('export_downloaded', { file: name }));
-
+    toastSuccess(t('export_downloaded', { file: buildAndDownload(period) }));
   } catch (err) {
     toastError(errorMessage(err));
   }
@@ -378,7 +393,7 @@ function download(period) {
  * Behind a dialog because there is no undo: the rows are stamped `exported` and
  * locked (rule 13), and the only way back is the developer editing the sheet.
  * The dialog says how many rows, which Tracking#, and — when the file has not
- * been downloaded yet — that the rows are about to leave the query.
+ * been taken yet — that confirming will download it before claiming anything.
  *
  * @param {string} period 'old' | 'new'
  */
@@ -411,7 +426,7 @@ function confirmExport(period) {
       </div>
 
       ${state.downloaded ? '' : `
-        <div class="alert alert-warning mt-4">
+        <div class="alert alert-info mt-4">
           ${escapeHtml(t('export_confirm_not_downloaded'))}
         </div>
       `}
@@ -420,6 +435,25 @@ function confirmExport(period) {
     `,
 
     onConfirm: async function () {
+      /*
+       * The file FIRST, and only then the claim.
+       *
+       * Confirming used to claim the rows and leave the manager to remember the
+       * Download button separately, which is a trap: the claim is irreversible
+       * (rule 13) and it removes the rows from every future query, so a confirm
+       * without a download produced an exported batch with no file to send —
+       * recoverable only by turning "hide already-exported" off and rebuilding
+       * it. Building here throws on failure, which keeps the dialog open and
+       * leaves every row untouched.
+       *
+       * It also runs before the first await on purpose: the browser still counts
+       * this as the user gesture that submitted the form, and a download started
+       * after an await can be blocked.
+       */
+      if (!state.downloaded) {
+        toastSuccess(t('export_downloaded', { file: buildAndDownload(period) }));
+      }
+
       const data = await api.call('export_commit', {
         team: filter.team,
         month: filter.month,

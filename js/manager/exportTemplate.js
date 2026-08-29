@@ -84,7 +84,10 @@ const COLUMNS = {
     { key: 'job_code', label: 'Job Code', type: 'id', width: 14 },
     { key: 'category', label: 'Category', type: 'text', width: 16 },
     { key: 'item_description', label: 'Item Description', type: 'text', width: 34 },
-    { key: 'amount', label: 'Amount', type: 'money', width: 12 }
+    { key: 'amount', label: 'Amount', type: 'money', width: 12 },
+    // The coordinator types this in the grid (2.2) and finance reads it beside
+    // the amount, so it belongs in the file. Last, after the figure it explains.
+    { key: 'comment', label: 'Comment', type: 'text', width: 24 }
   ],
 
   fuel: [
@@ -388,8 +391,12 @@ function cellValue(row, column) {
  */
 export function sheetToAoa(sheet) {
   const width = sheet.columns.length;
+  const ink = palette();
+
   const aoa = [];
   const merges = [];
+  const styles = [];
+  const heights = [];
 
   /** @param {Array} cells @return {number} the row index just written. */
   function push(cells) {
@@ -407,9 +414,23 @@ export function sheetToAoa(sheet) {
     merges.push({ s: { r: r1, c: c1 }, e: { r: r2, c: c2 } });
   }
 
+  /**
+   * Style a rectangle. Applied in order and merged per cell, so a later partial
+   * style (a number format on one column) refines an earlier one instead of
+   * erasing its borders.
+   */
+  function style(r1, c1, r2, c2, spec) {
+    if (r2 < r1 || c2 < c1) return;
+    styles.push({ s: { r: r1, c: c1 }, e: { r: r2, c: c2 }, style: spec });
+  }
+
+  /** @param {number} row @param {number} points */
+  function height(row, points) { heights[row] = { hpt: points }; }
+
   /* --- title --- */
   const titleRow = push([sheet.sheet_name]);
   merge(titleRow, 0, titleRow, width - 1);
+  height(titleRow, 24);
 
   /*
    * The marker occupies the last two columns beside the header block. Both
@@ -422,55 +443,318 @@ export function sheetToAoa(sheet) {
   const firstMetaRow = aoa.length;
 
   sheet.meta.forEach(function (item) {
-    const row = push([item.label, item.value]);
+    const row = push([item.label.toUpperCase(), item.value]);
     merge(row, 1, row, metaValueEnd);
+    height(row, 16);
+
+    // The header block's Total is money and is formatted like the column it
+    // summarises, not like the text beside it.
+    if (item.type === 'money') style(row, 1, row, 1, { numFmt: MONEY_FORMAT });
   });
+
+  const lastMetaRow = aoa.length - 1;
 
   /* --- the big Old/New marker, spanning the first three header rows --- */
   const markerRow = firstMetaRow;
   aoa[markerRow][markerStart] = sheet.marker.label;
   merge(markerRow, markerStart, markerRow + 2, width - 1);
 
+  /*
+   * The header block, painted as one panel: the whole rectangle takes the tint
+   * and the outline, then the title, the labels and the values are drawn on top
+   * of it. Styling only the cells that hold text would leave the gaps between
+   * them white, and the block would read as scattered words rather than the
+   * header of a document.
+   */
+  style(titleRow, 0, lastMetaRow, width - 1, {
+    fill: solid(ink.surface3),
+    font: { name: ink.font, sz: 10, color: { rgb: ink.textPrimary } },
+    alignment: { vertical: 'center' }
+  });
+
+  // One rule under the whole block, and no lines inside it. The header is a
+  // letterhead, not a table — boxing every label would turn it into one.
+  style(lastMetaRow, 0, lastMetaRow, metaValueEnd, {
+    border: { bottom: { style: 'thin', color: { rgb: ink.navy } } }
+  });
+
+  style(titleRow, 0, titleRow, width - 1, {
+    font: { name: ink.font, sz: 14, bold: true, color: { rgb: ink.navy } }
+  });
+
+  style(firstMetaRow, 0, lastMetaRow, 0, {
+    font: { name: ink.font, sz: 9, bold: true, color: { rgb: ink.textMuted } }
+  });
+
+  style(firstMetaRow, 1, lastMetaRow, metaValueEnd, {
+    font: { name: ink.font, sz: 11, bold: true, color: { rgb: ink.textPrimary } }
+  });
+
+  // Amber for old, blue for new — the same two colours the app uses everywhere
+  // (8.3), so the period is read before the word is.
+  const marker = sheet.marker.period === 'old'
+    ? { bg: ink.oldBg, fg: ink.oldFg }
+    : { bg: ink.newBg, fg: ink.newFg };
+
+  style(markerRow, markerStart, markerRow + 2, width - 1, {
+    fill: solid(marker.bg),
+    font: { name: ink.font, sz: 22, bold: true, color: { rgb: marker.fg } },
+    alignment: { horizontal: 'center', vertical: 'center' },
+    border: box(ink.navy)
+  });
+
   push([]);   // a blank line between the header block and the table
 
   /* --- the table --- */
-  push(sheet.columns.map(function (column) { return column.label; }));
+  const headerRow = push(sheet.columns.map(function (column) {
+    return column.label.toUpperCase();
+  }));
+  height(headerRow, 20);
 
-  sheet.rows.forEach(function (row) {
-    push(row.cells.map(function (cell) { return cell.value; }));
+  style(headerRow, 0, headerRow, width - 1, {
+    fill: solid(ink.navy),
+    font: { name: ink.font, sz: 9, bold: true, color: { rgb: ink.inverse } },
+    alignment: { horizontal: 'center', vertical: 'center', wrapText: true },
+    border: box(ink.navy3)
   });
 
-  push(sheet.totals_row.map(function (cell) { return cell.value; }));
+  const firstDataRow = aoa.length;
+
+  sheet.rows.forEach(function (row) {
+    const r = push(row.cells.map(function (cell) { return cell.value; }));
+
+    /*
+     * Zebra striping, and the per-site tint over it. A divided row is tinted
+     * rather than boxed for the same reason as in the preview: on a per-site
+     * file most rows are split, so a heavy treatment would make the whole lines
+     * look like the anomaly.
+     */
+    const band = row.is_split
+      ? ink.primarySubtle
+      : (((r - firstDataRow) % 2) ? ink.surface2 : ink.surface);
+
+    style(r, 0, r, width - 1, {
+      fill: solid(band),
+      font: { name: ink.font, sz: 10, color: { rgb: ink.textPrimary } },
+      alignment: { vertical: 'center' },
+      border: box(ink.gridLine)
+    });
+  });
+
+  const lastDataRow = aoa.length - 1;
+
+  // Money as money, per column, across every data row at once.
+  sheet.columns.forEach(function (column, index) {
+    if (column.type !== 'money') return;
+    style(firstDataRow, index, lastDataRow, index, { numFmt: MONEY_FORMAT });
+  });
+
+  /* --- the totals row --- */
+  const totalsRow = push(sheet.totals_row.map(function (cell) { return cell.value; }));
+  height(totalsRow, 18);
+
+  style(totalsRow, 0, totalsRow, width - 1, {
+    fill: solid(ink.surface3),
+    font: { name: ink.font, sz: 10, bold: true, color: { rgb: ink.navy } },
+    alignment: { vertical: 'center' },
+    border: Object.assign(box(ink.gridLine), {
+      top: { style: 'medium', color: { rgb: ink.navy } }
+    })
+  });
+
+  sheet.totals_row.forEach(function (cell, index) {
+    if (cell.type === 'money') style(totalsRow, index, totalsRow, index, { numFmt: MONEY_FORMAT });
+  });
 
   /* --- the approval footer (7.2) --- */
   push([]);
 
   const trackingRow = push([]);
-  aoa[trackingRow][0] = sheet.footer.tracking_label;
+  aoa[trackingRow][0] = sheet.footer.tracking_label.toUpperCase();
   aoa[trackingRow][1] = sheet.footer.tracking_no;
-  aoa[trackingRow][Math.max(2, width - 2)] = sheet.footer.date_label;
+  aoa[trackingRow][markerStart] = sheet.footer.date_label.toUpperCase();
   aoa[trackingRow][width - 1] = sheet.footer.date;
+  height(trackingRow, 18);
 
-  push([]);
+  style(trackingRow, 0, trackingRow, width - 1, {
+    font: { name: ink.font, sz: 10, bold: true, color: { rgb: ink.navy } },
+    alignment: { vertical: 'center' }
+  });
 
-  // Spread the three signatures across the width: start, middle, end.
-  const signatureColumns = [0, Math.floor((width - 1) / 2), width - 1];
+  // The two labels are captions for the values beside them, not values.
+  style(trackingRow, 0, trackingRow, 0, {
+    font: { name: ink.font, sz: 9, bold: true, color: { rgb: ink.textMuted } }
+  });
+  style(trackingRow, markerStart, trackingRow, markerStart, {
+    font: { name: ink.font, sz: 9, bold: true, color: { rgb: ink.textMuted } }
+  });
 
-  const signatureRow = push([]);
+  push([]);   // the gap the signatures are actually signed in
+
+  /*
+   * The three signature blocks, spread across the width: start, middle, end.
+   * The rule is a bottom border on an empty merged block rather than a run of
+   * underscores — a real line, at a fixed width, that survives a column being
+   * widened.
+   */
+  const blocks = signatureBlocks(width);
+
   const ruleRow = push([]);
+  height(ruleRow, 22);
+
+  const labelRow = push([]);
+  height(labelRow, 18);
 
   sheet.footer.signatures.forEach(function (signature, index) {
-    const column = signatureColumns[index];
-    aoa[signatureRow][column] = signature;
-    aoa[ruleRow][column] = '____________';
+    const block = blocks[index];
+    if (!block) return;
+
+    merge(ruleRow, block.start, ruleRow, block.end);
+    style(ruleRow, block.start, ruleRow, block.end, {
+      border: { bottom: { style: 'thin', color: { rgb: ink.navy } } }
+    });
+
+    aoa[labelRow][block.start] = signature;
+    merge(labelRow, block.start, labelRow, block.end);
+    style(labelRow, block.start, labelRow, block.end, {
+      font: { name: ink.font, sz: 10, bold: true, color: { rgb: ink.textSecondary } },
+      alignment: { horizontal: 'center', vertical: 'center' }
+    });
   });
 
   return {
     name: sheet.sheet_name,
     aoa: aoa,
     merges: merges,
+    styles: styles,
+    rows: heights,
     cols: sheet.columns.map(function (column) { return { wch: column.width || 12 }; })
   };
+}
+
+/**
+ * Where the three signatures sit, as three-column blocks at the start, the
+ * middle and the end of the sheet.
+ *
+ * @param {number} width the sheet's column count.
+ * @return {Array<{start: number, end: number}>}
+ */
+function signatureBlocks(width) {
+  const span = Math.max(1, Math.min(3, Math.floor(width / 3)));
+  const middle = Math.max(0, Math.floor((width - span) / 2));
+
+  return [
+    { start: 0, end: span - 1 },
+    { start: middle, end: middle + span - 1 },
+    { start: width - span, end: width - 1 }
+  ];
+}
+
+/* ================================================================== *
+ * The .xlsx's ink
+ *
+ * Excel cannot read css/tokens.css, and rule 23 does not allow the brand
+ * colours to be written down a second time here. So they are READ from the
+ * tokens at export time — the same trick main.js uses to paint the browser
+ * chrome from --color-navy. The fallbacks below are deliberately neutral: if
+ * the stylesheet cannot be read, the file goes out in black and white rather
+ * than in a second, drifting copy of the palette.
+ * ================================================================== */
+
+/** Two decimals with thousands separators, for every money cell. */
+const MONEY_FORMAT = '#,##0.00';
+
+/**
+ * The palette, read from the design tokens.
+ * @return {Object} colours as Excel's RRGGBB, plus the font family.
+ */
+function palette() {
+  return {
+    navy: tokenColor('--color-navy', '000000'),
+    navy3: tokenColor('--color-navy-3', '000000'),
+    inverse: tokenColor('--color-text-inverse', 'FFFFFF'),
+
+    surface: tokenColor('--color-surface', 'FFFFFF'),
+    surface2: tokenColor('--color-surface-2', 'FFFFFF'),
+    surface3: tokenColor('--color-surface-3', 'FFFFFF'),
+
+    textPrimary: tokenColor('--color-text-primary', '000000'),
+    textSecondary: tokenColor('--color-text-secondary', '000000'),
+    textMuted: tokenColor('--color-text-muted', '000000'),
+
+    gridLine: tokenColor('--color-grid-line', '000000'),
+    primarySubtle: tokenColor('--color-primary-subtle', 'FFFFFF'),
+
+    oldBg: tokenColor('--color-old-bg', 'FFFFFF'),
+    oldFg: tokenColor('--color-old-fg', '000000'),
+    newBg: tokenColor('--color-new-bg', 'FFFFFF'),
+    newFg: tokenColor('--color-new-fg', '000000'),
+
+    font: tokenFont('Calibri')
+  };
+}
+
+/**
+ * One design token as Excel's RRGGBB.
+ *
+ * Handles `#abc` as well as `#aabbcc`; anything else falls back, because a
+ * malformed colour makes the whole workbook unreadable to Excel rather than
+ * just looking wrong.
+ *
+ * @param {string} name the custom property, e.g. '--color-navy'.
+ * @param {string} fallback RRGGBB, used when the token cannot be read.
+ * @return {string} RRGGBB, upper case, no '#'.
+ */
+function tokenColor(name, fallback) {
+  const raw = readToken(name).replace('#', '');
+
+  if (/^[0-9a-f]{6}$/i.test(raw)) return raw.toUpperCase();
+
+  if (/^[0-9a-f]{3}$/i.test(raw)) {
+    return raw.split('').map(function (ch) { return ch + ch; }).join('').toUpperCase();
+  }
+
+  return fallback;
+}
+
+/**
+ * The first family in the `--font` stack, which is the one Excel can use.
+ * @param {string} fallback
+ * @return {string}
+ */
+function tokenFont(fallback) {
+  const first = readToken('--font').split(',')[0].replace(/['"]/g, '').trim();
+  return first || fallback;
+}
+
+/**
+ * @param {string} name
+ * @return {string} '' outside a browser, or when the property is not set.
+ */
+function readToken(name) {
+  if (typeof window === 'undefined' || !window.getComputedStyle) return '';
+  return String(
+    window.getComputedStyle(document.documentElement).getPropertyValue(name) || ''
+  ).trim();
+}
+
+/**
+ * A solid fill.
+ * @param {string} rgb RRGGBB
+ * @return {Object}
+ */
+function solid(rgb) {
+  return { patternType: 'solid', fgColor: { rgb: rgb }, bgColor: { rgb: rgb } };
+}
+
+/**
+ * A thin box on all four sides.
+ * @param {string} rgb RRGGBB
+ * @return {Object}
+ */
+function box(rgb) {
+  const side = { style: 'thin', color: { rgb: rgb } };
+  return { top: side, bottom: side, left: side, right: side };
 }
 
 /**

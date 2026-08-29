@@ -472,7 +472,7 @@ export const ar = {
   export_confirm_title: 'تعليم هذه البنود كمُصدَّرة؟',
   export_confirm_text: 'سيُعلَّم {count} بنداً معتمداً في ملف {period} لفريق {team}، {month} كمُصدَّر.',
   export_confirm_tracking: 'رقم التتبع {tracking} · تقرير {type}',
-  export_confirm_not_downloaded: 'لم تنزّل هذا الملف بعد. بعد التأكيد لن تظهر هذه البنود في الاستعلام — نزّل الملف أولاً.',
+  export_confirm_not_downloaded: 'لم يُنزَّل هذا الملف بعد، لذا سيُنزَّل أولاً عند التأكيد ثم تُعلَّم البنود كمُصدَّرة.',
   export_confirm_note: 'لا يمكن التراجع. البند المُصدَّر مقفل: لا يُعدَّل ولا يُعاد اعتماده ولا يُصدَّر مرة ثانية.',
   export_confirm_button: 'تصدير {count}',
   export_committed: 'تم تصدير {count} بنداً في الدفعة {batch}.',

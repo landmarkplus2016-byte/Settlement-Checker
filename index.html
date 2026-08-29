@@ -36,11 +36,20 @@
   <link rel="stylesheet" href="css/print.css" media="print">
 
   <!--
-    SheetJS, pinned. The only third-party dependency in the project and the only
-    <script> that is not one of ours (CLAUDE.md, Tech Stack). Not a module — it
-    publishes the global `XLSX`, which js/utils/xlsx.js wraps.
+    xlsx-js-style, pinned. The only third-party dependency in the project and the
+    only <script> that is not one of ours (CLAUDE.md, Tech Stack). Not a module —
+    it publishes the global `XLSX`, which js/utils/xlsx.js wraps.
+
+    It is SheetJS with cell styling added. Plain SheetJS writes values, merges
+    and column widths but drops fonts, fills and borders, which left the finance
+    file looking nothing like the preview it mirrors (7.2). Same API, so the
+    Site→JC import reads through it unchanged.
+
+    `xlsx.bundle.js` rather than `xlsx.min.js`: the bundle carries the codepage
+    tables, the way SheetJS's `xlsx.full.min.js` did before it. Without them a
+    legacy .xls dropped on the Site→JC import fails to read.
   -->
-  <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js"></script>
 </head>
 <body>
   <div id="app"></div>
