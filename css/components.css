@@ -351,6 +351,77 @@
 }
 
 /* ================================================================== *
+ * The update prompt (js/updates.js)
+ *
+ * Opposite corner from the toasts, so a save confirmation and "a new version
+ * is available" never sit on top of each other. A light surface rather than the
+ * navy of a toast: this one stays until it is answered, and it is a decision,
+ * not a notification.
+ * ================================================================== */
+
+.update-host {
+  position: fixed;
+  inset-block-end: var(--space-6);
+  inset-inline-start: var(--space-6);
+  z-index: 9400;
+}
+
+.update-banner {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-4);
+  max-inline-size: min(420px, calc(100vw - 48px));
+  padding: 14px 16px;
+  border: 1px solid var(--color-border);
+  border-inline-start: 3px solid var(--color-primary);
+  border-radius: var(--radius-lg);
+  background: var(--color-surface);
+  box-shadow: var(--shadow-lg);
+  animation: sc-toast-in .18s ease-out;
+}
+
+.update-title {
+  color: var(--color-text-primary);
+  font-size: 13px;
+  font-weight: var(--fw-semibold);
+}
+
+.update-text {
+  color: var(--color-text-secondary);
+  font-size: 11.5px;
+  line-height: 1.5;
+  margin-block-start: 2px;
+}
+
+.update-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-shrink: 0;
+}
+
+/* "Later" — the offer stays available without holding the corner of the screen. */
+.update-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 7px 12px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-pill);
+  background: var(--color-surface);
+  color: var(--color-primary);
+  font-size: 11.5px;
+  font-weight: var(--fw-semibold);
+  box-shadow: var(--shadow-md);
+  cursor: pointer;
+}
+
+.update-chip:hover {
+  border-color: var(--color-primary);
+  background: var(--color-primary-subtle);
+}
+
+/* ================================================================== *
  * The two role shells (CLAUDE.md 5.1)
  *
  * Coordinator: a slim white top bar over the content.
@@ -463,6 +534,18 @@
   border-block-end: 1px solid var(--color-navy-3);
 }
 
+/*
+ * The company logo. White artwork on the navy rail, sized by width so the file
+ * can be replaced with a different aspect ratio without touching the CSS.
+ */
+.sidebar-logo {
+  display: block;
+  inline-size: 150px;
+  max-inline-size: 100%;
+  block-size: auto;
+  margin-block-end: var(--space-3);
+}
+
 .sidebar-brand {
   color: var(--color-primary);
   font-weight: var(--fw-bold);
@@ -563,6 +646,32 @@
   background: var(--color-sidebar-active);
   color: var(--color-text-inverse);
   border-color: var(--color-primary);
+}
+
+/*
+ * The foot's action row. It wraps because three controls in a 230px rail is
+ * tight in English and does not fit in Arabic, where "Sign out" is twice as
+ * long — a second line is better than a clipped button.
+ */
+.sidebar-actions { flex-wrap: wrap; row-gap: var(--space-2); }
+
+/* Refresh — icon only, so it sits beside Sign out in a 230px rail. */
+.btn-refresh {
+  padding-inline: 8px;
+  line-height: 1;
+}
+
+.btn-refresh .refresh-icon {
+  display: inline-block;
+  font-size: 14px;
+}
+
+.btn-refresh:hover:not(:disabled) .refresh-icon {
+  animation: sc-spin .6s linear;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .btn-refresh:hover:not(:disabled) .refresh-icon { animation: none; }
 }
 
 /* Language toggle — a two-button segmented control. */

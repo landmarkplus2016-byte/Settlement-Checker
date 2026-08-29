@@ -14,6 +14,17 @@
  * Deep navy, per 8.3. Proportions (230px, 10px/22px links, the 3px active rail)
  * come from design/Settlement App.html.
  *
+ * The head carries the company logo above the app's own name: the white artwork
+ * is made for a dark ground, which is exactly what the rail is. It keeps its
+ * intrinsic width/height attributes so the rail does not shift while it loads,
+ * and the app name stays underneath it — the logo says whose app this is, the
+ * brand line says which app it is.
+ *
+ * The foot carries the two things that are the same on every screen for both
+ * roles: the language toggle and sign out, plus Refresh — which re-runs the
+ * current route rather than reloading the browser, because the token is
+ * memory-only (4.2) and a reload would cost a login.
+ *
  * The Admin sub-tabs are revealed only while an admin route is open: Admin
  * itself links to the first tab, so one click gets you in and the sub-list then
  * shows where you are. That avoids an expand/collapse state with nowhere to
@@ -24,6 +35,7 @@ import { getUser, getDisplayName } from '../state.js';
 import { t, getLang, setLang } from '../i18n/i18n.js';
 import { escapeHtml, qs } from '../utils/dom.js';
 import { logout } from '../auth/session.js';
+import { refreshRoute } from '../router.js';
 
 /**
  * The top-level destinations per role (5.2). `match` is the hash prefix that
@@ -95,6 +107,8 @@ export function renderSidebar(activeHash) {
   return `
     <aside class="sidebar">
       <div class="sidebar-head">
+        <img class="sidebar-logo" src="assets/lmp-logo-white.png"
+             alt="${escapeHtml(t('brand_logo_alt'))}" width="360" height="143">
         <div class="sidebar-brand">${escapeHtml(t('brand_name'))}</div>
         <div class="sidebar-tagline">${escapeHtml(t('brand_tagline'))}</div>
       </div>
@@ -110,13 +124,17 @@ export function renderSidebar(activeHash) {
           </div>
         </div>
 
-        <div class="row-tight">
+        <div class="row-tight sidebar-actions">
           <div class="lang-toggle lang-toggle-on-navy" id="sidebar-lang"
                role="group" aria-label="${escapeHtml(t('language'))}">
             <button type="button" data-lang="en" aria-pressed="${lang === 'en'}">${escapeHtml(t('lang_en'))}</button>
             <button type="button" data-lang="ar" aria-pressed="${lang === 'ar'}">${escapeHtml(t('lang_ar'))}</button>
           </div>
           <div class="spacer"></div>
+          <button class="btn btn-sm btn-on-navy btn-refresh" id="sidebar-refresh" type="button"
+                  title="${escapeHtml(t('refresh'))}" aria-label="${escapeHtml(t('refresh'))}">
+            <span class="refresh-icon" aria-hidden="true">↻</span>
+          </button>
           <button class="btn btn-sm btn-on-navy" id="sidebar-logout" type="button">
             ${escapeHtml(t('sign_out'))}
           </button>
@@ -168,10 +186,21 @@ function renderAdminTabs(hash) {
 }
 
 /**
- * Wire the sidebar. As with the top bar, the nav links are plain hash hrefs —
- * only the language toggle and sign out need handlers.
+ * Wire the sidebar. The nav links are plain hash hrefs — only the language
+ * toggle, refresh and sign out need handlers.
  */
 export function bindSidebarEvents() {
+  /*
+   * Refresh re-runs the current route: the screen is re-rendered and its bind*
+   * re-fetches, so the numbers on it come from the server again. The session
+   * lives in memory and is untouched, which is the whole point — nobody signs
+   * in again to see a fresh count.
+   */
+  const refreshButton = qs('#sidebar-refresh');
+  if (refreshButton) {
+    refreshButton.addEventListener('click', function () { refreshRoute(); });
+  }
+
   const langToggle = qs('#sidebar-lang');
   if (langToggle) {
     langToggle.addEventListener('click', function (event) {

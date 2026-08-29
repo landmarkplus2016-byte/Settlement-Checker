@@ -142,6 +142,23 @@ export function navigate(hash) {
   }
 }
 
+/**
+ * Re-run the current route — the shell's Refresh button.
+ *
+ * A plain re-render, which is all a refresh has to be here: every screen fetches
+ * inside its bind* (5.3), so painting the route again is what re-reads the
+ * Sheets. Nothing touches the session, so this is deliberately NOT a browser
+ * reload — the token is memory-only (4.2) and a reload would send the user back
+ * to the login screen, which is the thing this button exists to avoid.
+ *
+ * A coordinator's grid keeps its typing: the draft mirror in localStorage (6.5)
+ * is overlaid on the server rows when the grid seeds, so a refresh mid-entry
+ * loses nothing.
+ */
+export function refreshRoute() {
+  renderRoute();
+}
+
 /* ------------------------------------------------------------------ *
  * The route pass
  * ------------------------------------------------------------------ */

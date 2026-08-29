@@ -10,6 +10,7 @@ export const ar = {
 
   /* --- chrome --- */
   app_name: 'مدقق التسويات',
+  brand_logo_alt: 'لاندمارك بلس',
   brand_name: 'التسويات',
   brand_tagline: 'المصروفات والوقود · العمليات',
   brand_mark: 'ت',
@@ -24,6 +25,16 @@ export const ar = {
   nav_lists: 'القوائم',
 
   sign_out: 'تسجيل الخروج',
+  refresh: 'تحديث',
+
+  /* --- the update prompt (js/updates.js) --- */
+  update_title: 'يتوفر إصدار جديد',
+  update_text: 'أعد التحميل للانتقال إليه. ما كُتب في الجدول محفوظ، وسيُطلب منك تسجيل الدخول من جديد.',
+  update_reload: 'إعادة التحميل الآن',
+  update_later: 'لاحقًا',
+  update_applying: 'جارٍ التحديث…',
+  update_chip: 'تحديث جاهز',
+
   language: 'اللغة',
   lang_en: 'EN',
   lang_ar: 'ع',
@@ -126,7 +137,6 @@ export const ar = {
   action_export_text: 'إنشاء ملفات الحسابات لفريق وفترة محددين.',
   action_admin_text: 'الفرق، وجدول الموقع ← كود العمل، والمستخدمون، والقوائم.',
 
-  stat_pending_data: 'بانتظار البيانات',
   stat_open_settlements: 'تسويات مفتوحة',
   stat_draft_entries: 'إدخالات مسودة',
   stat_awaiting_approval: 'بانتظار الاعتماد',

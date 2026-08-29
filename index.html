@@ -13,13 +13,19 @@
     PWA (CLAUDE.md 9.2). Relative, like every other path here: GitHub Pages
     serves a project repo from a subdirectory, not the domain root.
 
+    The icons are PNG rather than SVG because that is what installability
+    actually turns on: a browser looks for a 192px and a 512px raster icon
+    before it offers to install, and iOS only reads apple-touch-icon — which it
+    also composites onto black, so that one has the off-white ground baked in
+    rather than transparency.
+
     There is no <meta name="theme-color"> hex here on purpose — js/main.js sets
     it from --color-navy so the browser chrome cannot drift from the tokens
     (rule 23). manifest.json has to carry its own literals; JSON cannot read CSS.
   -->
   <link rel="manifest" href="manifest.json">
-  <link rel="icon" href="icons/icon.svg" type="image/svg+xml">
-  <link rel="apple-touch-icon" href="icons/icon.svg">
+  <link rel="icon" href="icons/icon-192.png" type="image/png" sizes="192x192">
+  <link rel="apple-touch-icon" href="icons/apple-touch-icon.png" sizes="180x180">
 
   <!-- Design tokens first: every other stylesheet reads from them. -->
   <link rel="stylesheet" href="css/tokens.css">

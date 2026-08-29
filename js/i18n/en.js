@@ -12,6 +12,7 @@ export const en = {
 
   /* --- chrome --- */
   app_name: 'Settlement Checker',
+  brand_logo_alt: 'Landmark Plus',
   brand_name: 'Settlement',
   brand_tagline: 'Expense & Fuel · Ops',
   brand_mark: 'SC',
@@ -26,6 +27,16 @@ export const en = {
   nav_lists: 'Lists',
 
   sign_out: 'Sign out',
+  refresh: 'Refresh',
+
+  /* --- the update prompt (js/updates.js) --- */
+  update_title: 'A new version is available',
+  update_text: 'Reload to switch to it. Anything typed into a grid is kept, and you will be asked to sign in again.',
+  update_reload: 'Reload now',
+  update_later: 'Later',
+  update_applying: 'Updating…',
+  update_chip: 'Update ready',
+
   language: 'Language',
   lang_en: 'EN',
   lang_ar: 'AR',
@@ -128,7 +139,6 @@ export const en = {
   action_export_text: 'Build the finance files for a team and period.',
   action_admin_text: 'Teams, the Site → Job Code lookup, people and lists.',
 
-  stat_pending_data: 'Awaiting data',
   stat_open_settlements: 'Open settlements',
   stat_draft_entries: 'Draft entries',
   stat_awaiting_approval: 'Awaiting approval',

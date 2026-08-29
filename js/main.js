@@ -8,9 +8,11 @@
  *   4. adopt the server's primary_language unless the user has chosen one
  *   5. hand over to the router, which shows login or the role shell
  *
- * Plus the two PWA one-liners (9.2): register the service worker and paint the
- * browser chrome from the design tokens. Both are fire-and-forget and neither
- * is allowed to hold up or break the sequence above.
+ * Plus the two PWA lines (9.2): paint the browser chrome from the design tokens,
+ * and hand the service worker to js/updates.js — which registers it and offers
+ * the "new version available" prompt when a deploy lands under an open app.
+ * Both are fire-and-forget and neither is allowed to hold up or break the
+ * sequence above.
  */
 
 import { api, ApiError } from './api.js';
@@ -18,6 +20,7 @@ import { setConfig, hasExplicitLang } from './state.js';
 import { t, getLang, setLang, errorMessage } from './i18n/i18n.js';
 import { escapeHtml, mount, qs, setMessage, setBusy } from './utils/dom.js';
 import { startRouter, setRouterSuspended } from './router.js';
+import { initAppUpdates } from './updates.js';
 
 /**
  * Run the boot sequence. Safe to call again — "Try again" and "Change server
@@ -217,28 +220,6 @@ function renderBootError(err) {
  * ------------------------------------------------------------------ */
 
 /**
- * Register the service worker.
- *
- * Relative path on purpose: it sets the worker's SCOPE to the directory the app
- * is served from, which on GitHub Pages is `/<repo>/`, not the domain root.
- *
- * Every failure is swallowed. A worker is a nicety — it makes the shell open
- * instantly and offline — and an app that refuses to start because a cache
- * could not be registered would be strictly worse than one with no cache. It is
- * also absent by design on `file://` and on plain http, where the API is not
- * available at all.
- */
-function registerServiceWorker() {
-  if (!('serviceWorker' in navigator)) return;
-
-  window.addEventListener('load', function () {
-    navigator.serviceWorker.register('./service-worker.js').catch(function (err) {
-      console.warn('Service worker not registered: ' + (err && err.message));
-    });
-  });
-}
-
-/**
  * Paint the browser's own chrome (the Android address bar, the desktop title
  * bar of an installed window) with the app's navy.
  *
@@ -269,6 +250,6 @@ function applyThemeColor() {
  * ------------------------------------------------------------------ */
 
 applyThemeColor();
-registerServiceWorker();
+initAppUpdates();
 
 boot();

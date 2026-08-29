@@ -53,6 +53,8 @@ Intentionally framework-free and build-tool-free, exactly like the OHS Platform 
 
 GitHub Pages serves the repo root directly. No build, no `gh-pages` branch, no `dist/`. Editing a file and pushing to `main` is the entire deploy. The Apps Script is deployed once from the Apps Script editor; its Web App URL lives in `localStorage` as `sc_script_url` on each device — **never in code, never committed**.
 
+**Bump `APP_VERSION` in `service-worker.js` in the same push.** A browser only checks the worker file for changes, so that one line is what tells an already-open app that a new version exists; `js/updates.js` then offers a Reload button instead of leaving people on stale code until they think to hard-refresh. Forgetting the bump ships the files and tells nobody.
+
 ---
 
 ## User Roles — Quick Reference
@@ -596,9 +598,17 @@ settlement-checker/
   index.html
   manifest.json
   service-worker.js
-  icons/…
+  icons/
+    icon-192.png                 # PWA + favicon
+    icon-512.png                 # PWA
+    maskable-512.png             # Android, art inside the 80% safe zone
+    apple-touch-icon.png         # iOS, opaque ground (iOS fills alpha with black)
+  assets/
+    lmp-logo-white.png           # the company logo, sidebar head
   design/
     Settlement_App.html          # approved visual reference (read-only)
+    lmp-logo-white-master.png    # logo master; icons/ and assets/ are derived from these
+    app-icon-master.png
   css/
     tokens.css                   # ALL colors/radii/shadows live here
     base.css
@@ -611,6 +621,7 @@ settlement-checker/
     router.js
     api.js                       # the ONLY file that calls Apps Script
     state.js                     # in-memory session + localStorage draft cache/queue
+    updates.js                   # service-worker registration + "new version" prompt
     i18n/  en.js  ar.js  i18n.js
     utils/
       hash.js                    # SHA-256

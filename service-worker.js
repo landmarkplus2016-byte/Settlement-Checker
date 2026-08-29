@@ -35,25 +35,40 @@
  * ── Deploying ──────────────────────────────────────────────────────────────
  *
  * Editing a file and pushing to main is the whole deploy (CLAUDE.md,
- * Deployment). For that to actually REACH people, **bump CACHE_VERSION whenever
- * a file is renamed or removed** — see the constant below.
+ * Deployment). **Bump APP_VERSION in the same push.** That one line is what
+ * tells every open app a new version exists — see the constant below.
+ *
+ * ── Telling an open app about an update ────────────────────────────────────
+ *
+ * A browser checks THIS FILE for changes, byte for byte. Nothing else: a new
+ * dashboard.js with an unchanged worker is invisible to it. That is the whole
+ * reason APP_VERSION has to move on every deploy.
+ *
+ * When it does move, the browser installs the new worker and parks it in
+ * `waiting`, because this file deliberately does NOT call skipWaiting() on
+ * install. The page notices the waiting worker and offers a Reload button
+ * (js/updates.js); only when somebody presses it does the page post
+ * `skip_waiting` here, and only then does the new version take over.
+ *
+ * This used to skipWaiting() immediately. It was wrong: the swap replaced the
+ * CACHE under a page whose JS was already loaded and running, so the app went
+ * on running old code with no way to know, and the only cure was a hard
+ * refresh. Waiting for a click also means a coordinator halfway through a grid
+ * decides when the reload happens, instead of it landing on him mid-entry.
  */
 
 /**
- * Bump this on every rename or removal, and whenever you want to force every
- * device to refetch the whole shell.
+ * The deployed version. **Bump this on every push to main.**
  *
- * Editing the CONTENTS of a file does not need a bump: stale-while-revalidate
- * picks the new bytes up by itself on the next visit. A rename or a removal
- * does, because the old cache would still be holding a file that no longer
- * exists — and an index.html that outlives the JS it points at is a white
- * screen, not a stale page. Activating a new version drops every older cache in
- * one go, so the next load refetches everything.
+ * Two jobs in one line: it names this version's cache (so activating drops
+ * every older one), and it is the signal that makes an open app show its
+ * "new version available" prompt. Any string that changes will do; a date plus
+ * a counter reads best in DevTools.
  */
-const CACHE_VERSION = 'v1';
+const APP_VERSION = '2026.08.29-1';
 
 /** This version's cache. Anything not named this is deleted on activate. */
-const CACHE_NAME = 'settlement-checker-' + CACHE_VERSION;
+const CACHE_NAME = 'settlement-checker-' + APP_VERSION;
 
 /**
  * The app's own path on the host.
@@ -81,8 +96,14 @@ const PRECACHE = [
   './',
   './index.html',
   './manifest.json',
-  './icons/icon.svg',
-  './icons/maskable.svg',
+  './icons/icon-192.png',
+  './icons/icon-512.png',
+  './icons/maskable-512.png',
+  './icons/apple-touch-icon.png',
+
+  // The sidebar logo. Part of the shell: without it the rail opens with a hole
+  // in it on the first offline load.
+  './assets/lmp-logo-white.png',
 
   './css/tokens.css',
   './css/base.css',
@@ -95,6 +116,7 @@ const PRECACHE = [
   './js/router.js',
   './js/api.js',
   './js/state.js',
+  './js/updates.js',
 
   './js/i18n/i18n.js',
   './js/i18n/en.js',
@@ -108,7 +130,6 @@ const PRECACHE = [
   './js/utils/explode.js',
   './js/utils/xlsx.js',
 
-  './js/components/topbar.js',
   './js/components/sidebar.js',
   './js/components/modal.js',
   './js/components/toast.js',
@@ -142,19 +163,7 @@ const PRECACHE = [
  * ================================================================== */
 
 self.addEventListener('install', function (event) {
-  event.waitUntil(precache().then(function () {
-    /*
-     * Take over immediately rather than waiting for every tab to close.
-     *
-     * Safe here specifically because every module is a STATIC import pulled in
-     * at page load (index.html loads one module graph) and SheetJS is a plain
-     * <script> in the head. Nothing is fetched lazily later in a session, so a
-     * worker swapping underneath an open page cannot leave it half on one
-     * version and half on another. It also means a push to main reaches a
-     * coordinator who has kept the tab open all day.
-     */
-    return self.skipWaiting();
-  }));
+  event.waitUntil(precache());
 });
 
 /**
@@ -201,6 +210,36 @@ self.addEventListener('activate', function (event) {
 
     await self.clients.claim();
   })());
+});
+
+/* ================================================================== *
+ * Message — the page's half of the update handshake
+ * ================================================================== */
+
+/**
+ * `skip_waiting` is the page asking this worker to take over now.
+ *
+ * It is the ONLY way a new version activates while a tab is open, and it
+ * happens because somebody pressed Reload in the update prompt
+ * (js/updates.js). The page then reloads itself off the back of
+ * `controllerchange`, so the swap and the reload are one action rather than a
+ * cache changing under running code.
+ *
+ * A first install never comes through here: with no worker controlling the page
+ * there is nothing to wait behind, so it activates on its own.
+ */
+self.addEventListener('message', function (event) {
+  const data = event.data || {};
+
+  if (data.type === 'skip_waiting') {
+    self.skipWaiting();
+    return;
+  }
+
+  // Lets the page ask what it is actually running, for support questions.
+  if (data.type === 'get_version' && event.ports && event.ports[0]) {
+    event.ports[0].postMessage({ version: APP_VERSION });
+  }
 });
 
 /* ================================================================== *

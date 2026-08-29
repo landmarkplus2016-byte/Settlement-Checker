@@ -549,11 +549,13 @@ List every violation and fix it.
 ```
 Confirm manifest.json + service-worker.js follow the LMP PWA pattern: cache the app
 shell and JS/CSS with stale-while-revalidate, and NEVER cache any response from the
-Apps Script Web App or any non-GET request. Bump CACHE_VERSION on renames/removals.
+Apps Script Web App or any non-GET request. Bump APP_VERSION on every deploy — it
+names the cache AND is what makes an open app offer its "new version" reload prompt
+(js/updates.js), since a browser only watches service-worker.js for changes.
 Then confirm push-to-main is the only deploy step and GitHub Pages serves root.
 ```
 
-**Tests:** installable PWA; offline it opens the shell (coordinator's cached draft is readable); the Apps Script URL prompt appears on a fresh device.
+**Tests:** installable PWA; offline it opens the shell (coordinator's cached draft is readable); the Apps Script URL prompt appears on a fresh device; bump APP_VERSION, push, and an already-open tab offers Reload within half an hour (or immediately when its tab is brought back to the front).
 
 ---
 
