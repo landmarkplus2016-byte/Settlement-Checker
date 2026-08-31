@@ -227,6 +227,42 @@
   cursor: help;
 }
 
+/* ------------------------------------------------------------------ *
+ * The Job Code cell (6.6.3)
+ *
+ * A site can hold several job codes, one per task raised against it, and the
+ * cell autofills the one whose task date fits the day being settled. The count
+ * badge is the only thing telling the coordinator there ARE others, so it sits
+ * inside the cell rather than beside it: the input keeps the full width and the
+ * badge floats over its trailing edge, out of the way of the text but never out
+ * of sight. Logical properties throughout — the whole cell flips in Arabic.
+ * ------------------------------------------------------------------ */
+
+.grid-jc {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.grid-jc .grid-input { padding-inline-end: 20px; }
+
+.grid-jc-count {
+  position: absolute;
+  inset-inline-end: 3px;
+  min-inline-size: 14px;
+  padding: 0 3px;
+  border-radius: var(--radius-pill);
+  background: var(--color-primary-light);
+  color: var(--color-info);
+  font-size: 9px;
+  font-weight: var(--fw-bold);
+  line-height: 14px;
+  text-align: center;
+  pointer-events: none;
+}
+
+.grid-jc-count.is-hidden { display: none; }
+
 .grid-lock { color: var(--color-text-muted); font-size: 11px; }
 
 .grid-empty-row td { padding: 0; background: var(--color-surface); }

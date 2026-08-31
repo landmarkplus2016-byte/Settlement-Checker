@@ -339,6 +339,7 @@
   animation: sc-toast-in .18s ease-out;
 }
 
+.toast-info    { border-inline-start-color: var(--color-info); }
 .toast-success { border-inline-start-color: var(--color-success); }
 .toast-error   { border-inline-start-color: var(--color-danger); }
 .toast-warning { border-inline-start-color: var(--color-warning); }
@@ -961,6 +962,26 @@ td.col-actions {
 }
 
 /* The count under a table. */
+/*
+ * How many job codes a site carries, beside its id on the Site → Job Code
+ * screen. Without it a site that legitimately appears three times reads as three
+ * duplicate rows somebody should tidy up.
+ */
+.jc-count {
+  display: inline-block;
+  min-inline-size: 15px;
+  margin-inline-start: var(--space-2);
+  padding: 0 4px;
+  border-radius: var(--radius-pill);
+  background: var(--color-primary-light);
+  color: var(--color-info);
+  font-size: 10px;
+  font-weight: var(--fw-bold);
+  line-height: 15px;
+  text-align: center;
+  cursor: help;
+}
+
 .table-foot {
   padding: var(--space-3) var(--space-5);
   border-block-start: 1px solid var(--color-border-2);

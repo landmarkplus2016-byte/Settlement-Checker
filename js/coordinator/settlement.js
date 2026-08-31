@@ -23,7 +23,7 @@ import { t, errorMessage } from '../i18n/i18n.js';
 import { escapeHtml, qs, qsa, setBusy } from '../utils/dom.js';
 import { getDraft } from '../state.js';
 import { toNumber } from '../utils/validate.js';
-import { toastSuccess, toastError } from '../components/toast.js';
+import { toastSuccess, toastError, toastInfo } from '../components/toast.js';
 import { renderLoading, renderLoadError } from '../components/table.js';
 import {
   renderGrid, bindGridEvents, entryToRow, makeRow, gridColumns, rowToPayload,
@@ -532,7 +532,11 @@ function mountGrid() {
     kind: state.kind,
     rows: state.grids[state.kind].rows,
     reference: state.reference,
-    siteJcMap: state.siteJcMap
+    siteJcMap: state.siteJcMap,
+
+    // A row stores its month and day but not its year (2.2), and the Site→JC
+    // picker needs a whole date to choose a job code by (6.6.3).
+    fiscalYear: fiscalYear()
   });
 
   host.innerHTML = renderGrid(model);
@@ -552,9 +556,19 @@ function mountGrid() {
     // Site ID -> Job Code + period, on commit (6.6.3).
     onCellCommit: makeAutofillHook({
       getMap: function () { return state.siteJcMap; },
+      getFiscalYear: fiscalYear,
       onResolved: function (row, result) {
         if (result.unknown.length) {
           toastError(t('autofill_unknown', { sites: result.unknown.join(', ') }));
+        }
+
+        // A site with several job codes got one of them by date; say so once,
+        // rather than leaving the coordinator to notice the picker himself.
+        if (result.options.length > 1) {
+          toastInfo(t('autofill_multi_jc', {
+            job_code: row.job_code,
+            count: result.options.length
+          }));
         }
       }
     }),
@@ -679,8 +693,22 @@ function pasteOptions() {
     getKind: function () { return state.kind; },
     getRows: function () { return state.grids[state.kind].rows; },
     getSiteJcMap: function () { return state.siteJcMap; },
+    getFiscalYear: fiscalYear,
     onRows: onPastedRows
   };
+}
+
+/**
+ * The settlement's fiscal year, which a grid row does not carry.
+ *
+ * A row stores a month label and a day number (2.2); the year lives once, on the
+ * settlement. Putting the three together is what gives the Site→JC picker a date
+ * to choose a job code by (6.6.3).
+ *
+ * @return {string} '' before the settlement has loaded.
+ */
+function fiscalYear() {
+  return (state.settlement && state.settlement.fiscal_year) || '';
 }
 
 /**

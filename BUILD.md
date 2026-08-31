@@ -86,9 +86,16 @@ I have two Google Sheets: 'Settlement Config DB' and 'Settlement — Mahmoud Sha
    Medical, Allowance, Accommodation, Site Guard, Other), areas (Cairo, Delta, Alex,
    Upper Egypt), months (Jan…Dec).
 
-5. For SiteJC, a few seed rows so I can test autofill:
-   K3666→CABH559 new, 377→CABH783 old, K1286→CABH762 old, K6105→CABH748 new,
-   k3799→CABH795 new, 442→CABH789 new, J2722→ABD168 old, 6270→ABD151 old.
+5. For SiteJC (columns: site_id, job_code, task_date, period, updated_at,
+   updated_by — the key is site_id + job_code, so a site may repeat), a few seed
+   rows so I can test autofill. task_date is ISO; period is derived from its year
+   against fiscal_new_from_year, and these already agree with 2026:
+   K3666→CABH559 2026-02-11 new, 377→CABH783 2025-08-03 old,
+   K1286→CABH762 2025-11-19 old, K6105→CABH748 2026-01-06 new,
+   k3799→CABH795 2026-03-22 new, 442→CABH789 2026-01-14 new,
+   J2722→ABD168 2025-09-23 old, 6270→ABD151 2025-12-07 old,
+   and — to exercise the multi-JC picker — a SECOND row for K3666:
+   K3666→CABH611 2026-05-30 new.
 
 6. For Users, one manager and one coordinator row. Leave password_hash blank for now
    (I'll paste a SHA-256 hex in Stage 2). Put the coordinator sheet's ID in the
@@ -307,7 +314,8 @@ Build apps-script/Admin.gs with all manager-only actions (requireManager at the 
   for coordinators only)
 - list_teams, create_team, update_team (toggle active; never delete)
 - list_site_jc, upsert_site_jc, bulk_import_site_jc (array of {site_id, job_code,
-  period}, upsert by site_id, period required), delete_site_jc
+  task_date}, keyed on site_id + job_code, period DERIVED from task_date, replaces
+  the tab by default), delete_site_jc (optional job_code)
 - list_lists, update_lists
 Wire them all into Main.gs.
 ```
@@ -320,9 +328,11 @@ Wire them all into Main.gs.
 ```
 Read CLAUDE.md Sections 3.4, 8. Build the four admin screens:
 - js/admin/teams.js — list, add, activate/deactivate
-- js/admin/siteJc.js — table with old/new badges; add/edit a row; "Upload Excel"
-  that parses an .xlsx client-side with SheetJS (js/utils/xlsx.js) into
-  {site_id, job_code, period} rows and calls bulk_import_site_jc; flip period inline
+- js/admin/siteJc.js — table with old/new badges and task dates; add/edit a row;
+  "Upload Excel" that parses the Site ID-JC tracking .xlsx client-side with
+  xlsx-js-style (js/utils/xlsx.js), splits its combined `Site ID-JC` cell on the
+  last hyphen into {site_id, job_code, task_date} rows, previews added/changed/
+  removed, and calls bulk_import_site_jc (full replace); flip period inline
 - js/admin/users.js — the registry: list people, add/edit (coordinator rows take a
   sheet id), deactivate; reset password
 - js/admin/lists.js — edit projects/categories/areas/drivers/months
@@ -403,7 +413,10 @@ Read CLAUDE.md Section 6.6.
 Build js/coordinator/gridAutofill.js: on Site ID change, look up SiteJC (fetched once
 per session); fill job_code and period; for a slash-joined Site ID, look up each
 segment and join job codes in order; flag any unknown segment (leave its jc blank,
-warn). A coordinator may override period.
+warn). A site may hold several job codes — pick the one whose task_date is latest on
+or before the entry's day (fiscal_year + month + day), offer the rest in the cell, and
+re-pick when month or day changes. A coordinator may override period or job code, and
+once he does, autofill leaves that field alone.
 
 Build js/coordinator/gridPaste.js: a paste of tab-separated rows (from Excel) appends
 multiple rows, mapping columns in the documented order, running autofill per row. Also
@@ -602,7 +615,7 @@ Then confirm push-to-main is the only deploy step and GitHub Pages serves root.
 ## Step 11.1 — Onboard coordinators one at a time
 - [ ] For each coordinator: create their Google Sheet (Settlements/Expenses/Fuel tabs), add a `Users` row with `role=coordinator` and that sheet's id in `coordinator_sheet_id`
 - [ ] Have them run one real month in the app alongside the old workbook and reconcile the two finance files before trusting it
-- [ ] Populate `SiteJC` fully (upload the real site→JC+period list) before wide use, so autofill and the old/new split are correct
+- [ ] Populate `SiteJC` fully (upload the real Site ID-JC tracking file) before wide use, so autofill and the old/new split are correct. Re-upload it whenever a new export is issued — the upload replaces the tab, and the task dates in it are what decide old vs new
 
 ## Step 11.2 — Go live
 - [ ] Once one coordinator's month reconciles to the workbook, cut that coordinator over and stop their workbook

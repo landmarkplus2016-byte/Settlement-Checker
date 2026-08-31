@@ -237,25 +237,47 @@ function updateRowByKey(ss, name, keyCol, keyVal, updates) {
   var row = readRowByKey(ss, name, keyCol, keyVal);
   if (!row) return null;
 
+  return updateRowAt(ss, name, row._row, updates);
+}
+
+/**
+ * Patch one row addressed by its sheet row number.
+ *
+ * The same job as updateRowByKey, for a tab whose identity is not one column:
+ * SiteJC is keyed on site_id + job_code (CLAUDE.md 2.1), so its caller finds the
+ * row itself and hands over the number. Only keys present in the header row are
+ * applied; every other cell keeps what it already holds.
+ *
+ * @param {GoogleAppsScript.Spreadsheet.Spreadsheet} ss
+ * @param {string} name
+ * @param {number} rowIndex 1-based sheet row, as carried on `_row`.
+ * @param {Object} updates
+ * @return {Object|null} the written row, or null when rowIndex is not a data row.
+ */
+function updateRowAt(ss, name, rowIndex, updates) {
   var sheet = getSheet(ss, name);
   var headers = getHeaders(ss, name);
+
+  if (!(rowIndex >= 2) || rowIndex > sheet.getLastRow()) return null;
+
+  var current = sheet.getRange(rowIndex, 1, 1, headers.length).getValues()[0];
   var patch = updates || {};
 
-  var line = headers.map(function (headerKey) {
-    if (!headerKey) return '';
+  var line = headers.map(function (headerKey, index) {
+    if (!headerKey) return current[index];
     var val = Object.prototype.hasOwnProperty.call(patch, headerKey)
       ? patch[headerKey]
-      : row[headerKey];
+      : current[index];
     return (val === null || val === undefined) ? '' : val;
   });
 
-  sheet.getRange(row._row, 1, 1, headers.length).setValues([line]);
+  sheet.getRange(rowIndex, 1, 1, headers.length).setValues([line]);
 
   var written = {};
   for (var c = 0; c < headers.length; c++) {
     if (headers[c]) written[headers[c]] = line[c];
   }
-  written._row = row._row;
+  written._row = rowIndex;
   return written;
 }
 

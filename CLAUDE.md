@@ -95,7 +95,9 @@ Everything downstream depends on these. Never break one without confirming with 
     - Export **commits** `approved` rows → `exported` (stamps `export_batch_id`, `exported_at`).
 12. **Editing an `approved` entry reverts it to `confirmed` and clears the approval.** A coordinator can edit after confirming; the moment he changes an already-approved row, it drops back to `confirmed` and must be re-approved. This is what stops an amount changing after sign-off.
 13. **An `exported` entry is locked.** No edits, no re-approval, no second export. This is the dedup guarantee.
-14. **`period` comes from the Site→JC lookup, not free typing.** When a Site ID is entered, its `job_code` and `period` auto-fill. A coordinator may override the period on a row, but the default is always the lookup's answer.
+14. **`period` comes from the Site→JC lookup, not free typing — and the lookup's period comes from the task date.** When a Site ID is entered, its `job_code` and `period` auto-fill. A coordinator may override either on a row, but the default is always the lookup's answer.
+    - A site can hold **several job codes** (one per task raised against it). The grid fills in the one whose `task_date` is the latest **on or before** the day being settled, and offers the rest in the Job Code cell. Fallbacks: every task later than the entry → the earliest; no usable day yet → the newest.
+    - In the lookup itself, `period` is **derived from `task_date`** (year ≥ `fiscal_new_from_year` → `new`; no readable date → `new`), server-side. The uploaded file's own Old/New column is never read — one authority for the old/new split, and it is the date.
 
 ### Export
 
@@ -193,13 +195,16 @@ One spreadsheet, shared, owned by the developer. Tabs:
 | `active` | boolean | Inactive teams stay off new entries; old entries keep their team |
 | `created_at` / `updated_at` / `updated_by` | | Server-set |
 
-**`SiteJC`** — the shared Site ID → Job Code lookup, with period. This is what folds "JC Finder" into entry.
+**`SiteJC`** — the shared Site ID → Job Code lookup, with task date and period. This is what folds "JC Finder" into entry.
+
+**A row is one task, not one site.** The source tracking file raises a fresh job code against a site every time work is ordered there, so `K3602` legitimately carries `ABD02` (07-Dec-2025) *and* `ABD12` (23-Sep-2025) — and both are `old`, so the period cannot tell them apart. The primary key is therefore the **pair** `site_id + job_code`, and `task_date` is what the grid chooses between them by (6.6.3).
 
 | Column | Type | Purpose |
 |---|---|---|
-| `site_id` | text | Primary key. A single site, never a slash-joined group |
-| `job_code` | text | The site's job code |
-| `period` | text | `old` \| `new` — sites before 2026 are `old`, 2026+ are `new` |
+| `site_id` | text | Half the primary key. A single site, never a slash-joined group |
+| `job_code` | text | The other half. One site may have several rows, one per task |
+| `task_date` | text | ISO `YYYY-MM-DD`; the date the task was raised. Derives `period`, and picks between a site's job codes |
+| `period` | text | `old` \| `new` — **derived** from `task_date` against `fiscal_new_from_year`, never typed at import |
 | `updated_at` / `updated_by` | | Server-set |
 
 **`Lists`** — dropdown reference data, grouped.
@@ -324,7 +329,7 @@ The Apps Script keeps a per-request cache of: the config map, the `Users` regist
 
 - **`list_users`** / **`create_user`** / **`update_user`** / **`reset_user_password`** / **`deactivate_user`** — manage the Users tab (which *is* the registry). `create_user`/`update_user` set `coordinator_sheet_id` for coordinators. Cannot deactivate the last active manager.
 - **`list_teams`** / **`create_team`** / **`update_team`** — add or toggle `active`. Never hard-delete.
-- **`list_site_jc`** / **`upsert_site_jc`** / **`bulk_import_site_jc`** / **`delete_site_jc`** — the lookup. `bulk_import_site_jc` takes rows parsed from an uploaded Excel (client parses with xlsx-js-style, sends JSON) and upserts by `site_id`. `period` is required on every row.
+- **`list_site_jc`** / **`upsert_site_jc`** / **`bulk_import_site_jc`** / **`delete_site_jc`** — the lookup, keyed on `site_id + job_code`. `bulk_import_site_jc` takes rows parsed from an uploaded Excel (client parses with xlsx-js-style, splits the file's combined `Site ID-JC` cell on its last hyphen, sends JSON) and **replaces** the tab by default (`mode: 'merge'` for a partial file): the source is a dated full export, so a pair that has left the file leaves the lookup. `period` is derived server-side from `task_date` and is never accepted from the import. `delete_site_jc` takes an optional `job_code` — without one it removes every task on the site.
 - **`list_lists`** / **`update_lists`** — dropdown reference data.
 
 ## 3.5 Coordinator — own sheet only (7)
@@ -450,6 +455,7 @@ Computed live in the grid and re-checked in `save_entries` / `confirm_track`:
 - **Missing required field** (project, category for expense; driver for fuel) → flagged.
 - **Fuel KM continuity** → within one driver, a row's `start_km` should equal the previous row's `end_km`; a gap is an amber warning (does not block, but is surfaced).
 - **Unknown site in lookup** → if a Site ID (or a segment of a multi-site cell) is absent from `SiteJC`, warn and leave `job_code`/`period` for the coordinator to set. Confirm is allowed; the warning stands.
+- **Site with several job codes** → not an error. The date-matched code is filled in, the cell shows how many alternatives exist, and the coordinator can pick another. Once he does, autofill stops replacing it.
 
 `confirm_track` refuses if any *flag* (not warning) remains on that period's rows.
 
@@ -477,7 +483,7 @@ The coordinator's grid is the one local-first surface:
 
 1. **Paste from Excel** — a paste of tab-separated rows appends multiple rows; `job_code`/`period` auto-fill per row.
 2. **Carry-down** — a new row inherits `team`, `project`, `month`, `day`, and `period` from the row above.
-3. **Site → JC + period autofill** — entering a Site ID fills `job_code` and `period` from `SiteJC`; multi-site cells look up each segment and join the codes in order, flagging any unknown segment.
+3. **Site → JC + period autofill** — entering a Site ID fills `job_code` and `period` from `SiteJC`; multi-site cells look up each segment and join the codes in order, flagging any unknown segment. Where a site has several job codes, the one matching the entry's day wins and the Job Code cell offers the rest (each labelled with its task date) — so `month` and `day` re-run the pick, and a hand-chosen code is never overwritten.
 4. **Inline dropdowns** — project / category / area / team / period as in-cell selects.
 5. **Keyboard nav** — Tab across, Enter moves to the same column in the next row (adding a row at the end).
 

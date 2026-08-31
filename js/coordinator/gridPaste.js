@@ -23,7 +23,7 @@ import { escapeHtml } from '../utils/dom.js';
 import { openModal } from '../components/modal.js';
 import { text as asText, period as asPeriod } from '../utils/validate.js';
 import { gridColumns, makeRow } from './grid.js';
-import { autofillRow } from './gridAutofill.js';
+import { autofillRow, rowEntryDate } from './gridAutofill.js';
 
 /** Refuse a paste larger than this — it is a convenience, not an importer. */
 const MAX_PASTE_ROWS = 500;
@@ -139,13 +139,16 @@ export function looksLikeHeader(kind, cells) {
  *     was meant.
  *
  * A pasted `period` counts as the coordinator's own choice (rule 14), so
- * autofill will not overrule it.
+ * autofill will not overrule it — and so does a pasted `job_code`, now that a
+ * site can offer several and the lookup's pick is only a default (6.6.3).
  *
  * @param {string} kind
  * @param {Array<Array<string>>} matrix
  * @param {Object} options
  * @param {Object|null} [options.previous] the row above, for carry-down.
  * @param {Object|null} [options.siteJcMap] for per-row autofill.
+ * @param {*} [options.fiscalYear] the settlement's year, so each row's month and
+ *        day become the date its job code is chosen by.
  * @return {{rows: Array<Object>, skippedHeader: boolean, unknownSites: Array<string>}}
  */
 export function rowsFromMatrix(kind, matrix, options = {}) {
@@ -157,7 +160,11 @@ export function rowsFromMatrix(kind, matrix, options = {}) {
 
   const rows = [];
   const unknownSites = [];
-  const periodIndex = columns.findIndex(function (column) { return column.key === 'period'; });
+  const indexOf = function (key) {
+    return columns.findIndex(function (column) { return column.key === key; });
+  };
+  const periodIndex = indexOf('period');
+  const jobCodeIndex = indexOf('job_code');
   let previous = options.previous || null;
 
   lines.forEach(function (line) {
@@ -171,11 +178,17 @@ export function rowsFromMatrix(kind, matrix, options = {}) {
     });
 
     // A period that arrived WITH the paste is the coordinator's own answer, so
-    // autofill must not overrule it (rule 14).
+    // autofill must not overrule it (rule 14). Same for a job code.
     const pastedPeriod = (periodIndex === -1) ? '' : asPeriod(line[periodIndex]);
     if (pastedPeriod) row._period_manual = true;
 
-    const result = autofillRow(row, options.siteJcMap || null);
+    if (jobCodeIndex !== -1 && asText(line[jobCodeIndex])) row._jc_manual = true;
+
+    const result = autofillRow(
+      row,
+      options.siteJcMap || null,
+      rowEntryDate(row, options.fiscalYear)
+    );
     result.unknown.forEach(function (site) {
       if (unknownSites.indexOf(site) === -1) unknownSites.push(site);
     });
@@ -293,7 +306,8 @@ function applyPaste(raw, options) {
 
   const result = rowsFromMatrix(kind, capped, {
     previous: existing.length ? existing[existing.length - 1] : null,
-    siteJcMap: options.getSiteJcMap()
+    siteJcMap: options.getSiteJcMap(),
+    fiscalYear: (typeof options.getFiscalYear === 'function') ? options.getFiscalYear() : ''
   });
 
   result.truncated = truncated;

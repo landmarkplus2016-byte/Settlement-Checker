@@ -113,7 +113,8 @@ function validateEntries(kind, rows, options) {
  *
  * @param {string} kind 'expense' | 'fuel'.
  * @param {Object} row a raw entry row.
- * @param {Object} siteMap normalized site_id -> {job_code, period}.
+ * @param {Object} siteMap normalized site_id -> Array of candidate
+ *        {job_code, task_date, period}, from getSiteJcMap().
  * @param {{flags: Array, warnings: Array}} result appended to in place.
  */
 function validateEntryRow(kind, row, siteMap, result) {
@@ -176,7 +177,8 @@ function validateEntryRow(kind, row, siteMap, result) {
  *
  * @param {string} siteCell the raw cell.
  * @param {Object} row the entry.
- * @param {Object} siteMap from getSiteJcMap().
+ * @param {Object} siteMap from getSiteJcMap(); a site maps to a LIST of
+ *        candidate job codes (2.1), so presence is all this check needs.
  * @param {{flags: Array, warnings: Array}} result appended to in place.
  */
 function validateSiteAgainstLookup(siteCell, row, siteMap, result) {

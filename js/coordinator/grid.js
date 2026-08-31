@@ -29,6 +29,7 @@ import { t } from '../i18n/i18n.js';
 import { escapeHtml, qs, qsa } from '../utils/dom.js';
 import { validateRows, toNumber, text as asText, period as asPeriod } from '../utils/validate.js';
 import { formatMoney } from '../utils/money.js';
+import { resolveSite, rowEntryDate } from './gridAutofill.js';
 import { saveDraft, getDraft } from '../state.js';
 
 /**
@@ -327,9 +328,77 @@ function renderCell(kind, column, row, issues, locked) {
     ? renderPeriodCell(column, row, locked)
     : (column.type === 'list')
       ? renderListCell(kind, column, row, locked)
-      : renderInputCell(column, row, locked);
+      : (column.key === 'job_code')
+        ? renderJobCodeCell(column, row, locked)
+        : renderInputCell(column, row, locked);
 
   return `<td class="${cellClass}" data-field="${escapeHtml(column.key)}">${control}</td>`;
+}
+
+/**
+ * The Job Code cell, which is a plain input plus a way out of an ambiguity.
+ *
+ * A site now carries one job code per task raised against it (2.1), so `K3602`
+ * has both `ABD02` and `ABD12`. Autofill picks the one whose task date fits the
+ * day being settled (6.6.3), which is right nearly always — but "nearly" is not
+ * good enough for a field that decides what finance is billed against, so the
+ * alternatives are one click away:
+ *
+ *   - a `<datalist>` of every job code the lookup holds for the site, each
+ *     labelled with its task date, so the browser's own dropdown offers them;
+ *   - a small count beside the cell, because an alternative nobody knows exists
+ *     is not a choice.
+ *
+ * It stays an INPUT rather than becoming a select: a multi-site cell holds
+ * `CABH783/CABH789`, and an unknown site holds whatever the coordinator types.
+ * Neither is expressible as a list of options.
+ *
+ * @return {string} HTML
+ */
+function renderJobCodeCell(column, row, locked) {
+  const options = row.__jc_options || [];
+  const listId = 'jc-' + row._uid;
+
+  return `
+    <div class="grid-jc">
+      <input class="grid-input num" type="text"
+             data-field="job_code"
+             data-uid="${escapeHtml(row._uid)}"
+             value="${escapeHtml(row.job_code)}"
+             ${options.length > 1 ? `list="${escapeHtml(listId)}"` : ''}
+             ${locked ? 'readonly tabindex="-1"' : ''}
+             aria-label="${escapeHtml(t(column.labelKey))}">
+
+      <datalist id="${escapeHtml(listId)}" data-jc-list="${escapeHtml(row._uid)}">
+        ${renderJcOptions(options)}
+      </datalist>
+
+      ${options.length > 1
+        ? `<span class="grid-jc-count" data-jc-count="${escapeHtml(row._uid)}"
+                 title="${escapeHtml(t('grid_jc_choices', { count: options.length }))}"
+                 aria-label="${escapeHtml(t('grid_jc_choices', { count: options.length }))}"
+           >${options.length}</span>`
+        : `<span class="grid-jc-count is-hidden" data-jc-count="${escapeHtml(row._uid)}"></span>`}
+    </div>
+  `;
+}
+
+/**
+ * The options of one job-code picker. The task date is the LABEL, not the
+ * value — picking one must put the bare job code in the cell.
+ *
+ * @param {Array<Object>} options
+ * @return {string} HTML
+ */
+function renderJcOptions(options) {
+  return (options || []).map(function (option) {
+    return `<option value="${escapeHtml(option.job_code)}" label="${escapeHtml(
+      t('grid_jc_option', {
+        date: option.task_date || t('grid_jc_no_date'),
+        period: t('period_' + (option.period || 'new'))
+      })
+    )}"></option>`;
+  }).join('');
 }
 
 /**
@@ -814,7 +883,50 @@ export function bindGridEvents(model, hooks = {}) {
       }
     });
 
+    // Always, not only when job_code moved: resolving a Site ID can change WHICH
+    // codes are on offer without changing the one that was chosen.
+    paintJcOptions(row);
+
     revalidate();
+  };
+
+  /**
+   * Repaint one row's job-code picker from `row.__jc_options`, in place.
+   *
+   * The datalist and its count are the only parts of a cell that autofill can
+   * change without changing a value, so they are repainted here rather than by a
+   * re-render — the caret is usually sitting in the Site ID cell next door (5.3).
+   *
+   * @param {Object} row
+   */
+  const paintJcOptions = function (row) {
+    const options = row.__jc_options || [];
+    const uid = cssEscape(row._uid);
+
+    const list = host.querySelector('[data-jc-list="' + uid + '"]');
+    if (list) list.innerHTML = renderJcOptions(options);
+
+    const input = host.querySelector('[data-uid="' + uid + '"][data-field="job_code"]');
+    if (input) {
+      if (options.length > 1) input.setAttribute('list', 'jc-' + row._uid);
+      else input.removeAttribute('list');
+    }
+
+    const count = host.querySelector('[data-jc-count="' + uid + '"]');
+    if (count) {
+      const many = options.length > 1;
+      const label = many ? t('grid_jc_choices', { count: options.length }) : '';
+
+      count.textContent = many ? String(options.length) : '';
+      count.classList.toggle('is-hidden', !many);
+      if (many) {
+        count.setAttribute('title', label);
+        count.setAttribute('aria-label', label);
+      } else {
+        count.removeAttribute('title');
+        count.removeAttribute('aria-label');
+      }
+    }
   };
 
   const controller = {
@@ -935,21 +1047,41 @@ function cssEscape(value) {
  * ------------------------------------------------------------------ */
 
 /**
- * Hang the option lists off each row so renderListCell can reach them without a
- * second argument threaded through every render function.
+ * Hang the view-only decoration off each row so the render functions can reach
+ * it without a second argument threaded through every one of them.
+ *
+ * Two things: the dropdown option lists, and each row's job-code candidates. The
+ * candidates are seeded here rather than only on edit, so a row loaded from the
+ * server shows its picker the moment the grid paints — a coordinator reopening
+ * last week's work can see that a site had a second job code without having to
+ * retype the Site ID to find out.
+ *
  * @param {Object} model
  * @return {Object} the same model.
  */
 function decorate(model) {
-  model.rows.forEach(function (row) { row.__reference = model.reference; });
+  model.rows.forEach(function (row) {
+    row.__reference = model.reference;
+
+    row.__jc_options = model.siteJcMap
+      ? resolveSite(row.site_id, model.siteJcMap, rowEntryDate(row, model.fiscalYear)).options
+      : [];
+  });
+
   return model;
 }
 
-/** The mirrored form of a row — the view-only decoration does not belong in it. */
+/**
+ * The mirrored form of a row.
+ *
+ * Anything named with a leading double underscore is view-only decoration —
+ * `__reference`, `__jc_options` — rebuilt from the reference data on load, and
+ * serialising it into every draft write would be pure weight.
+ */
 function stripRow(row) {
   const copy = {};
   Object.keys(row).forEach(function (key) {
-    if (key === '__reference') return;
+    if (key.indexOf('__') === 0) return;
     copy[key] = row[key];
   });
   return copy;

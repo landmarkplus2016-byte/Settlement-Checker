@@ -38,7 +38,7 @@ var SITE_PERIODS = ['old', 'new'];
 var LIST_NAMES = ['projects', 'categories', 'areas', 'drivers', 'months'];
 
 /** Ceiling on one bulk_import_site_jc call, so a huge paste cannot time out. */
-var MAX_BULK_SITE_JC_ROWS = 5000;
+var MAX_BULK_SITE_JC_ROWS = 10000;
 
 /* Per-request caches (CLAUDE.md 2.4). Apps Script gives each request a fresh
  * global scope, so these need no cross-request invalidation — only the
@@ -84,7 +84,18 @@ function invalidateSiteJc() {
 }
 
 /**
- * The Site ID -> { job_code, period } lookup, keyed by NORMALIZED site id.
+ * The Site ID -> candidate job codes lookup, keyed by NORMALIZED site id.
+ *
+ * **A site maps to a LIST, not to one job code.** The source tracking file gives
+ * a site a fresh job code every time a task is raised against it, so `K3602`
+ * legitimately carries `ABD02` (07-Dec-2025) and `ABD12` (23-Sep-2025) at the
+ * same time — and both of them are `old`, so the period cannot tell them apart
+ * either. Which one an entry means is decided by its `task_date` against the day
+ * the coordinator is settling — a choice made in the grid (pickCandidate() in
+ * js/coordinator/gridAutofill.js), not here: an entry stores the job code it
+ * resolved at save time, so the server never re-picks one. This map exists so
+ * validation can ask whether a site is known at all, and so the admin screen and
+ * the grid can both read the whole lookup in one call.
  *
  * Site ids match case-insensitively: real site lists are typed by many hands and
  * carry `k3799` next to `K3666`. A coordinator typing `K3799` from paperwork must
@@ -92,7 +103,8 @@ function invalidateSiteJc() {
  * tracking number — a case mismatch would silently break the old/new split.
  * The site id is STORED exactly as it was entered; only comparisons normalize.
  *
- * @return {Object} normalized site_id -> { site_id, job_code, period }
+ * @return {Object} normalized site_id ->
+ *         Array<{site_id, job_code, task_date, period}>, newest task_date first.
  */
 function getSiteJcMap() {
   var rows = getSiteJcRows();
@@ -100,14 +112,124 @@ function getSiteJcMap() {
 
   for (var i = 0; i < rows.length; i++) {
     var siteId = normalizeKey(rows[i].site_id);
-    if (!siteId) continue;
-    map[normalizeSiteId(siteId)] = {
+    var jobCode = normalizeKey(rows[i].job_code);
+    if (!siteId || !jobCode) continue;
+
+    var key = normalizeSiteId(siteId);
+    if (!map[key]) map[key] = [];
+
+    map[key].push({
       site_id: siteId,
-      job_code: normalizeKey(rows[i].job_code),
+      job_code: jobCode,
+      task_date: normalizeTaskDate(rows[i].task_date),
       period: normalizePeriod(rows[i].period)
-    };
+    });
   }
+
+  var keys = Object.keys(map);
+  for (var k = 0; k < keys.length; k++) map[keys[k]].sort(compareByTaskDateDesc);
+
   return map;
+}
+
+/**
+ * Order candidates newest-first, with undated ones last.
+ *
+ * ISO dates sort correctly as strings, which is the whole reason task_date is
+ * stored as `YYYY-MM-DD` (2.3). A blank date is not "the oldest" — it is
+ * unknown — so it goes to the end rather than to the bottom of the date order.
+ *
+ * @param {Object} a
+ * @param {Object} b
+ * @return {number}
+ */
+function compareByTaskDateDesc(a, b) {
+  if (!a.task_date && !b.task_date) return 0;
+  if (!a.task_date) return 1;
+  if (!b.task_date) return -1;
+  return (a.task_date < b.task_date) ? 1 : ((a.task_date > b.task_date) ? -1 : 0);
+}
+
+/**
+ * A task date as a stored `YYYY-MM-DD` string, or '' when there is not one.
+ *
+ * The client parses the uploaded spreadsheet and sends ISO (3.4), so this is
+ * mostly a shape check — but it has to accept a **Date** too, and that case is
+ * the subtle one. Writing `2025-12-07` into a cell makes Sheets parse it into a
+ * real date value, so the very next read of the row hands this a Date rather
+ * than the string that was written.
+ *
+ * It is read back in LOCAL terms (getFullYear/getMonth/getDate), never UTC.
+ * Sheets builds that Date at midnight in the spreadsheet's own timezone, so a
+ * UTC reading of it lands on the previous evening and yields the previous DAY —
+ * which at a year boundary would move `01-Jan-2026` back to 2025 and flip the
+ * row from `new` to `old`. Local getters round-trip it exactly.
+ *
+ * @param {*} v
+ * @return {string}
+ */
+function normalizeTaskDate(v) {
+  if (v instanceof Date) {
+    if (isNaN(v.getTime())) return '';
+
+    return v.getFullYear() + '-' +
+           padTwo(v.getMonth() + 1) + '-' +
+           padTwo(v.getDate());
+  }
+
+  var s = normalizeKey(v);
+  if (!s) return '';
+
+  var match = /^(\d{4})-(\d{2})-(\d{2})/.exec(s);
+  if (!match) return '';
+
+  var month = parseInt(match[2], 10);
+  var day = parseInt(match[3], 10);
+  if (month < 1 || month > 12 || day < 1 || day > 31) return '';
+
+  return match[1] + '-' + match[2] + '-' + match[3];
+}
+
+/**
+ * @param {number} n
+ * @return {string} two digits, zero-padded.
+ */
+function padTwo(n) {
+  return (n < 10 ? '0' : '') + n;
+}
+
+/**
+ * The period a task date falls in (rule 14).
+ *
+ * The imported tracking file is the only authority on old vs new: the year of
+ * the task date decides it against `fiscal_new_from_year`, and the file's own
+ * Old/New column is not read at all. A task with no usable date counts as `new`
+ * — the project owner's rule, and the safe direction, since new is the track
+ * still open.
+ *
+ * @param {*} taskDate
+ * @return {string} 'old' | 'new'
+ */
+function derivePeriodFromTaskDate(taskDate) {
+  var iso = normalizeTaskDate(taskDate);
+  if (!iso) return 'new';
+
+  return (parseInt(iso.substring(0, 4), 10) >= getFiscalNewFromYear()) ? 'new' : 'old';
+}
+
+/**
+ * The composite key of a SiteJC row (2.1).
+ *
+ * A site alone stopped being unique the moment the lookup started carrying every
+ * task raised against it, so identity is site + job code — the pair the source
+ * file spells as one `K4429-ABD01` cell.
+ *
+ * @param {*} siteId
+ * @param {*} jobCode
+ * @return {string}
+ */
+function siteJcKey(siteId, jobCode) {
+  return normalizeSiteId(siteId) + ' ' + normalizeSiteId(jobCode);
 }
 
 /**
@@ -768,8 +890,13 @@ function handleUpdateTeam(session, payload) {
  * SiteJC (2.1) — the Site ID -> Job Code + period lookup.
  *
  * This is the tab that folds "JC Finder" into entry, and `period` is the field
- * that routes a row to the old or the new Tracking# (rule 14 / 6.2). It is
- * therefore required on every write, never inferred.
+ * that routes a row to the old or the new Tracking# (rule 14 / 6.2).
+ *
+ * A row is one TASK, not one site: the source tracking file raises a fresh job
+ * code against a site every time work is ordered there, so identity is the pair
+ * site_id + job_code (siteJcKey) and a site legitimately carries several. The
+ * `task_date` that comes with each pair is what tells them apart, and it is also
+ * the only authority on the period — see derivePeriodFromTaskDate.
  *
  * Matching is case-insensitive throughout (see getSiteJcMap). The id is stored
  * exactly as typed.
@@ -783,6 +910,7 @@ function toPublicSiteJc(row) {
   return {
     site_id: normalizeKey(row.site_id),
     job_code: normalizeKey(row.job_code),
+    task_date: normalizeTaskDate(row.task_date),
     period: normalizePeriod(row.period),
     updated_at: toStampString(row.updated_at),
     updated_by: normalizeKey(row.updated_by)
@@ -827,25 +955,39 @@ function handleListSiteJc(session, payload) {
     sites.push(site);
   }
 
+  // Site first, then newest task date — so a site's several job codes arrive
+  // together, in the order the picker will offer them.
   sites.sort(function (a, b) {
     var x = normalizeSiteId(a.site_id), y = normalizeSiteId(b.site_id);
-    return x < y ? -1 : (x > y ? 1 : 0);
+    if (x !== y) return x < y ? -1 : 1;
+    return compareByTaskDateDesc(a, b);
   });
 
   return { sites: sites, total: total, returned: sites.length };
 }
 
 /**
- * `upsert_site_jc` (3.4) — add or correct one site.
+ * `upsert_site_jc` (3.4) — add or correct one site + job code pair.
+ *
+ * Keyed on the PAIR, so adding a second job code to a site creates a row rather
+ * than overwriting the first (2.1). Two fields are treated as "leave alone when
+ * the caller does not mention them", because the admin screen's inline period
+ * flip sends nothing but the key and the new period:
+ *
+ *   - an absent `task_date` keeps the stored one,
+ *   - an absent `period` is derived from whatever task_date ends up stored.
+ *
+ * A period that IS sent wins, and stands until the next upload re-derives it
+ * from the file (rule 14) — which is what the screen's hint says.
  *
  * @param {Object} session auth context.
- * @param {Object} payload { site_id, job_code, period }
+ * @param {Object} payload { site_id, job_code, task_date?, period? }
  * @return {Object} { site, created: boolean }
  */
 function handleUpsertSiteJc(session, payload) {
   requireManager(session);
 
-  var clean = validateSiteJcRow(payload || {});
+  var body = payload || {};
   var stamp = nowIso();
 
   var result = withScriptLock(function () {
@@ -854,16 +996,28 @@ function handleUpsertSiteJc(session, payload) {
     // Re-read under the lock: an upsert must see the current sheet to decide
     // between patching a row and appending a new one.
     var rows = readAllRows(ss, 'SiteJC');
-    var target = normalizeSiteId(clean.site_id);
+    var target = siteJcKey(body.site_id, body.job_code);
     var existing = null;
 
     for (var i = 0; i < rows.length; i++) {
-      if (normalizeSiteId(rows[i].site_id) === target) { existing = rows[i]; break; }
+      if (siteJcKey(rows[i].site_id, rows[i].job_code) === target) { existing = rows[i]; break; }
     }
+
+    var merged = {
+      site_id: body.site_id,
+      job_code: body.job_code,
+      task_date: Object.prototype.hasOwnProperty.call(body, 'task_date')
+        ? body.task_date
+        : (existing ? existing.task_date : ''),
+      period: normalizeKey(body.period) || null
+    };
+
+    var clean = validateSiteJcRow(merged);
 
     var record = {
       site_id: clean.site_id,
       job_code: clean.job_code,
+      task_date: clean.task_date,
       period: clean.period,
       updated_at: stamp,
       updated_by: session.user_id
@@ -871,10 +1025,7 @@ function handleUpsertSiteJc(session, payload) {
 
     var written;
     if (existing) {
-      // Address the row by the id AS STORED — a case-insensitive match found it,
-      // but updateRowByKey compares exactly.
-      written = updateRowByKey(ss, 'SiteJC', 'site_id', normalizeKey(existing.site_id), record);
-      if (!written) throw appError('not_found', 'site_not_found');
+      written = updateRowAt(ss, 'SiteJC', existing._row, record);
     } else {
       written = appendRow(ss, 'SiteJC', record);
     }
@@ -889,26 +1040,38 @@ function handleUpsertSiteJc(session, payload) {
 /**
  * `bulk_import_site_jc` (3.4) — the "Upload Excel" path.
  *
- * The client parses the .xlsx with SheetJS and sends JSON; this validates every
- * row BEFORE writing any of them, so a bad cell on row 400 does not leave the
- * lookup half-imported. `period` is required on every row (3.4).
+ * The client parses the tracking .xlsx with xlsx-js-style and sends JSON; this
+ * validates every row BEFORE writing any of them, so a bad cell on row 400 does
+ * not leave the lookup half-imported.
  *
- * Within the payload, rows are deduped by normalized site_id and the LAST one
- * wins — an upload carrying both `k3799` and `K3799` updates one row rather than
- * creating two.
+ * Two things this does NOT take from the client:
  *
- * The write is batched: existing rows are patched in a single setValues() over
- * the data range and new rows appended in one more. A per-row updateRowByKey
+ *   - **The period.** It is re-derived here from `task_date` against
+ *     `fiscal_new_from_year` (rule 14). The uploaded file's own Old/New column is
+ *     never read — one authority for the old/new split, and it is the date.
+ *   - **What the sheet already holds.** The default `mode` is `replace`: the
+ *     uploaded file becomes the lookup, and a site+job-code pair that has left
+ *     the file leaves the lookup with it. The source is a dated full export, so
+ *     merging would keep cancelled tasks alive forever. `mode: 'merge'` keeps the
+ *     old upsert-only behaviour for a partial file.
+ *
+ * Within the payload, rows are deduped by site_id + job_code and the LAST one
+ * wins — an upload carrying both `k3799-ABD01` and `K3799-abd01` writes one row.
+ *
+ * The write is batched into one clear plus one setValues(). A per-row update
  * would re-read the whole tab thousands of times and time out.
  *
  * @param {Object} session auth context.
- * @param {Object} payload { rows: [{site_id, job_code, period}, ...] }
- * @return {Object} { imported, created, updated, duplicates_collapsed }
+ * @param {Object} payload { rows: [{site_id, job_code, task_date}, ...], mode? }
+ * @return {Object} { imported, created, updated, unchanged, removed,
+ *                    duplicates_collapsed, mode }
  */
 function handleBulkImportSiteJc(session, payload) {
   requireManager(session);
 
   var body = payload || {};
+  var mode = (normalizeKey(body.mode).toLowerCase() === 'merge') ? 'merge' : 'replace';
+
   var incoming = body.rows || body.sites;
   if (!(incoming instanceof Array)) {
     throw appError('validation_failed', 'invalid_rows', { rows: 'must_be_array' });
@@ -930,9 +1093,16 @@ function handleBulkImportSiteJc(session, payload) {
   var collapsed = 0;
 
   for (var i = 0; i < incoming.length; i++) {
+    var raw = incoming[i] || {};
     var clean;
+
     try {
-      clean = validateSiteJcRow(incoming[i] || {});
+      clean = validateSiteJcRow({
+        site_id: raw.site_id,
+        job_code: raw.job_code,
+        task_date: raw.task_date,
+        period: null                       // always derived from the date here
+      });
     } catch (err) {
       var errs = (err && err.field_errors) ? err.field_errors : { row: 'invalid' };
       var keys = Object.keys(errs);
@@ -942,7 +1112,7 @@ function handleBulkImportSiteJc(session, payload) {
       continue;
     }
 
-    var key = normalizeSiteId(clean.site_id);
+    var key = siteJcKey(clean.site_id, clean.job_code);
     if (Object.prototype.hasOwnProperty.call(byKey, key)) collapsed++;
     else order.push(key);
     byKey[key] = clean;
@@ -963,69 +1133,104 @@ function handleBulkImportSiteJc(session, payload) {
 
     var colSite = headers.indexOf('site_id');
     var colJc = headers.indexOf('job_code');
+    var colTaskDate = headers.indexOf('task_date');
     var colPeriod = headers.indexOf('period');
-    if (colSite === -1 || colJc === -1 || colPeriod === -1) {
+    if (colSite === -1 || colJc === -1 || colTaskDate === -1 || colPeriod === -1) {
       throw appError('server_error', 'sitejc_headers_missing');
     }
     var colUpdatedAt = headers.indexOf('updated_at');
     var colUpdatedBy = headers.indexOf('updated_by');
 
-    // One read of the whole data block; every patch happens in memory.
+    // One read of the whole data block; every comparison happens in memory.
     var data = (lastRow >= 2)
       ? sheet.getRange(2, 1, lastRow - 1, headers.length).getValues()
       : [];
 
-    var index = {};
+    var stored = {};
     for (var r = 0; r < data.length; r++) {
-      var key = normalizeSiteId(data[r][colSite]);
-      if (key) index[key] = r;
+      var storedKey = siteJcKey(data[r][colSite], data[r][colJc]);
+      if (storedKey !== ' ') stored[storedKey] = data[r];
     }
 
+    var created = 0;
     var updated = 0;
-    var appends = [];
+    var unchanged = 0;
+    var lines = [];
 
     for (var o = 0; o < order.length; o++) {
-      var siteKey = order[o];
-      var row = byKey[siteKey];
+      var row = byKey[order[o]];
+      var was = stored[order[o]] || null;
 
-      if (Object.prototype.hasOwnProperty.call(index, siteKey)) {
-        var at = index[siteKey];
-        // Keep the stored site_id spelling; the import corrects the data, not
-        // how somebody once capitalised the key.
-        data[at][colJc] = row.job_code;
-        data[at][colPeriod] = row.period;
-        if (colUpdatedAt !== -1) data[at][colUpdatedAt] = stamp;
-        if (colUpdatedBy !== -1) data[at][colUpdatedBy] = actor;
-        updated++;
-      } else {
-        var line = [];
-        for (var c = 0; c < headers.length; c++) line.push('');
-        line[colSite] = row.site_id;
-        line[colJc] = row.job_code;
-        line[colPeriod] = row.period;
+      /*
+       * Keep the stored spelling of the pair when we already have it: the import
+       * corrects the DATA, not how somebody once capitalised a key. Everything
+       * else on the row comes from the file.
+       */
+      var line = [];
+      for (var c = 0; c < headers.length; c++) line.push(was ? was[c] : '');
+
+      var same = !!was &&
+        normalizeTaskDate(was[colTaskDate]) === row.task_date &&
+        normalizePeriod(was[colPeriod]) === row.period;
+
+      if (!was) line[colSite] = row.site_id;
+      if (!was) line[colJc] = row.job_code;
+      line[colTaskDate] = row.task_date;
+      line[colPeriod] = row.period;
+
+      if (!was) created++;
+      else if (same) unchanged++;
+      else updated++;
+
+      // An unchanged row keeps its audit stamp — "updated_at" should mean the
+      // last time the value moved, not the last time a file mentioned it.
+      if (!same) {
         if (colUpdatedAt !== -1) line[colUpdatedAt] = stamp;
         if (colUpdatedBy !== -1) line[colUpdatedBy] = actor;
-        appends.push(line);
+      }
+
+      lines.push(line);
+    }
+
+    var removed = 0;
+
+    if (mode === 'merge') {
+      // Everything the file did not mention stays, exactly as it is.
+      var keptKeys = Object.keys(stored);
+      for (var m = 0; m < keptKeys.length; m++) {
+        if (!Object.prototype.hasOwnProperty.call(byKey, keptKeys[m])) {
+          lines.push(stored[keptKeys[m]]);
+        }
+      }
+    } else {
+      var storedKeys = Object.keys(stored);
+      for (var s = 0; s < storedKeys.length; s++) {
+        if (!Object.prototype.hasOwnProperty.call(byKey, storedKeys[s])) removed++;
       }
     }
 
-    if (updated && data.length) {
-      sheet.getRange(2, 1, data.length, headers.length).setValues(data);
+    // Clear then write: a replace that shrinks the tab must not leave the tail
+    // of the previous list sitting under the new one.
+    if (lastRow >= 2) {
+      sheet.getRange(2, 1, lastRow - 1, sheet.getMaxColumns()).clearContent();
     }
-    if (appends.length) {
-      ensureRowCapacity(sheet, lastRow + appends.length);
-      sheet.getRange(lastRow + 1, 1, appends.length, headers.length).setValues(appends);
+    if (lines.length) {
+      ensureRowCapacity(sheet, lines.length + 1);
+      sheet.getRange(2, 1, lines.length, headers.length).setValues(lines);
     }
 
     invalidateSiteJc();
-    return { created: appends.length, updated: updated };
+    return { created: created, updated: updated, unchanged: unchanged, removed: removed };
   });
 
   return {
-    imported: result.created + result.updated,
+    imported: result.created + result.updated + result.unchanged,
     created: result.created,
     updated: result.updated,
-    duplicates_collapsed: collapsed
+    unchanged: result.unchanged,
+    removed: result.removed,
+    duplicates_collapsed: collapsed,
+    mode: mode
   };
 }
 
@@ -1037,40 +1242,60 @@ function handleBulkImportSiteJc(session, payload) {
  * record: an entry stores its own resolved job_code and period at save time, so
  * removing a stale lookup row never rewrites history.
  *
+ * With a `job_code` it removes that one pair; without one it removes every job
+ * code the site carries, which is how a site is retired now that it holds a list
+ * (2.1). Rows are deleted bottom-up so the earlier `_row` numbers stay valid.
+ *
  * @param {Object} session auth context.
- * @param {Object} payload { site_id }
- * @return {Object} { deleted: true, site_id }
+ * @param {Object} payload { site_id, job_code? }
+ * @return {Object} { deleted: true, site_id, removed }
  */
 function handleDeleteSiteJc(session, payload) {
   requireManager(session);
 
-  var siteId = normalizeKey((payload || {}).site_id);
+  var body = payload || {};
+  var siteId = normalizeKey(body.site_id);
   if (!siteId) throw appError('validation_failed', 'invalid_site', { site_id: 'required' });
 
-  var target = normalizeSiteId(siteId);
+  var jobCode = normalizeKey(body.job_code);
+  var targetSite = normalizeSiteId(siteId);
+  var targetPair = jobCode ? siteJcKey(siteId, jobCode) : '';
 
   var stored = withScriptLock(function () {
     var ss = openConfigSpreadsheet();
     var rows = readAllRows(ss, 'SiteJC');
+    var sheet = getSheet(ss, 'SiteJC');
+    var hits = [];
 
     for (var i = 0; i < rows.length; i++) {
-      if (normalizeSiteId(rows[i].site_id) !== target) continue;
+      var matches = targetPair
+        ? siteJcKey(rows[i].site_id, rows[i].job_code) === targetPair
+        : normalizeSiteId(rows[i].site_id) === targetSite;
 
-      getSheet(ss, 'SiteJC').deleteRow(rows[i]._row);
-      invalidateSiteJc();
-      return normalizeKey(rows[i].site_id);
+      if (matches) hits.push(rows[i]);
     }
-    return null;
+
+    if (!hits.length) return null;
+
+    for (var h = hits.length - 1; h >= 0; h--) sheet.deleteRow(hits[h]._row);
+
+    invalidateSiteJc();
+    return { site_id: normalizeKey(hits[0].site_id), removed: hits.length };
   });
 
   if (stored === null) throw appError('not_found', 'site_not_found');
 
-  return { deleted: true, site_id: stored };
+  return { deleted: true, site_id: stored.site_id, removed: stored.removed };
 }
 
 /**
  * Validate one SiteJC row.
- * @param {Object} raw { site_id, job_code, period }
+ *
+ * `period` is derived from `task_date` unless the caller passes one explicitly
+ * (rule 14) — the import never does, the admin screen's manual add and inline
+ * flip both do.
+ *
+ * @param {Object} raw { site_id, job_code, task_date?, period? }
  * @return {Object} the cleaned row.
  * @throws {Object} appError('validation_failed') carrying per-field reasons.
  */
@@ -1087,18 +1312,25 @@ function validateSiteJcRow(raw) {
   else if (jobCode.length > 60) fieldErrors.job_code = 'too_long';
   else if (jobCode.indexOf('/') !== -1) fieldErrors.job_code = 'must_be_single_job_code';
 
-  // Required, never inferred: `period` is what routes an entry to the old or the
-  // new Tracking# (rule 14).
+  /*
+   * A task date that was SENT but is not a date is an error; an absent one is
+   * not. The source file carries undated tasks, and the owner's rule is that
+   * they settle as `new` rather than being refused at the door.
+   */
+  var taskDate = normalizeTaskDate(raw.task_date);
+  if (!taskDate && normalizeKey(raw.task_date)) fieldErrors.task_date = 'must_be_iso_date';
+
   var period = normalizePeriod(raw.period);
   if (!period) {
-    fieldErrors.period = normalizeKey(raw.period) ? 'must_be_old_or_new' : 'required';
+    if (normalizeKey(raw.period)) fieldErrors.period = 'must_be_old_or_new';
+    else period = derivePeriodFromTaskDate(taskDate);
   }
 
   if (Object.keys(fieldErrors).length) {
     throw appError('validation_failed', 'invalid_site_jc', fieldErrors);
   }
 
-  return { site_id: siteId, job_code: jobCode, period: period };
+  return { site_id: siteId, job_code: jobCode, task_date: taskDate, period: period };
 }
 
 /* ================================================================== *

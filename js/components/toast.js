@@ -50,3 +50,11 @@ export function toastSuccess(message) { showToast(message, 'success'); }
 
 /** @param {string} message */
 export function toastError(message) { showToast(message, 'error', 4200); }
+
+/**
+ * A neutral notice — something the app did that is worth knowing but is not a
+ * result to celebrate or a problem to fix. The grid's "this site has more than
+ * one job code" is the case it exists for.
+ * @param {string} message
+ */
+export function toastInfo(message) { showToast(message, 'info'); }

@@ -50,7 +50,9 @@ export const WARNING_CODES = [
  * @param {string} kind 'expense' | 'fuel'
  * @param {Array<Object>} rows the grid's in-memory row model.
  * @param {Object} [options]
- * @param {Object|null} [options.siteJcMap] uppercased site_id -> {job_code, period}.
+ * @param {Object|null} [options.siteJcMap] uppercased site_id -> Array of
+ *        candidate {job_code, task_date, period} (a site holds one per task
+ *        raised against it, 2.1). These checks only ask whether a site is there.
  *        When absent, the lookup checks are skipped rather than guessed at — see
  *        checkSiteAgainstLookup().
  * @return {{rows: Array<{flags: Array, warnings: Array}>, flagCount: number,

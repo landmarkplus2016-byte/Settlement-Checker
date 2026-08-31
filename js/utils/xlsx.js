@@ -98,11 +98,20 @@ export async function readWorkbookFile(file) {
  * of `3799` must stay the string '3799' and not become the number 3799, or it
  * would be compared, stored and displayed differently from `K3799` beside it.
  *
+ * Each row also carries two things beside its named fields:
+ *
+ *   - `_row`, its 1-based row number **in the file**, so a problem is reported at
+ *     the line the user sees in Excel. Blank rows are kept in the matrix and
+ *     skipped here rather than dropped by the library, which is what keeps that
+ *     number honest in a sheet with a gap in it.
+ *   - `_raw`, the same cells before they were stringified. A date column is the
+ *     reason: as text it is whatever the cell's number format happened to be
+ *     (`07/12/2025` could be either month), while raw it is a real Date. See
+ *     parseSheetDate() in utils/dates.js.
+ *
  * @param {Object} workbook from readWorkbookFile().
  * @param {string} [sheetName] defaults to the first sheet.
  * @return {{sheet_name: string, headers: Array<string>, rows: Array<Object>}}
- *         Each row also carries `_row`, its 1-based row number in the file, so a
- *         problem can be reported at the line the user sees in Excel.
  * @throws {SheetError} import_no_sheets | import_sheet_missing | import_sheet_empty
  */
 export function readSheetRows(workbook, sheetName) {
@@ -116,13 +125,12 @@ export function readSheetRows(workbook, sheetName) {
   if (!sheet) throw new SheetError('import_sheet_missing');
 
   // header:1 gives raw arrays, so the header row is ours to normalise rather
-  // than SheetJS's to guess (and to de-duplicate with _1 suffixes).
-  const matrix = window.XLSX.utils.sheet_to_json(sheet, {
-    header: 1,
-    raw: false,
-    defval: '',
-    blankrows: false
-  });
+  // than SheetJS's to guess (and to de-duplicate with _1 suffixes). blankrows
+  // stays true so a matrix index still maps to a file row number.
+  const options = { header: 1, defval: '', blankrows: true };
+
+  const matrix = window.XLSX.utils.sheet_to_json(sheet, Object.assign({ raw: false }, options));
+  const typed = window.XLSX.utils.sheet_to_json(sheet, Object.assign({ raw: true }, options));
 
   if (!matrix.length) throw new SheetError('import_sheet_empty');
 
@@ -131,9 +139,11 @@ export function readSheetRows(workbook, sheetName) {
 
   for (let r = 1; r < matrix.length; r++) {
     const line = matrix[r] || [];
+    const rawLine = typed[r] || [];
 
     let blank = true;
     const obj = {};
+    const raw = {};
 
     for (let c = 0; c < headers.length; c++) {
       const key = headers[c];
@@ -144,12 +154,16 @@ export function readSheetRows(workbook, sheetName) {
 
       // First column wins on a duplicated header, so a stray second 'period'
       // column cannot silently override the real one.
-      if (!Object.prototype.hasOwnProperty.call(obj, key)) obj[key] = value;
+      if (!Object.prototype.hasOwnProperty.call(obj, key)) {
+        obj[key] = value;
+        raw[key] = rawLine[c];
+      }
     }
 
     if (blank) continue;
 
     obj._row = r + 1;
+    obj._raw = raw;
     rows.push(obj);
   }
 
@@ -168,10 +182,37 @@ export function readSheetRows(workbook, sheetName) {
  * @return {string} '' when none of them is present or all are blank.
  */
 export function pickField(row, aliases) {
+  const key = pickFieldKey(row, aliases);
+  return key ? String(row[key]).trim() : '';
+}
+
+/**
+ * The same cell as pickField(), but before it was turned into text.
+ *
+ * Only a date column needs this, and it needs it badly: `07/12/2025` as text is
+ * a guess, while the raw cell is a Date (see readSheetRows).
+ *
+ * @param {Object} row from readSheetRows().
+ * @param {Array<string>} aliases normalised keys, best first.
+ * @return {*} undefined when no alias is present.
+ */
+export function pickRawField(row, aliases) {
+  const key = pickFieldKey(row, aliases);
+  if (!key) return undefined;
+
+  const raw = row._raw || {};
+  return Object.prototype.hasOwnProperty.call(raw, key) ? raw[key] : row[key];
+}
+
+/**
+ * Which alias this row actually carries a value under.
+ * @return {string} '' when none of them is present or all are blank.
+ */
+function pickFieldKey(row, aliases) {
   for (let i = 0; i < aliases.length; i++) {
     const value = row[aliases[i]];
     if (value !== undefined && value !== null && String(value).trim() !== '') {
-      return String(value).trim();
+      return aliases[i];
     }
   }
   return '';
