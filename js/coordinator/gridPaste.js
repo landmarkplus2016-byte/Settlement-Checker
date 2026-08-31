@@ -149,6 +149,8 @@ export function looksLikeHeader(kind, cells) {
  * @param {Object|null} [options.siteJcMap] for per-row autofill.
  * @param {*} [options.fiscalYear] the settlement's year, so each row's month and
  *        day become the date its job code is chosen by.
+ * @param {Object} [options.defaults] the settlement's month and anything else a
+ *        row falls back to when neither the paste nor the row above supplied it.
  * @return {{rows: Array<Object>, skippedHeader: boolean, unknownSites: Array<string>}}
  */
 export function rowsFromMatrix(kind, matrix, options = {}) {
@@ -168,7 +170,7 @@ export function rowsFromMatrix(kind, matrix, options = {}) {
   let previous = options.previous || null;
 
   lines.forEach(function (line) {
-    const row = makeRow(kind, previous);
+    const row = makeRow(kind, previous, options.defaults);
 
     columns.forEach(function (column, index) {
       const value = asText(line[index]);
@@ -216,6 +218,8 @@ export function rowsFromMatrix(kind, matrix, options = {}) {
  * @param {Function} options.getKind
  * @param {Function} options.getRows current model rows, for carry-down.
  * @param {Function} options.getSiteJcMap
+ * @param {Function} [options.getDefaults] the row defaults (the settlement's
+ *        month), for a paste with no month column of its own.
  * @param {Function} options.onRows called with the parse result.
  * @return {Function} a detach function.
  */
@@ -307,7 +311,8 @@ function applyPaste(raw, options) {
   const result = rowsFromMatrix(kind, capped, {
     previous: existing.length ? existing[existing.length - 1] : null,
     siteJcMap: options.getSiteJcMap(),
-    fiscalYear: (typeof options.getFiscalYear === 'function') ? options.getFiscalYear() : ''
+    fiscalYear: (typeof options.getFiscalYear === 'function') ? options.getFiscalYear() : '',
+    defaults: (typeof options.getDefaults === 'function') ? options.getDefaults() : null
   });
 
   result.truncated = truncated;

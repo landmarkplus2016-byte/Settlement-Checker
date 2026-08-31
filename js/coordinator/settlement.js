@@ -185,7 +185,11 @@ async function loadReference() {
       projects: activeValues('projects'),
       categories: activeValues('categories'),
       areas: activeValues('areas'),
-      drivers: activeValues('drivers')
+      drivers: activeValues('drivers'),
+
+      // The month cell is a dropdown for the same reason create_settlement's is:
+      // a typed "Augst" is a month nothing matches, and the export filters on it.
+      months: activeValues('months')
     };
     state.referenceAvailable = true;
 
@@ -536,7 +540,11 @@ function mountGrid() {
 
     // A row stores its month and day but not its year (2.2), and the Site→JC
     // picker needs a whole date to choose a job code by (6.6.3).
-    fiscalYear: fiscalYear()
+    fiscalYear: fiscalYear(),
+
+    // What a new row falls back to when there is no row above to carry down
+    // from — the month being settled, which is the settlement's own.
+    defaults: rowDefaults()
   });
 
   host.innerHTML = renderGrid(model);
@@ -694,8 +702,23 @@ function pasteOptions() {
     getRows: function () { return state.grids[state.kind].rows; },
     getSiteJcMap: function () { return state.siteJcMap; },
     getFiscalYear: fiscalYear,
+    getDefaults: rowDefaults,
     onRows: onPastedRows
   };
+}
+
+/**
+ * What a row falls back to when neither carry-down nor the coordinator has
+ * answered for it.
+ *
+ * Only the month, and only as a DEFAULT. A settlement is a month's worth of work
+ * (rule 9), so that is what a fresh row is almost always for — but a line dated
+ * into the neighbouring month is a real thing, and the cell stays editable.
+ *
+ * @return {Object}
+ */
+function rowDefaults() {
+  return { month: (state.settlement && state.settlement.month) || '' };
 }
 
 /**

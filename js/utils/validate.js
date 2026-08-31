@@ -6,6 +6,11 @@
  * codes the server returns, so a row the grid paints red is the same row
  * `confirm_track` refuses. When one side changes, the other changes with it.
  *
+ * One warning is client-only — `mixed_period`, see checkMixedPeriod(). It reads a
+ * per-site answer that only exists where the entry's date has been resolved
+ * against the lookup, and being a warning it blocks nothing, so no rule ends up
+ * enforced on one side alone.
+ *
  * The split that matters is FLAG versus WARNING:
  *
  *   - A **flag** is a row that cannot be settled — no Site ID, no amount, a
@@ -34,6 +39,7 @@ export const WARNING_CODES = [
   'missing_job_code',
   'missing_period',
   'job_code_count_mismatch',
+  'mixed_period',
   'km_gap'
 ];
 
@@ -150,7 +156,39 @@ export function validateRow(kind, row, siteJcMap) {
    */
   if (!period(row.period)) warn('missing_period', 'period');
 
+  checkMixedPeriod(row, warn);
+
   return { flags, warnings };
+}
+
+/**
+ * A multi-site row whose sites do not all belong to the same period.
+ *
+ * The row settles against ONE Tracking# (6.2), so half of it would be filed
+ * under the wrong one — the fix is to split the line, which is the coordinator's
+ * call and not something to do behind his back. Amber, therefore, and not red:
+ * 6.3's blocking list is fixed, and a line that has to go out today under one
+ * number is better than a Confirm that will not run.
+ *
+ * Read from `__site_periods`, which gridAutofill hangs off the row: the period of
+ * a site depends on WHICH job code the row's day picked (6.6.3), and that is
+ * resolved where the date is known. This is the one check with no mirror in
+ * Validate.gs — the server has no date-resolved candidate to compare — and it
+ * blocks nothing, so nothing is enforced only on the client.
+ *
+ * @param {Object} row
+ * @param {Function} warn
+ */
+function checkMixedPeriod(row, warn) {
+  const segments = row.__site_periods || [];
+  const seen = [];
+
+  segments.forEach(function (segment) {
+    const value = period(segment.period);
+    if (value && seen.indexOf(value) === -1) seen.push(value);
+  });
+
+  if (seen.length > 1) warn('mixed_period', 'period', { periods: seen });
 }
 
 /**

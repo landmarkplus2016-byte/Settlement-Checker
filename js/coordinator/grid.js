@@ -47,12 +47,12 @@ import { saveDraft, getDraft } from '../state.js';
  */
 const COLUMNS = {
   expense: [
-    { key: 'month',            type: 'text',   labelKey: 'col_month',    width: 70 },
+    { key: 'month',            type: 'list',   labelKey: 'col_month',    width: 86,  list: 'months' },
     { key: 'day',              type: 'number', labelKey: 'col_day',      width: 56 },
     { key: 'project',          type: 'list',   labelKey: 'col_project',  width: 120, list: 'projects' },
     { key: 'site_id',          type: 'text',   labelKey: 'col_site_id',  width: 140, num: true },
     { key: 'job_code',         type: 'text',   labelKey: 'col_job_code', width: 130, num: true },
-    { key: 'period',           type: 'period', labelKey: 'col_period',   width: 92 },
+    { key: 'period',           type: 'period', labelKey: 'col_period',   width: 108 },
     { key: 'category',         type: 'list',   labelKey: 'col_category', width: 130, list: 'categories' },
     { key: 'item_description', type: 'text',   labelKey: 'col_item',     width: 200 },
     { key: 'amount',           type: 'money',  labelKey: 'col_amount',   width: 110 },
@@ -60,12 +60,12 @@ const COLUMNS = {
     { key: 'team',             type: 'list',   labelKey: 'col_team',     width: 130, list: 'teams' }
   ],
   fuel: [
-    { key: 'month',        type: 'text',   labelKey: 'col_month',    width: 70 },
+    { key: 'month',        type: 'list',   labelKey: 'col_month',    width: 86,  list: 'months' },
     { key: 'day',          type: 'number', labelKey: 'col_day',      width: 56 },
     { key: 'project',      type: 'list',   labelKey: 'col_project',  width: 120, list: 'projects' },
     { key: 'site_id',      type: 'text',   labelKey: 'col_site_id',  width: 140, num: true },
     { key: 'job_code',     type: 'text',   labelKey: 'col_job_code', width: 130, num: true },
-    { key: 'period',       type: 'period', labelKey: 'col_period',   width: 92 },
+    { key: 'period',       type: 'period', labelKey: 'col_period',   width: 108 },
     { key: 'start_km',     type: 'km',     labelKey: 'col_start_km', width: 96 },
     { key: 'end_km',       type: 'km',     labelKey: 'col_end_km',   width: 96 },
     { key: 'fuel_amount',  type: 'money',  labelKey: 'col_fuel',     width: 105 },
@@ -103,11 +103,19 @@ let uidCounter = 0;
 /**
  * A blank row, optionally carrying values down from the row above (6.6.2).
  *
+ * `defaults` fills what carry-down could not: the FIRST row of a grid has no row
+ * above it, and the month it settles is not a guess — it is the settlement's own
+ * month. It is a default and not a fixed value, because a settlement's month is
+ * the month being settled and a line inside it may legitimately carry a
+ * neighbouring month's date.
+ *
  * @param {string} kind
  * @param {Object} [previous] the row above.
+ * @param {Object} [defaults] field -> value, applied only where the row is still
+ *        empty after carry-down.
  * @return {Object}
  */
-export function makeRow(kind, previous) {
+export function makeRow(kind, previous, defaults) {
   const row = {
     _uid: 'r' + (++uidCounter),
     entry_id: '',
@@ -124,6 +132,12 @@ export function makeRow(kind, previous) {
       if (previous[key] !== undefined && previous[key] !== null) row[key] = previous[key];
     });
   }
+
+  Object.keys(defaults || {}).forEach(function (key) {
+    if (row[key] === undefined) return;               // not a column of this kind
+    if (asText(row[key]) !== '') return;              // carry-down already answered
+    row[key] = defaults[key];
+  });
 
   return row;
 }
@@ -431,21 +445,64 @@ function renderInputCell(column, row, locked) {
  * the app (8.3), because this is the field that decides which Tracking# the row
  * settles against.
  *
+ * Under the select sits the per-site strip. A Site ID cell may hold several sites
+ * (2.2) and the lookup answers for each of them separately, so `0483/0437` can be
+ * one old site beside one new one — while the ROW has a single period, because it
+ * settles against a single Tracking# (6.2). The select shows what the row will
+ * do; the strip shows what each site actually is, so the two can be seen to
+ * disagree. When they do, the answer is nearly always to split the line.
+ *
  * @return {string} HTML
  */
 function renderPeriodCell(column, row, locked) {
   const value = asPeriod(row.period);
 
   return `
-    <select class="grid-select grid-period ${value ? 'is-' + value : 'is-unset'}"
-            data-field="period" data-uid="${escapeHtml(row._uid)}"
-            ${locked ? 'disabled' : ''}
-            aria-label="${escapeHtml(t('col_period'))}">
-      <option value=""${value ? '' : ' selected'}>—</option>
-      <option value="old"${value === 'old' ? ' selected' : ''}>${escapeHtml(t('period_old'))}</option>
-      <option value="new"${value === 'new' ? ' selected' : ''}>${escapeHtml(t('period_new'))}</option>
-    </select>
+    <div class="grid-period-cell">
+      <select class="grid-select grid-period ${value ? 'is-' + value : 'is-unset'}"
+              data-field="period" data-uid="${escapeHtml(row._uid)}"
+              ${locked ? 'disabled' : ''}
+              aria-label="${escapeHtml(t('col_period'))}">
+        <option value=""${value ? '' : ' selected'}>—</option>
+        <option value="old"${value === 'old' ? ' selected' : ''}>${escapeHtml(t('period_old'))}</option>
+        <option value="new"${value === 'new' ? ' selected' : ''}>${escapeHtml(t('period_new'))}</option>
+      </select>
+
+      <div class="grid-period-sites" data-period-sites="${escapeHtml(row._uid)}">
+        ${renderPeriodSegments(row)}
+      </div>
+    </div>
   `;
+}
+
+/**
+ * One chip per site in a multi-site cell, coloured by that site's own period.
+ *
+ * Nothing is drawn for a single-site row: the select above already says it, and a
+ * chip repeating it would be noise on every ordinary line. A site the lookup does
+ * not know gets a grey chip rather than being left out — a gap in the strip that
+ * matched no site would be unreadable next to the Site ID cell.
+ *
+ * @param {Object} row
+ * @return {string} HTML
+ */
+function renderPeriodSegments(row) {
+  const segments = row.__site_periods || [];
+  if (segments.length < 2) return '';
+
+  return segments.map(function (segment) {
+    const period = asPeriod(segment.period);
+
+    const label = period
+      ? t('grid_period_site', { site: segment.site, period: t('period_' + period) })
+      : t('grid_period_site_unknown', { site: segment.site });
+
+    return `
+      <span class="grid-period-site ${period ? 'is-' + period : 'is-unknown'}"
+            title="${escapeHtml(label)}" aria-label="${escapeHtml(label)}"
+      >${escapeHtml(segment.site)}</span>
+    `;
+  }).join('');
 }
 
 /**
@@ -810,7 +867,10 @@ export function bindGridEvents(model, hooks = {}) {
 
   const addRow = function () {
     const previous = model.rows.length ? model.rows[model.rows.length - 1] : null;
-    const row = makeRow(model.kind, previous);       // carry-down (6.6.2)
+
+    // Carry-down first (6.6.2), then the settlement's own month for the first
+    // row of an empty grid, which has nothing above it to inherit from.
+    const row = makeRow(model.kind, previous, model.defaults);
 
     model.rows.push(row);
     flushMirror();
@@ -884,10 +944,25 @@ export function bindGridEvents(model, hooks = {}) {
     });
 
     // Always, not only when job_code moved: resolving a Site ID can change WHICH
-    // codes are on offer without changing the one that was chosen.
+    // codes are on offer without changing the one that was chosen — and the
+    // per-site period strip moves with the sites, not with the row's period.
     paintJcOptions(row);
+    paintPeriodSegments(row);
 
     revalidate();
+  };
+
+  /**
+   * Repaint one row's per-site period strip from `row.__site_periods`, in place.
+   *
+   * Same reason as paintJcOptions(): the caret is in the Site ID cell next door
+   * when this changes, and a re-render would take it away (5.3).
+   *
+   * @param {Object} row
+   */
+  const paintPeriodSegments = function (row) {
+    const host$ = host.querySelector('[data-period-sites="' + cssEscape(row._uid) + '"]');
+    if (host$) host$.innerHTML = renderPeriodSegments(row);
   };
 
   /**
@@ -1050,11 +1125,12 @@ function cssEscape(value) {
  * Hang the view-only decoration off each row so the render functions can reach
  * it without a second argument threaded through every one of them.
  *
- * Two things: the dropdown option lists, and each row's job-code candidates. The
- * candidates are seeded here rather than only on edit, so a row loaded from the
- * server shows its picker the moment the grid paints — a coordinator reopening
- * last week's work can see that a site had a second job code without having to
- * retype the Site ID to find out.
+ * Three things: the dropdown option lists, each row's job-code candidates, and
+ * each row's per-site periods. The last two are seeded here rather than only on
+ * edit, so a row loaded from the server shows its picker and its period strip the
+ * moment the grid paints — a coordinator reopening last week's work can see that
+ * a site had a second job code, or that a multi-site line straddles old and new,
+ * without having to retype the Site ID to find out.
  *
  * @param {Object} model
  * @return {Object} the same model.
@@ -1063,9 +1139,12 @@ function decorate(model) {
   model.rows.forEach(function (row) {
     row.__reference = model.reference;
 
-    row.__jc_options = model.siteJcMap
-      ? resolveSite(row.site_id, model.siteJcMap, rowEntryDate(row, model.fiscalYear)).options
-      : [];
+    const resolved = model.siteJcMap
+      ? resolveSite(row.site_id, model.siteJcMap, rowEntryDate(row, model.fiscalYear))
+      : null;
+
+    row.__jc_options = resolved ? resolved.options : [];
+    row.__site_periods = resolved ? resolved.segment_periods : [];
   });
 
   return model;

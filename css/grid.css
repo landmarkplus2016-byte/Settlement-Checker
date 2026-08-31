@@ -191,6 +191,53 @@
 .grid-period.is-new { background: var(--color-new-bg); color: var(--color-new-fg); }
 .grid-period.is-unset { color: var(--color-text-muted); }
 
+/*
+ * The per-site strip under the select.
+ *
+ * A Site ID cell can hold several sites and the lookup answers for each of them
+ * separately, so `0483/0437` may be one old site beside one new one — while the
+ * ROW settles against a single Tracking# (6.2). The select says what the row
+ * will do; these chips say what each site is, in the same amber and blue, so a
+ * line that straddles the two can be seen at a glance rather than discovered in
+ * a finance file. Nothing is drawn for an ordinary single-site row.
+ */
+.grid-period-cell {
+  display: flex;
+  flex-direction: column;
+}
+
+/*
+ * No gap on the column and no `:empty` rule: the strip is always in the DOM so
+ * it can be repainted in place, and it holds only whitespace on a single-site
+ * row. The spacing rides on the chips instead, so an empty strip takes no room.
+ */
+.grid-period-sites {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px;
+}
+
+.grid-period-site {
+  margin-block-start: 2px;
+  padding: 0 4px;
+  border-radius: var(--radius-sm);
+  font-size: 9.5px;
+  font-weight: var(--fw-bold);
+  line-height: 14px;
+
+  /* A Site ID reads left-to-right even in Arabic (8.1). */
+  direction: ltr;
+  unicode-bidi: isolate;
+}
+
+.grid-period-site.is-old { background: var(--color-old-bg); color: var(--color-old-fg); }
+.grid-period-site.is-new { background: var(--color-new-bg); color: var(--color-new-fg); }
+
+.grid-period-site.is-unknown {
+  background: var(--color-surface-3);
+  color: var(--color-text-muted);
+}
+
 /* ================================================================== *
  * Row and cell states
  *

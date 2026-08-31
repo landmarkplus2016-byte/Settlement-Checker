@@ -232,6 +232,8 @@ export const ar = {
   grid_jc_choices: '{count} كود عمل لهذا الموقع',
   grid_jc_option: '{date} · {period}',
   grid_jc_no_date: 'بلا تاريخ',
+  grid_period_site: '{site} فترته {period}',
+  grid_period_site_unknown: '{site} غير موجود في الجدول',
 
   paste_from_excel: 'لصق من Excel',
   paste_title: 'لصق صفوف من Excel',
@@ -255,6 +257,7 @@ export const ar = {
   valid_missing_job_code: 'لا يوجد كود عمل',
   valid_missing_period: 'لا توجد فترة — هذا الصف لا يُسوّى على أي رقم تتبع',
   valid_job_code_count_mismatch: 'عدد المواقع لا يطابق عدد أكواد العمل',
+  valid_mixed_period: 'مواقع هذا الصف ليست كلها في الفترة نفسها — الصف يُسوّى على رقم تتبع واحد فقط، فقسّمه',
   valid_km_gap: 'قراءة العداد لا تتصل بالقراءة السابقة',
 
   /* --- admin: teams (3.4) --- */

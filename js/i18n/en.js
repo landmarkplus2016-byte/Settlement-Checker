@@ -234,6 +234,8 @@ export const en = {
   grid_jc_choices: '{count} job codes for this site',
   grid_jc_option: '{date} · {period}',
   grid_jc_no_date: 'no date',
+  grid_period_site: '{site} is {period}',
+  grid_period_site_unknown: '{site} is not in the lookup',
 
   paste_from_excel: 'Paste from Excel',
   paste_title: 'Paste rows from Excel',
@@ -257,6 +259,7 @@ export const en = {
   valid_missing_job_code: 'No Job Code',
   valid_missing_period: 'No period — this row settles against neither tracking number',
   valid_job_code_count_mismatch: 'Site and Job Code counts do not match',
+  valid_mixed_period: 'The sites on this row are not all the same period — it can only settle against one tracking number, so split it',
   valid_km_gap: 'KM does not follow on from the last reading',
 
   /* --- admin: teams (3.4) --- */

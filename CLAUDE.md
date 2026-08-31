@@ -457,6 +457,7 @@ Computed live in the grid and re-checked in `save_entries` / `confirm_track`:
 - **Fuel KM continuity** → within one driver, a row's `start_km` should equal the previous row's `end_km`; a gap is an amber warning (does not block, but is surfaced).
 - **Unknown site in lookup** → if a Site ID (or a segment of a multi-site cell) is absent from `SiteJC`, warn and leave `job_code`/`period` for the coordinator to set. Confirm is allowed; the warning stands.
 - **Site with several job codes** → not an error. The date-matched code is filled in, the cell shows how many alternatives exist, and the coordinator can pick another. Once he does, autofill stops replacing it.
+- **Multi-site row whose sites straddle old and new** (`mixed_period`) → amber warning. The row settles against one Tracking# (6.2), so half of it would be filed under the wrong one; the fix is to split the line, which is the coordinator's call. The period cell shows a chip per site in that site's own colour, so the disagreement is visible without opening the lookup. Client-only: it reads the date-resolved candidate the grid picked, which the server does not compute — and being a warning it enforces nothing.
 
 `confirm_track` refuses if any *flag* (not warning) remains on that period's rows.
 
@@ -485,7 +486,7 @@ The coordinator's grid is the one local-first surface:
 1. **Paste from Excel** — a paste of tab-separated rows appends multiple rows; `job_code`/`period` auto-fill per row.
 2. **Carry-down** — a new row inherits `team`, `project`, `month`, `day`, and `period` from the row above.
 3. **Site → JC + period autofill** — entering a Site ID fills `job_code` and `period` from `SiteJC`; multi-site cells look up each segment and join the codes in order, flagging any unknown segment. Where a site has several job codes, the one matching the entry's day wins and the Job Code cell offers the rest (each labelled with its task date) — so `month` and `day` re-run the pick, and a hand-chosen code is never overwritten.
-4. **Inline dropdowns** — project / category / area / team / period as in-cell selects.
+4. **Inline dropdowns** — month / project / category / area / team / period as in-cell selects. A new row's month defaults to the settlement's own and stays editable; the options come from `Lists.months`, so a typed "Augst" cannot reach a sheet the export filters on.
 5. **Keyboard nav** — Tab across, Enter moves to the same column in the next row (adding a row at the end).
 
 ---

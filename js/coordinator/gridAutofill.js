@@ -183,17 +183,26 @@ export function clearSiteJcCache() {
  * @param {Object|null} map from siteJcMap().
  * @param {string} [entryIso] the day the entry is settling, `YYYY-MM-DD`.
  * @return {{segments: Array<string>, codes: Array<string>, job_code: string,
- *           period: string, unknown: Array<string>, known: number,
- *           options: Array<Object>, ambiguous: boolean}}
+ *           period: string, segment_periods: Array<Object>, mixed: boolean,
+ *           unknown: Array<string>, known: number, options: Array<Object>,
+ *           ambiguous: boolean}}
  *         `options` is the full candidate list for a SINGLE-site cell that has
  *         more than one job code — what the grid offers the coordinator to
  *         switch between. A multi-site cell offers none: there is no one column
  *         of alternatives when each segment has its own.
+ *
+ *         `segment_periods` is one `{site, period}` per segment, in order, and
+ *         `mixed` says the known ones disagree. The ROW still has a single
+ *         `period` — it settles against one Tracking# or the other (6.2), there
+ *         is no half-old row — but a cell holding an old site beside a new one
+ *         is something the coordinator has to be able to SEE, because the answer
+ *         is almost always to split the line in two.
  */
 export function resolveSite(cell, map, entryIso) {
   const segments = splitMulti(cell);
   const empty = {
     segments: segments, codes: [], job_code: '', period: '',
+    segment_periods: [], mixed: false,
     unknown: [], known: 0, options: [], ambiguous: false
   };
 
@@ -201,6 +210,7 @@ export function resolveSite(cell, map, entryIso) {
 
   const codes = [];
   const unknown = [];
+  const segmentPeriods = [];
   let period = '';
   let known = 0;
   let options = [];
@@ -214,6 +224,7 @@ export function resolveSite(cell, map, entryIso) {
       // The blank holds the position, so site i still lines up with code i (6.4).
       codes.push('');
       unknown.push(segment);
+      segmentPeriods.push({ site: segment, period: '', known: false });
       return;
     }
 
@@ -222,7 +233,14 @@ export function resolveSite(cell, map, entryIso) {
     if (candidates.length > 1) ambiguous = true;
     if (segments.length === 1 && candidates.length > 1) options = candidates;
 
-    // First known segment wins the period.
+    /*
+     * The period of the candidate that was actually CHOSEN for this segment, not
+     * of the site in general: a site's job codes can straddle the fiscal cut, and
+     * the one the day picked is the one that would be settled.
+     */
+    segmentPeriods.push({ site: segment, period: hit.period || '', known: true });
+
+    // First known segment wins the row's period.
     if (!period && hit.period) period = hit.period;
   });
 
@@ -231,11 +249,33 @@ export function resolveSite(cell, map, entryIso) {
     codes: codes,
     job_code: codes.join('/'),
     period: period,
+    segment_periods: segmentPeriods,
+    mixed: hasMixedPeriods(segmentPeriods),
     unknown: unknown,
     known: known,
     options: options,
     ambiguous: ambiguous
   };
+}
+
+/**
+ * Do the resolved segments disagree about the period?
+ *
+ * Only known segments count. A site the lookup has never heard of has no opinion
+ * to disagree with, and calling that a conflict would put an amber marker on
+ * every multi-site row typed before the lookup was imported.
+ *
+ * @param {Array<Object>} segmentPeriods
+ * @return {boolean}
+ */
+export function hasMixedPeriods(segmentPeriods) {
+  const seen = [];
+
+  (segmentPeriods || []).forEach(function (segment) {
+    if (segment.period && seen.indexOf(segment.period) === -1) seen.push(segment.period);
+  });
+
+  return seen.length > 1;
 }
 
 /**
@@ -269,21 +309,24 @@ export function rowEntryDate(row, fiscalYear) {
  *     with several job codes is a question only he can answer, so once he has
  *     answered it, moving the day underneath him must not silently re-answer it.
  *
- * `__jc_options` is hung off the row for the grid to render the picker from. It
- * is view state, not data: the double underscore keeps it out of the draft
- * mirror and the save payload.
+ * `__jc_options` and `__site_periods` are hung off the row for the grid to render
+ * the job-code picker and the per-site period strip from. They are view state,
+ * not data: the double underscore keeps them out of the draft mirror and the
+ * save payload.
  *
  * @param {Object} row a grid row, mutated.
  * @param {Object|null} map
  * @param {string} [entryIso] the day the row is settling.
  * @return {{changed: Array<string>, unknown: Array<string>, known: number,
- *           options: Array<Object>}}
+ *           options: Array<Object>, segment_periods: Array<Object>,
+ *           mixed: boolean}}
  */
 export function autofillRow(row, map, entryIso) {
   const result = resolveSite(row.site_id, map, entryIso);
   const changed = [];
 
   row.__jc_options = result.options;
+  row.__site_periods = result.segment_periods;
 
   if (result.known > 0) {
     if (!row._jc_manual && asText(row.job_code) !== result.job_code) {
@@ -301,7 +344,9 @@ export function autofillRow(row, map, entryIso) {
     changed: changed,
     unknown: result.unknown,
     known: result.known,
-    options: result.options
+    options: result.options,
+    segment_periods: result.segment_periods,
+    mixed: result.mixed
   };
 }
 
