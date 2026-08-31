@@ -1,5 +1,5 @@
 /**
- * settlement.js — one coordinator-month, and the grid that fills it
+ * settlement.js — one settlement batch, and the grid that fills it
  * (CLAUDE.md 5.1, 6.5).
  *
  * The header is the settlement itself: its month and account, and the TWO

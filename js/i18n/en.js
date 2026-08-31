@@ -108,7 +108,7 @@ export const en = {
   /* --- dashboards --- */
   dashboard_title: 'Dashboard',
   signed_in_as: 'Signed in as {name}',
-  coordinator_dashboard_subtitle: 'Your settlements, one per month.',
+  coordinator_dashboard_subtitle: 'Your settlements, by month.',
   manager_dashboard_subtitle: 'Every coordinator, consolidated.',
 
   my_settlements: 'My settlements',
@@ -119,7 +119,7 @@ export const en = {
   col_old_track: 'Old tracking #',
   col_new_track: 'New tracking #',
   no_settlements_title: 'No settlements yet',
-  no_settlements_text: 'Start with New settlement — one per month, each with its own Old and New tracking number. Opening it takes you to the entry grid.',
+  no_settlements_text: 'Start with New settlement — a month can hold as many as you need, each with its own Old and New tracking number. Opening it takes you to the entry grid.',
 
   settlement_new: 'New settlement',
   settlement_created: 'Settlement created.',
@@ -592,7 +592,6 @@ export const en = {
   err_msg_invalid_team: 'Check the team name and try again.',
   err_msg_invalid_site_jc: 'Check the Site ID, Job Code and period.',
   err_msg_invalid_settlement: 'Check the month, account and tracking numbers.',
-  err_msg_settlement_exists: 'You already have a settlement for that month. Open it instead.',
   err_msg_invalid_site_jc_rows: 'Some rows in the file were rejected. Fix them and upload again.',
   err_msg_invalid_lists: 'Some options were rejected. Check for blanks and duplicates.',
   err_msg_invalid_list_name: 'That is not one of the app’s lists.',

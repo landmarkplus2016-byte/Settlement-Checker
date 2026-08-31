@@ -106,7 +106,7 @@ export const ar = {
   /* --- dashboards --- */
   dashboard_title: 'الرئيسية',
   signed_in_as: 'مسجّل الدخول باسم {name}',
-  coordinator_dashboard_subtitle: 'تسوياتك، تسوية واحدة لكل شهر.',
+  coordinator_dashboard_subtitle: 'تسوياتك، مرتّبة حسب الشهر.',
   manager_dashboard_subtitle: 'جميع المنسقين في مكان واحد.',
 
   my_settlements: 'تسوياتي',
@@ -117,7 +117,7 @@ export const ar = {
   col_old_track: 'رقم التتبع (قديم)',
   col_new_track: 'رقم التتبع (جديد)',
   no_settlements_title: 'لا توجد تسويات بعد',
-  no_settlements_text: 'ابدأ بـ «تسوية جديدة» — واحدة لكل شهر، لكل منها رقم تتبع قديم وآخر جديد. فتحها ينقلك إلى شبكة الإدخال.',
+  no_settlements_text: 'ابدأ بـ «تسوية جديدة» — يمكن للشهر الواحد أن يضم ما تحتاجه منها، لكل منها رقم تتبع قديم وآخر جديد. فتحها ينقلك إلى شبكة الإدخال.',
 
   settlement_new: 'تسوية جديدة',
   settlement_created: 'تم إنشاء التسوية.',
@@ -588,7 +588,6 @@ export const ar = {
   err_msg_invalid_team: 'راجع اسم الفريق ثم حاول مجدداً.',
   err_msg_invalid_site_jc: 'راجع رقم الموقع وكود العمل والفترة.',
   err_msg_invalid_settlement: 'راجع الشهر والحساب وأرقام التتبع.',
-  err_msg_settlement_exists: 'لديك بالفعل تسوية لهذا الشهر. افتحها بدلاً من ذلك.',
   err_msg_invalid_site_jc_rows: 'رُفضت بعض صفوف الملف. صحّحها ثم أعد الرفع.',
   err_msg_invalid_lists: 'رُفضت بعض الخيارات. تحقق من الفراغات والتكرار.',
   err_msg_invalid_list_name: 'هذه ليست إحدى قوائم التطبيق.',

@@ -86,7 +86,7 @@ Everything downstream depends on these. Never break one without confirming with 
 
 ### The settlement lifecycle (the heart of the app)
 
-9. **A settlement is one coordinator + one month.** It carries an `account` (e.g. VF) and **two** tracking numbers: `old_tracking_no` and `new_tracking_no`.
+9. **A settlement is one coordinator's batch within a month.** It carries an `account` (default **VF**, prefilled and editable) and **two** tracking numbers: `old_tracking_no` and `new_tracking_no`. **A month is not unique** — several teams settle against the same month and each batch gets its own pair of Tracking#s, so a coordinator may open as many settlements in a month as he needs. Ids stay readable by suffixing: `S-2026-08`, then `S-2026-08-2`.
 10. **Old and new are two parallel tracks.** Each entry belongs to a `period` (`old` or `new`); that period routes it to the matching Tracking# and lets it move through the lifecycle independently. Confirming, approving, and exporting old never waits on new, and vice-versa.
 11. **The status machine is `draft → confirmed → approved → exported`, with `returned` as a side branch.** Only these transitions exist:
     - Coordinator **confirms** a track → its `draft` rows become `confirmed`.
@@ -235,11 +235,11 @@ One spreadsheet, shared, owned by the developer. Tabs:
 
 Named e.g. `Settlement — Mahmoud Shaarawy`, owned by the developer, ID stored in that coordinator's `Users.coordinator_sheet_id`. Tabs:
 
-**`Settlements`** — one row per coordinator-month.
+**`Settlements`** — one row per settlement batch. A month may hold several rows (rule 9); `settlement_id` is the only unique key.
 
 | Column | Type | Purpose |
 |---|---|---|
-| `settlement_id` | text | Primary key (e.g. `S-2026-08`) |
+| `settlement_id` | text | Primary key (e.g. `S-2026-08`; a later batch in the same month is `S-2026-08-2`) |
 | `month` | text | |
 | `fiscal_year` | text | |
 | `account` | text | e.g. `VF` — batch-level, set once |

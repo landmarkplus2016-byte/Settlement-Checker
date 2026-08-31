@@ -316,7 +316,12 @@ function toPublicTrack(period, settlement, track) {
  * ================================================================== */
 
 /**
- * `create_settlement` — one coordinator, one month (rule 9).
+ * `create_settlement` — one coordinator's batch for a month (rule 9).
+ *
+ * A month is NOT unique. Several teams settle against the same month and each
+ * batch carries its own pair of Tracking#s, so refusing a second August would
+ * force unrelated teams onto one number. The ids stay readable by suffixing:
+ * `S-2026-08`, then `S-2026-08-2` (buildSettlementId).
  *
  * The two Tracking#s are optional here. A coordinator often starts recording
  * before finance has issued the numbers, and `confirm_track` is the point at
@@ -353,19 +358,13 @@ function handleCreateSettlement(session, payload) {
   }
 
   var created = withScriptLock(function () {
-    // Re-read under the lock: the duplicate check and the id allocation must see
-    // the same snapshot, or two quick clicks make two settlements for August.
+    // Re-read under the lock: the id allocation has to see every id already in
+    // the tab, or two quick clicks both land on S-2026-08.
     var rows = readAllRows(ss, 'Settlements');
     var ids = [];
 
     for (var i = 0; i < rows.length; i++) {
       ids.push(normalizeKey(rows[i].settlement_id));
-
-      var sameMonth = normalizeKey(rows[i].month).toLowerCase() === month.toLowerCase();
-      var sameYear = normalizeKey(rows[i].fiscal_year) === fiscalYear;
-      if (sameMonth && sameYear) {
-        throw appError('conflict', 'settlement_exists', { month: 'already_exists' });
-      }
     }
 
     var stamp = nowIso();
@@ -566,6 +565,10 @@ function isKnownMonthLabel(month) {
  * — falls back to a slug, and then to a plain sequence, so an id is always
  * produced.
  *
+ * A month holds as many settlements as the coordinator opens, so the `-2`, `-3`
+ * suffix below is the normal path and not a rare collision: the second August
+ * batch is `S-2026-08-2`.
+ *
  * @param {string} fiscalYear four digits.
  * @param {string} month the label.
  * @param {Array<string>} existingIds for the sequence fallback and collisions.
@@ -586,8 +589,8 @@ function buildSettlementId(fiscalYear, month, existingIds) {
 
   var candidate = 'S-' + fiscalYear + '-' + suffix;
 
-  // The month+year duplicate check above makes a collision all but impossible;
-  // this is here so a renamed month label can never overwrite an existing row.
+  // The first batch of the month gets the clean id; every later one is
+  // suffixed, so a second August can never overwrite the first.
   if (existingIds.indexOf(candidate) === -1) return candidate;
 
   for (var n = 2; n < 100; n++) {

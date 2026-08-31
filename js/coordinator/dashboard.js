@@ -1,7 +1,8 @@
 /**
  * dashboard.js (coordinator) — "his settlements" (CLAUDE.md 5.1).
  *
- * One row per coordinator-month, each carrying an account and the TWO
+ * One row per settlement — a month may hold several, one per team submitting
+ * against it — each carrying an account and the TWO
  * independent tracking numbers, with an Old and a New status that move
  * separately (rules 9 and 10). Every row opens its grid at
  * `#/settlement/<id>` — this is the only way into the entry screen.
@@ -28,6 +29,15 @@ let settlements = [];
  * rejects anything else as `unknown_month` — so it is a select, never free text.
  */
 let monthOptions = null;
+
+/**
+ * What the Account box starts on.
+ *
+ * Every settlement so far has been VF, and retyping it on each new month is two
+ * seconds of nothing. Prefilled, never forced — the field stays editable, so a
+ * second account costs a retype rather than a code change.
+ */
+const DEFAULT_ACCOUNT = 'VF';
 
 /**
  * The coordinator dashboard.
@@ -110,10 +120,14 @@ async function load() {
 /**
  * The New-settlement dialog.
  *
- * A settlement is one coordinator + one month (rule 9), and it is the container
- * every entry hangs off — so this is the only door into the grid. It carries the
- * account and the two tracking numbers, because those are batch-level facts set
- * once for the month, not per row.
+ * A settlement is one coordinator's batch for a month (rule 9), and it is the
+ * container every entry hangs off — so this is the only door into the grid. It
+ * carries the account and the two tracking numbers, because those are
+ * batch-level facts set once for the batch, not per row.
+ *
+ * A month can hold as many settlements as the coordinator needs: several teams
+ * submit against the same month, each with its own pair of Tracking#s, and one
+ * settlement per month would force unrelated teams to share a number.
  *
  * Both tracking numbers are optional here. `confirm_track` refuses to move a
  * track whose number is unset (3.5), so a coordinator can start typing entries
@@ -146,6 +160,7 @@ async function openNewSettlement() {
       <div class="field">
         <label class="label" for="new-account">${escapeHtml(t('col_account'))}</label>
         <input class="input num" id="new-account" type="text" maxlength="40"
+               value="${escapeHtml(DEFAULT_ACCOUNT)}"
                placeholder="${escapeHtml(t('settlement_account_placeholder'))}">
       </div>
 
