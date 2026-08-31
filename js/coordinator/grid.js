@@ -478,10 +478,16 @@ function renderPeriodCell(column, row, locked) {
 /**
  * One chip per site in a multi-site cell, coloured by that site's own period.
  *
+ * The chip reads **Old** or **New**, not the site id. This cell answers one
+ * question — which period do these sites belong to — and `0004 / 0025` repeated
+ * under the Site ID cell answered it only for someone who already knows the
+ * lookup. The chips stay in the Site ID cell's own order, so the *n*-th chip is
+ * the *n*-th site, and the site itself is on the tooltip.
+ *
  * Nothing is drawn for a single-site row: the select above already says it, and a
  * chip repeating it would be noise on every ordinary line. A site the lookup does
- * not know gets a grey chip rather than being left out — a gap in the strip that
- * matched no site would be unreadable next to the Site ID cell.
+ * not know gets a grey `?` rather than being left out — a gap in the strip that
+ * matched no site would break the position-to-site correspondence.
  *
  * @param {Object} row
  * @return {string} HTML
@@ -497,10 +503,12 @@ function renderPeriodSegments(row) {
       ? t('grid_period_site', { site: segment.site, period: t('period_' + period) })
       : t('grid_period_site_unknown', { site: segment.site });
 
+    const chip = period ? t('period_' + period) : t('period_unknown_short');
+
     return `
       <span class="grid-period-site ${period ? 'is-' + period : 'is-unknown'}"
             title="${escapeHtml(label)}" aria-label="${escapeHtml(label)}"
-      >${escapeHtml(segment.site)}</span>
+      >${escapeHtml(chip)}</span>
     `;
   }).join('');
 }

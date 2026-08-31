@@ -70,6 +70,8 @@ export const en = {
   period_old: 'Old',
   period_new: 'New',
   period_all: 'All periods',
+  /* A site the lookup has no answer for, in a space too small for a sentence. */
+  period_unknown_short: '?',
 
   /* Shared list states. */
   load_failed_title: 'Could not load this',

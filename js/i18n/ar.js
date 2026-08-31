@@ -68,6 +68,8 @@ export const ar = {
   period_old: 'قديم',
   period_new: 'جديد',
   period_all: 'كل الفترات',
+  /* A site the lookup has no answer for, in a space too small for a sentence. */
+  period_unknown_short: '؟',
 
   /* Shared list states. */
   load_failed_title: 'تعذّر التحميل',

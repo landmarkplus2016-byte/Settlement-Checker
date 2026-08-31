@@ -225,9 +225,9 @@
   font-weight: var(--fw-bold);
   line-height: 14px;
 
-  /* A Site ID reads left-to-right even in Arabic (8.1). */
-  direction: ltr;
-  unicode-bidi: isolate;
+  /* The chip is the word Old/New, so it follows the page's direction — the site
+     it stands for is on the tooltip, where it can read LTR in prose. */
+  white-space: nowrap;
 }
 
 .grid-period-site.is-old { background: var(--color-old-bg); color: var(--color-old-fg); }
