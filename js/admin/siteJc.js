@@ -57,6 +57,16 @@ const MAX_IMPORT_ROWS = 10000;
 const MAX_PROBLEMS_SHOWN = 12;
 
 /**
+ * Longest a Site ID or Job Code may be, matching validateSiteJcRow() in Admin.gs.
+ *
+ * Kept in step deliberately. The server is all-or-nothing on an import, so any
+ * row this screen passes and the server rejects takes the WHOLE upload down with
+ * it — which, now that bad rows are skipped rather than blocking, would be the
+ * one way a single stray cell could still cost a manager 9,000 good ones.
+ */
+const MAX_FIELD_LENGTH = 60;
+
+/**
  * Column spellings accepted from an uploaded file, best first. Real site lists
  * are made by many hands, and demanding one spelling would send managers back
  * to Excel to rename headers before every upload.
@@ -677,9 +687,16 @@ function mapRows(parsed) {
     const reasons = [];
     if (!siteId) reasons.push(t('sitejc_site_required'));
     else if (siteId.indexOf('/') !== -1) reasons.push(t('sitejc_single_site_only'));
+    else if (siteId.length > MAX_FIELD_LENGTH) {
+      reasons.push(t('sitejc_too_long', { max: MAX_FIELD_LENGTH }));
+    }
 
     if (!jobCode) {
       reasons.push(combined ? t('sitejc_jc_unsplittable', { value: combined }) : t('sitejc_jc_required'));
+    } else if (jobCode.indexOf('/') !== -1) {
+      reasons.push(t('sitejc_single_jc_only'));
+    } else if (jobCode.length > MAX_FIELD_LENGTH) {
+      reasons.push(t('sitejc_too_long', { max: MAX_FIELD_LENGTH }));
     }
 
     if (reasons.length) {
@@ -762,16 +779,31 @@ function diffAgainstStored(incoming) {
 }
 
 /**
- * The preview. Import is offered only when every row is good.
+ * The preview.
+ *
+ * A handful of unreadable rows does NOT block the import. A real tracking export
+ * runs to thousands of rows and reliably carries a few stragglers — a cell with
+ * no hyphen in it, a stray note typed into the site column — and holding 9,000
+ * good rows hostage to 4 bad ones would send the manager back to Excel to clean
+ * a file he did not make. Bad rows are listed, counted, and skipped, and the
+ * confirm button says exactly how many of each so the choice is never implicit.
+ *
+ * What DOES block, because none of it can be salvaged row by row:
+ *
+ *   - a missing Site ID-JC column — the file is not the file we think it is;
+ *   - nothing usable in it at all;
+ *   - more rows than one import can carry.
  *
  * @param {File} file
  * @param {Object} parsed from readSheetRows().
  * @param {Object} report from mapRows().
  */
 function openImportDialog(file, parsed, report) {
-  const blocked = report.problems.length > 0 ||
+  const blocked = report.missingColumns.length > 0 ||
                   report.rows.length === 0 ||
                   report.rows.length > MAX_IMPORT_ROWS;
+
+  const skipped = report.problems.length;
 
   // Only meaningful against a lookup we actually read — see `loaded`.
   const diff = loaded ? diffAgainstStored(report.rows) : null;
@@ -779,7 +811,11 @@ function openImportDialog(file, parsed, report) {
   openModal({
     title: t('sitejc_upload_title'),
     wide: true,
-    confirmLabel: blocked ? '' : t('import_confirm'),
+    confirmLabel: blocked
+      ? ''
+      : (skipped
+          ? t('import_confirm_skipping', { ready: report.rows.length, skipped: skipped })
+          : t('import_confirm')),
     cancelLabel: blocked ? t('close') : t('cancel'),
 
     bodyHtml: `
@@ -790,7 +826,7 @@ function openImportDialog(file, parsed, report) {
 
         <div class="import-stats">
           ${importStat(report.rows.length, t('import_stat_ready'))}
-          ${importStat(report.problems.length, t('import_stat_problems'))}
+          ${importStat(skipped, t('import_stat_skipped'))}
           ${importStat(report.duplicates, t('import_stat_duplicates'))}
         </div>
 
@@ -814,12 +850,16 @@ function openImportDialog(file, parsed, report) {
           </div>
         ` : ''}
 
-        ${renderProblems(report.problems)}
+        ${renderProblems(report.problems, !blocked)}
 
         ${report.rows.length > MAX_IMPORT_ROWS ? `
           <div class="alert alert-danger">
             ${escapeHtml(t('import_too_many', { max: MAX_IMPORT_ROWS }))}
           </div>
+        ` : ''}
+
+        ${(blocked && !report.rows.length && skipped) ? `
+          <div class="alert alert-danger">${escapeHtml(t('import_none_usable'))}</div>
         ` : ''}
 
         ${!blocked ? `
@@ -850,7 +890,7 @@ function openImportDialog(file, parsed, report) {
           <div class="text-small text-muted">${escapeHtml(t('import_duplicates_note'))}</div>
         ` : ''}
 
-        ${!report.rows.length && !report.problems.length ? `
+        ${!report.rows.length && !skipped ? `
           <div class="alert alert-warning">${escapeHtml(t('import_no_rows'))}</div>
         ` : ''}
       </div>
@@ -889,13 +929,20 @@ function importStat(value, label) {
 }
 
 /**
- * The list of rows that need fixing, capped so a wholly broken file does not
+ * The rows that could not be read, capped so a wholly broken file does not
  * produce a dialog thousands of lines long.
  *
+ * The heading changes with what is about to happen to them: when the import can
+ * still go ahead they are being SKIPPED, and saying "rows that need fixing" over
+ * a list nobody has to fix would misread as a wall the manager has to climb.
+ * They are still listed in full — skipped is not the same as hidden, and these
+ * are the lines to correct at source before the next export.
+ *
  * @param {Array<Object>} problems
+ * @param {boolean} skipping true when the import will proceed without them.
  * @return {string} HTML
  */
-function renderProblems(problems) {
+function renderProblems(problems, skipping) {
   if (!problems.length) return '';
 
   const shown = problems.slice(0, MAX_PROBLEMS_SHOWN);
@@ -903,7 +950,14 @@ function renderProblems(problems) {
 
   return `
     <div>
-      <div class="section-title">${escapeHtml(t('import_problems_title'))}</div>
+      <div class="section-title">
+        ${escapeHtml(skipping ? t('import_skipped_title') : t('import_problems_title'))}
+      </div>
+      ${skipping ? `
+        <div class="text-small text-muted mb-4">
+          ${escapeHtml(t('import_skipped_note', { count: problems.length }))}
+        </div>
+      ` : ''}
       <div class="problem-list">
         ${shown.map(function (problem) {
           return `

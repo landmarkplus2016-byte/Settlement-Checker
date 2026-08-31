@@ -182,6 +182,7 @@ h3 { font-size: 15px; font-weight: var(--fw-semibold); }
 
 /* Block-flow spacing between sections of a page. Logical, so it flips with dir. */
 .mt-4 { margin-block-start: var(--space-4); }
+.mb-4 { margin-block-end: var(--space-4); }
 .mt-6 { margin-block-start: var(--space-6); }
 
 .hidden { display: none !important; }
