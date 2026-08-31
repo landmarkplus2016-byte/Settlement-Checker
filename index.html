@@ -22,6 +22,16 @@
     There is no <meta name="theme-color"> hex here on purpose — js/main.js sets
     it from --color-navy so the browser chrome cannot drift from the tokens
     (rule 23). manifest.json has to carry its own literals; JSON cannot read CSS.
+
+    One thing in that file is deliberately NOT relative, and JSON cannot say why,
+    so it is said here: manifest "id" is "/Settlement-Checker/", an absolute
+    path. Unlike start_url and scope, the id is resolved against the ORIGIN, not
+    against the manifest's own URL — so a relative "./" would resolve to
+    landmarkplus2016-byte.github.io/ for this app AND for every other repo of the
+    account, and the browser would treat installing one as a rename of the other.
+    That is what made the OHS Platform install show a "review logo and name
+    updates" prompt and then run this app under its title. The id is only an
+    identity string; it never has to be a URL that resolves.
   -->
   <link rel="manifest" href="manifest.json">
   <link rel="icon" href="icons/icon-192.png" type="image/png" sizes="192x192">
