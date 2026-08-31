@@ -236,6 +236,15 @@ export const ar = {
   grid_jc_no_date: 'بلا تاريخ',
   grid_period_site: '{site} فترته {period}',
   grid_period_site_unknown: '{site} غير موجود في الجدول',
+  grid_period_row: 'هذا الصف يُسوّى على الفترة {period}',
+  grid_period_unset: 'لا فترة بعد — اضغط لتحديدها',
+  grid_period_override: 'يُسوّى على الفترة {period}، ولا يوافقه أي موقع في هذا الصف',
+  grid_period_set: 'اضغط لتسوية الصف على هذه الفترة',
+
+  /* --- تقسيم صف مختلط الفترات (6.6.7) --- */
+  grid_split_period: 'قسّم هذا الصف حسب الفترة — المواقع القديمة في صف والجديدة في صف آخر، مع تقسيم المبلغ بالتساوي على المواقع',
+  grid_split_glyph: '⇅',
+  grid_split_done: 'تم التقسيم إلى {count} صفوف ({periods}). قُسّم المبلغ بالتساوي على المواقع — صحّحه إن كان التوزيع الفعلي مختلفاً.',
 
   paste_from_excel: 'لصق من Excel',
   paste_title: 'لصق صفوف من Excel',

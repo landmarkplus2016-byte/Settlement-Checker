@@ -457,7 +457,7 @@ Computed live in the grid and re-checked in `save_entries` / `confirm_track`:
 - **Fuel KM continuity** → within one driver, a row's `start_km` should equal the previous row's `end_km`; a gap is an amber warning (does not block, but is surfaced).
 - **Unknown site in lookup** → if a Site ID (or a segment of a multi-site cell) is absent from `SiteJC`, warn and leave `job_code`/`period` for the coordinator to set. Confirm is allowed; the warning stands.
 - **Site with several job codes** → not an error. The date-matched code is filled in, the cell shows how many alternatives exist, and the coordinator can pick another. Once he does, autofill stops replacing it.
-- **Multi-site row whose sites straddle old and new** (`mixed_period`) → amber warning. The row settles against one Tracking# (6.2), so half of it would be filed under the wrong one; the fix is to split the line, which is the coordinator's call. The period cell shows a chip per site in that site's own colour, so the disagreement is visible without opening the lookup. Client-only: it reads the date-resolved candidate the grid picked, which the server does not compute — and being a warning it enforces nothing.
+- **Multi-site row whose sites straddle old and new** (`mixed_period`) → amber warning. The row settles against one Tracking# (6.2), so half of it would be filed under the wrong one; the fix is to **split the line** (6.6.7), which is the coordinator's call. The period cell shows a chip per site in that site's own colour, so the disagreement is visible without opening the lookup, and offers the split button beside them. Client-only: it reads the date-resolved candidate the grid picked, which the server does not compute — and being a warning it enforces nothing.
 
 `confirm_track` refuses if any *flag* (not warning) remains on that period's rows.
 
@@ -481,13 +481,15 @@ The coordinator's grid is the one local-first surface:
 - We do **not** write to Sheets on every keystroke — Apps Script round-trips are ~1–2 s and would make the grid lag. The localStorage mirror is the safety net between saves.
 - On load, the grid seeds from the server rows, then overlays any newer localStorage draft.
 
-## 6.6 The five grid behaviours ("easy as Excel")
+## 6.6 The seven grid behaviours ("easy as Excel")
 
 1. **Paste from Excel** — a paste of tab-separated rows appends multiple rows; `job_code`/`period` auto-fill per row.
 2. **Carry-down** — a new row inherits `team`, `project`, `month`, `day`, and `period` from the row above.
 3. **Site → JC + period autofill** — entering a Site ID fills `job_code` and `period` from `SiteJC`; multi-site cells look up each segment and join the codes in order, flagging any unknown segment. Where a site has several job codes, the one matching the entry's day wins and the Job Code cell offers the rest (each labelled with its task date) — so `month` and `day` re-run the pick, and a hand-chosen code is never overwritten.
 4. **Inline dropdowns** — month / project / category / area / team / period as in-cell selects. A new row's month defaults to the settlement's own and stays editable; the options come from `Lists.months`, so a typed "Augst" cannot reach a sheet the export filters on.
 5. **Keyboard nav** — Tab across, Enter moves to the same column in the next row (adding a row at the end).
+6. **The period cell is chips, not a dropdown** — one chip per site, in the Site ID cell's order. The chip's **colour** is what the lookup says that site is (amber old, blue new, grey `?` for a site it does not know); the chip's **ring** is what the *row* does, since the row settles against exactly one Tracking# (6.2). So `0004/0025` reads `Old New` with the ring on the one it is filed under. Clicking a chip files the row under that period, clicking the ringed chip flips it — this is where rule 14's override lives now that there is no select. A row whose period matches no site (an override) grows a dashed chip carrying it, so the ring is never invisible.
+7. **Split a mixed line by period** — a row whose sites straddle old and new cannot be settled as it stands: one row carries one period, and half the money would go out under the wrong Tracking#. The period cell offers a split button that breaks it into **two rows in the same settlement** — old sites on one, new sites on the other — pairing site *i* with job code *i* (6.4), and **dividing the money evenly by site count** with the same integer-cent rounding as the per-site export, so the halves re-sum to the original exactly. KM is copied, never divided (rule 18). The first half stays on the original row so an already-saved entry keeps its `entry_id`; the other half is a new `draft`. The division is a *default* — both rows are ordinary editable drafts and a toast says so, because only the coordinator knows the real breakdown. Lives in `js/coordinator/gridSplit.js` as a pure plan; grid.js applies it.
 
 ---
 
@@ -651,6 +653,7 @@ settlement-checker/
       grid.js                    # renderGrid + bindGridEvents (in-place cell logic)
       gridPaste.js               # paste-from-Excel
       gridAutofill.js            # Site → JC + period
+      gridSplit.js               # split a mixed-period row (6.6.7)
       confirm.js                 # confirm old / new
     manager/
       dashboard.js

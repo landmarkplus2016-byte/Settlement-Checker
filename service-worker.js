@@ -65,7 +65,7 @@
  * "new version available" prompt. Any string that changes will do; a date plus
  * a counter reads best in DevTools.
  */
-const APP_VERSION = '2026.08.31-6';
+const APP_VERSION = '2026.08.31-7';
 
 /** This version's cache. Anything not named this is deleted on activate. */
 const CACHE_NAME = 'settlement-checker-' + APP_VERSION;
@@ -148,6 +148,7 @@ const PRECACHE = [
   './js/coordinator/grid.js',
   './js/coordinator/gridPaste.js',
   './js/coordinator/gridAutofill.js',
+  './js/coordinator/gridSplit.js',
   './js/coordinator/confirm.js',
 
   './js/manager/dashboard.js',

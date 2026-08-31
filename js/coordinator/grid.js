@@ -30,6 +30,8 @@ import { escapeHtml, qs, qsa } from '../utils/dom.js';
 import { validateRows, toNumber, text as asText, period as asPeriod } from '../utils/validate.js';
 import { formatMoney } from '../utils/money.js';
 import { resolveSite, rowEntryDate } from './gridAutofill.js';
+import { canSplitByPeriod, planPeriodSplit } from './gridSplit.js';
+import { SPLIT_MONEY_FIELDS } from '../utils/explode.js';
 import { saveDraft, getDraft } from '../state.js';
 
 /**
@@ -140,6 +142,67 @@ export function makeRow(kind, previous, defaults) {
   });
 
   return row;
+}
+
+/**
+ * The other of the two periods. `''` becomes `old`, so the first click on an
+ * unresolved cell lands somewhere rather than doing nothing.
+ * @param {string} period
+ * @return {string}
+ */
+function otherPeriod(period) {
+  return asPeriod(period) === 'old' ? 'new' : 'old';
+}
+
+/**
+ * A fresh row carrying everything the row it splits from carries, except the
+ * things the SERVER owns (6.6.7).
+ *
+ * `entry_id` above all: a clone that kept it would be a second row claiming to be
+ * the same stored entry, and `save_entries` would upsert them one over the other.
+ * The status resets to `draft` for the same reason — this half has never been
+ * confirmed, whatever the half it came from had reached.
+ *
+ * @param {string} kind
+ * @param {Object} source
+ * @return {Object}
+ */
+function makeSplitRow(kind, source) {
+  const row = {
+    _uid: 'r' + (++uidCounter),
+    entry_id: '',
+    status: 'draft',
+    return_note: '',
+    exported: false,
+    tracking_no: null
+  };
+
+  COLUMNS[kind].forEach(function (column) { row[column.key] = source[column.key]; });
+
+  return row;
+}
+
+/**
+ * Put one planned group onto a row: its sites, its codes, its period and its
+ * share of the money.
+ *
+ * Everything else is left exactly as it is — which is how `start_km` / `end_km`
+ * survive a fuel split unchanged (rule 18). They are odometer readings, and both
+ * halves of the line were driven on the same trip.
+ *
+ * @param {Object} row mutated.
+ * @param {Object} group from planPeriodSplit().
+ * @param {Array<string>} moneyFields
+ */
+function applySplitGroup(row, group, moneyFields) {
+  row.site_id = group.site_id;
+  row.job_code = group.job_code;
+  row.period = group.period;
+
+  moneyFields.forEach(function (field) {
+    const share = group.money[field];
+    row[field] = (share === null || share === undefined) ? '' : share;
+  });
 }
 
 /**
@@ -339,7 +402,7 @@ function renderCell(kind, column, row, issues, locked) {
   ].filter(Boolean).join(' ');
 
   const control = (column.type === 'period')
-    ? renderPeriodCell(column, row, locked)
+    ? renderPeriodCell(kind, row, locked)
     : (column.type === 'list')
       ? renderListCell(kind, column, row, locked)
       : (column.key === 'job_code')
@@ -440,77 +503,147 @@ function renderInputCell(column, row, locked) {
 }
 
 /**
- * The period cell. Its two options are fixed by the schema, so this select
- * always works — and it is coloured amber/blue like every other period marker in
- * the app (8.3), because this is the field that decides which Tracking# the row
- * settles against.
+ * The period cell — a chip per site, and the chips ARE the control.
  *
- * Under the select sits the per-site strip. A Site ID cell may hold several sites
- * (2.2) and the lookup answers for each of them separately, so `0483/0437` can be
- * one old site beside one new one — while the ROW has a single period, because it
- * settles against a single Tracking# (6.2). The select shows what the row will
- * do; the strip shows what each site actually is, so the two can be seen to
- * disagree. When they do, the answer is nearly always to split the line.
+ * This cell answers two different questions and used to carry two widgets to do
+ * it: a full-width select for the ROW's period, and a strip of site chips under
+ * it. The select was the bigger of the two and the less informative — it repeated
+ * on every ordinary row what the chip beside it already said — so the chips
+ * absorbed it.
+ *
+ * What each chip means:
+ *
+ *   - Its **colour** is what the lookup says that site is (amber old, blue new,
+ *     grey for a site it has never heard of). One chip per site, in the Site ID
+ *     cell's own order, so the *n*-th chip is the *n*-th site. This is the
+ *     verification: `0004/0025` showing `Old New` is the coordinator seeing, at a
+ *     glance, that the line straddles the fiscal cut.
+ *   - Its **ring** is what the ROW does. A row settles against exactly one
+ *     Tracking# (6.2, rule 10), so exactly one period is stored on it, and the
+ *     ringed chip is that one.
+ *
+ * Clicking a chip sets the row's period to that chip's own period, and clicking
+ * the ringed chip flips it — so a single-site row is a one-click Old↔New toggle
+ * and rule 14's override survives the select's removal. It has to: a site the
+ * lookup does not know arrives with no period at all, and without a way to set
+ * one by hand the row could not be routed anywhere.
+ *
+ * When the sites disagree, the cell also offers the split button (6.6.7). That is
+ * the real fix — picking one period for a mixed line only chooses which half of
+ * the money goes out under the wrong number.
  *
  * @return {string} HTML
  */
-function renderPeriodCell(column, row, locked) {
-  const value = asPeriod(row.period);
+function renderPeriodCell(kind, row, locked) {
+  const mixed = !locked && canSplitByPeriod(row, kind);
 
   return `
-    <div class="grid-period-cell">
-      <select class="grid-select grid-period ${value ? 'is-' + value : 'is-unset'}"
-              data-field="period" data-uid="${escapeHtml(row._uid)}"
-              ${locked ? 'disabled' : ''}
-              aria-label="${escapeHtml(t('col_period'))}">
-        <option value=""${value ? '' : ' selected'}>—</option>
-        <option value="old"${value === 'old' ? ' selected' : ''}>${escapeHtml(t('period_old'))}</option>
-        <option value="new"${value === 'new' ? ' selected' : ''}>${escapeHtml(t('period_new'))}</option>
-      </select>
-
-      <div class="grid-period-sites" data-period-sites="${escapeHtml(row._uid)}">
-        ${renderPeriodSegments(row)}
+    <div class="grid-period-cell${mixed ? ' is-mixed' : ''}"
+         data-period-cell="${escapeHtml(row._uid)}">
+      <div class="grid-period-sites" data-period-sites="${escapeHtml(row._uid)}"
+           role="group" aria-label="${escapeHtml(t('col_period'))}">
+        ${renderPeriodSegments(row, locked)}
       </div>
+      ${mixed ? renderSplitButton(row) : ''}
     </div>
   `;
 }
 
 /**
- * One chip per site in a multi-site cell, coloured by that site's own period.
+ * The chips.
  *
- * The chip reads **Old** or **New**, not the site id. This cell answers one
- * question — which period do these sites belong to — and `0004 / 0025` repeated
- * under the Site ID cell answered it only for someone who already knows the
- * lookup. The chips stay in the Site ID cell's own order, so the *n*-th chip is
- * the *n*-th site, and the site itself is on the tooltip.
+ * Always at least one, unlike the old strip which drew nothing below two sites:
+ * this is the cell's only control now, and a period cell with nothing in it would
+ * be a row the coordinator cannot route. A row with no Site ID yet gets a single
+ * chip standing for the row's own period, which is what he would have set in the
+ * select before typing a site.
  *
- * Nothing is drawn for a single-site row: the select above already says it, and a
- * chip repeating it would be noise on every ordinary line. A site the lookup does
- * not know gets a grey `?` rather than being left out — a gap in the strip that
- * matched no site would break the position-to-site correspondence.
+ * A site the lookup does not know gets a grey `?` rather than being left out — a
+ * gap in the strip that matched no site would break the position-to-site
+ * correspondence that makes the whole cell readable.
+ *
+ * The trailing override chip is the one case where a chip is not a site. When the
+ * row's period matches none of them — two old sites filed by hand as new — the
+ * ring has nowhere to sit, and a cell showing `Old Old` on a row that settles new
+ * would be a lie. So the row's own answer is appended, ringed and marked.
+ *
+ * @param {Object} row
+ * @param {boolean} [locked] an exported row is read-only (rule 13).
+ * @return {string} HTML
+ */
+function renderPeriodSegments(row, locked) {
+  const rowPeriod = asPeriod(row.period);
+  const segments = row.__site_periods || [];
+
+  const chips = segments.length
+    ? segments.map(function (segment) {
+        const period = asPeriod(segment.period);
+
+        return {
+          period: period,
+          selected: !!period && period === rowPeriod,
+          title: period
+            ? t('grid_period_site', { site: segment.site, period: t('period_' + period) })
+            : t('grid_period_site_unknown', { site: segment.site })
+        };
+      })
+    : [{
+        period: rowPeriod,
+        selected: true,
+        title: rowPeriod ? t('grid_period_row', { period: t('period_' + rowPeriod) })
+                         : t('grid_period_unset')
+      }];
+
+  // Nothing carries the ring: the row is settling somewhere no site agrees with,
+  // and that has to be visible rather than inferred from an absence.
+  if (rowPeriod && !chips.some(function (chip) { return chip.selected; })) {
+    chips.push({
+      period: rowPeriod,
+      selected: true,
+      override: true,
+      title: t('grid_period_override', { period: t('period_' + rowPeriod) })
+    });
+  }
+
+  return chips.map(function (chip, index) {
+    const classes = ['grid-period-site', chip.period ? 'is-' + chip.period : 'is-unknown'];
+    if (chip.selected) classes.push('is-selected');
+    if (chip.override) classes.push('is-override');
+
+    const label = chip.period ? t('period_' + chip.period) : t('period_unknown_short');
+    const hint = chip.selected ? chip.title : chip.title + ' — ' + t('grid_period_set');
+
+    return `
+      <button type="button" class="${classes.join(' ')}"
+              data-field="period" data-uid="${escapeHtml(row._uid)}"
+              data-period-chip="${index}"
+              data-period="${escapeHtml(chip.period)}"
+              ${locked ? 'disabled' : ''}
+              aria-pressed="${chip.selected ? 'true' : 'false'}"
+              title="${escapeHtml(hint)}" aria-label="${escapeHtml(hint)}"
+      >${escapeHtml(label)}</button>
+    `;
+  }).join('');
+}
+
+/**
+ * The split action, offered only on a row whose sites actually disagree (6.6.7).
+ *
+ * In the cell rather than in the banner because the cell is where the problem is
+ * visible; the banner line stays as the count and the jump-to.
  *
  * @param {Object} row
  * @return {string} HTML
  */
-function renderPeriodSegments(row) {
-  const segments = row.__site_periods || [];
-  if (segments.length < 2) return '';
+function renderSplitButton(row) {
+  const label = t('grid_split_period');
 
-  return segments.map(function (segment) {
-    const period = asPeriod(segment.period);
-
-    const label = period
-      ? t('grid_period_site', { site: segment.site, period: t('period_' + period) })
-      : t('grid_period_site_unknown', { site: segment.site });
-
-    const chip = period ? t('period_' + period) : t('period_unknown_short');
-
-    return `
-      <span class="grid-period-site ${period ? 'is-' + period : 'is-unknown'}"
+  return `
+    <button type="button" class="grid-period-split"
+            data-grid-action="split" data-uid="${escapeHtml(row._uid)}"
             title="${escapeHtml(label)}" aria-label="${escapeHtml(label)}"
-      >${escapeHtml(chip)}</span>
-    `;
-  }).join('');
+    >${escapeHtml(t('grid_split_glyph'))}</button>
+  `;
 }
 
 /**
@@ -637,6 +770,10 @@ export { formatMoney };
  *        lookup (6.6.3).
  * @param {Function} [hooks.onDeleteSaved] called as (row) when a row that exists
  *        on the server is deleted, so the page can call `delete_entry`.
+ * @param {Function} [hooks.onSplit] called as (row, plan, produced) after a
+ *        mixed-period row is split (6.6.7), so the page can say what it did to
+ *        the money — the division is a default the coordinator may want to
+ *        correct, and a silent split would not invite him to.
  * @return {Object} the controller.
  */
 export function bindGridEvents(model, hooks = {}) {
@@ -806,13 +943,12 @@ export function bindGridEvents(model, hooks = {}) {
     if (!row || isRowLocked(row)) return;
 
     const field = control.dataset.field;
-    row[field] = control.value;
 
-    if (field === 'period') {
-      // The period cell carries its own colour (8.3); keep it honest in place.
-      control.classList.remove('is-old', 'is-new', 'is-unset');
-      control.classList.add(control.value ? 'is-' + control.value : 'is-unset');
-    }
+    // The period cell is chips, not a control with a value — it commits through
+    // the click handler below and must not be overwritten by a stray `change`.
+    if (field === 'period') return;
+
+    row[field] = control.value;
 
     if (typeof hooks.onCellCommit === 'function') {
       hooks.onCellCommit(row, field, control.value, controller);
@@ -914,13 +1050,110 @@ export function bindGridEvents(model, hooks = {}) {
     if (row.entry_id && typeof hooks.onDeleteSaved === 'function') hooks.onDeleteSaved(row);
   };
 
+  /**
+   * Set a row's period and commit it, without a re-render.
+   *
+   * Routed through `onCellCommit` like any other edit, because that is what tells
+   * gridAutofill.js the coordinator answered for himself — after which the lookup
+   * stops overwriting him on the next Site ID change (rule 14).
+   *
+   * @param {Object} row
+   * @param {string} value 'old' | 'new' | ''
+   */
+  const setPeriod = function (row, value) {
+    row.period = value;
+
+    if (typeof hooks.onCellCommit === 'function') {
+      hooks.onCellCommit(row, 'period', value, controller);
+    }
+
+    paintPeriodSegments(row);
+    flushMirror();
+    revalidate();
+  };
+
   host.addEventListener('click', function (event) {
+    /*
+     * A chip. Clicking one that disagrees with the row files the row under THAT
+     * period; clicking the ringed one flips it, which is what makes an ordinary
+     * single-site row a one-click Old↔New toggle and keeps rule 14's override
+     * reachable now that the select is gone.
+     */
+    const chip = event.target.closest('[data-period-chip]');
+    if (chip) {
+      const row = rowFor(chip.dataset.uid);
+      if (!row || isRowLocked(row)) return;
+
+      const chipPeriod = asPeriod(chip.dataset.period);
+      const current = asPeriod(row.period);
+
+      // setPeriod repaints the strip this chip lives in and puts the focus back.
+      setPeriod(row, (chipPeriod && chipPeriod !== current) ? chipPeriod : otherPeriod(current));
+      return;
+    }
+
     const button = event.target.closest('[data-grid-action]');
     if (!button) return;
+
+    if (button.dataset.gridAction === 'split') {
+      splitRow(button.dataset.uid);
+      return;
+    }
 
     const tr = button.closest('tr.grid-row');
     if (button.dataset.gridAction === 'delete' && tr) deleteRow(tr.dataset.uid);
   });
+
+  /**
+   * Split a mixed-period row into one row per period (6.6.7).
+   *
+   * The FIRST group stays on the original row rather than every group becoming a
+   * new one. A row that has already been saved carries an `entry_id` and a status,
+   * and replacing it with two fresh rows would orphan the stored entry — the
+   * coordinator would have to delete it separately, and a confirmed one cannot be
+   * deleted at all (rule 9.3). Keeping the original means a saved row is EDITED
+   * (which is a normal thing to do to it — an approved row simply reverts to
+   * confirmed, rule 12) and only the extra half is new.
+   *
+   * @param {string} uid
+   * @return {Array<Object>|null} the resulting rows, or null if nothing split.
+   */
+  const splitRow = function (uid) {
+    const index = model.rows.findIndex(function (row) { return row._uid === uid; });
+    if (index === -1) return null;
+
+    const row = model.rows[index];
+    if (isRowLocked(row)) return null;                 // rule 13
+
+    const plan = planPeriodSplit(row, model.kind);
+    if (!plan.ok) return null;
+
+    const moneyFields = SPLIT_MONEY_FIELDS[model.kind] || [];
+    const produced = [row];
+
+    // The extra halves go in directly under the row they came out of, so the
+    // split reads down the grid the way the original line read across it.
+    plan.groups.slice(1).forEach(function (group, offset) {
+      const clone = makeSplitRow(model.kind, row);
+      applySplitGroup(clone, group, moneyFields);
+      model.rows.splice(index + 1 + offset, 0, clone);
+      produced.push(clone);
+    });
+
+    applySplitGroup(row, plan.groups[0], moneyFields);
+
+    // Both halves are single-period now, so the lookup agrees with them and can
+    // keep control — a hand-set flag here would freeze a period the coordinator
+    // never actually chose.
+    produced.forEach(function (made) { made._period_manual = false; });
+
+    flushMirror();
+    rerender({ uid: row._uid, field: 'period', start: null, end: null });
+
+    if (typeof hooks.onSplit === 'function') hooks.onSplit(row, plan, produced);
+
+    return produced;
+  };
 
   /* --- the controller --- */
 
@@ -938,17 +1171,16 @@ export function bindGridEvents(model, hooks = {}) {
    */
   const syncRow = function (row, fields) {
     (fields || []).forEach(function (field) {
+      // The period cell has no valued control to write into — it is rebuilt from
+      // the model by paintPeriodSegments() below, which is called unconditionally.
+      if (field === 'period') return;
+
       const control = host.querySelector(
         '[data-uid="' + cssEscape(row._uid) + '"][data-field="' + cssEscape(field) + '"]'
       );
       if (!control || control === document.activeElement) return;
 
       control.value = (row[field] === null || row[field] === undefined) ? '' : row[field];
-
-      if (field === 'period') {
-        control.classList.remove('is-old', 'is-new', 'is-unset');
-        control.classList.add(control.value ? 'is-' + control.value : 'is-unset');
-      }
     });
 
     // Always, not only when job_code moved: resolving a Site ID can change WHICH
@@ -961,16 +1193,46 @@ export function bindGridEvents(model, hooks = {}) {
   };
 
   /**
-   * Repaint one row's per-site period strip from `row.__site_periods`, in place.
+   * Repaint one row's period chips from the model, in place.
    *
-   * Same reason as paintJcOptions(): the caret is in the Site ID cell next door
-   * when this changes, and a re-render would take it away (5.3).
+   * Same reason as paintJcOptions(): the caret is usually in the Site ID cell next
+   * door when this changes, and a full re-render would take it away (5.3).
+   *
+   * The chips are now the cell's CONTROL, so this can also be pulling the ground
+   * out from under the element that has focus — clicking a chip rebuilds the strip
+   * that chip lives in. The focused chip's index is captured and re-focused, so
+   * keyboard use survives its own edit.
+   *
+   * The split button appears and disappears with the disagreement it fixes, so it
+   * is repainted here too: splitting is exactly what stops a row being mixed.
    *
    * @param {Object} row
    */
   const paintPeriodSegments = function (row) {
-    const host$ = host.querySelector('[data-period-sites="' + cssEscape(row._uid) + '"]');
-    if (host$) host$.innerHTML = renderPeriodSegments(row);
+    const cell = host.querySelector('[data-period-cell="' + cssEscape(row._uid) + '"]');
+    const strip = host.querySelector('[data-period-sites="' + cssEscape(row._uid) + '"]');
+    if (!strip) return;
+
+    const active = document.activeElement;
+    const held = (active && strip.contains(active)) ? active.dataset.periodChip : null;
+
+    const locked = isRowLocked(row);
+    strip.innerHTML = renderPeriodSegments(row, locked);
+
+    if (held !== null && held !== undefined) {
+      const again = strip.querySelector('[data-period-chip="' + cssEscape(held) + '"]');
+      if (again) again.focus();
+    }
+
+    if (!cell) return;
+
+    const mixed = !locked && canSplitByPeriod(row, model.kind);
+    const button = cell.querySelector('[data-grid-action="split"]');
+
+    cell.classList.toggle('is-mixed', mixed);
+
+    if (mixed && !button) cell.insertAdjacentHTML('beforeend', renderSplitButton(row));
+    else if (!mixed && button) button.remove();
   };
 
   /**
@@ -1020,6 +1282,7 @@ export function bindGridEvents(model, hooks = {}) {
     addRow: addRow,
     addRows: addRows,
     deleteRow: deleteRow,
+    splitRow: splitRow,
     flushMirror: flushMirror,
 
     /**

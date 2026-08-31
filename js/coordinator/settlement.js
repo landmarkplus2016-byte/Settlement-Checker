@@ -581,7 +581,22 @@ function mountGrid() {
       }
     }),
 
-    onDeleteSaved: deleteSavedRow
+    onDeleteSaved: deleteSavedRow,
+
+    /*
+     * A split divides the money evenly by site (6.6.7). That is the same rule the
+     * per-site export follows, but it is still a guess about work the coordinator
+     * did and he is the only one who knows the real breakdown — so say what
+     * happened rather than letting two amounts change quietly.
+     */
+    onSplit: function (row, plan, produced) {
+      toastInfo(t('grid_split_done', {
+        count: produced.length,
+        periods: plan.groups.map(function (group) {
+          return t('period_' + group.period);
+        }).join(' / ')
+      }));
+    }
   });
 
   // Paste from Excel (6.6.1). Detached with the grid it belongs to.

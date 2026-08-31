@@ -178,64 +178,125 @@
 }
 
 /*
- * The period cell carries the app's period colours (8.3) right in the grid.
- * This is the field that decides which Tracking# a row settles against, so it
- * is the one cell worth colouring on sight.
- */
-.grid-period {
-  font-weight: var(--fw-bold);
-  font-size: 11.5px;
-}
-
-.grid-period.is-old { background: var(--color-old-bg); color: var(--color-old-fg); }
-.grid-period.is-new { background: var(--color-new-bg); color: var(--color-new-fg); }
-.grid-period.is-unset { color: var(--color-text-muted); }
-
-/*
- * The per-site strip under the select.
+ * The period cell — one chip per site, and the chips ARE the control.
  *
- * A Site ID cell can hold several sites and the lookup answers for each of them
- * separately, so `0483/0437` may be one old site beside one new one — while the
- * ROW settles against a single Tracking# (6.2). The select says what the row
- * will do; these chips say what each site is, in the same amber and blue, so a
- * line that straddles the two can be seen at a glance rather than discovered in
- * a finance file. Nothing is drawn for an ordinary single-site row.
+ * This is the field that decides which Tracking# a row settles against (6.2), so
+ * it is the one cell worth colouring on sight (8.3). It used to carry a
+ * full-width select AND a strip of site chips under it, which said the same thing
+ * twice on every ordinary row; the chips absorbed the select.
+ *
+ * Each chip's COLOUR is what the lookup says that site is — amber old, blue new,
+ * grey for a site it does not know. Each chip's RING is what the row does: the
+ * row settles as exactly one period, and the ringed chip is that one. So
+ * `0004/0025` reading `Old New` with the ring on Old is a line that straddles the
+ * fiscal cut and is currently filed as old — which is the disagreement the split
+ * button beside it exists to fix (6.6.7).
  */
 .grid-period-cell {
   display: flex;
-  flex-direction: column;
+  align-items: center;
+  gap: 4px;
 }
 
-/*
- * No gap on the column and no `:empty` rule: the strip is always in the DOM so
- * it can be repainted in place, and it holds only whitespace on a single-site
- * row. The spacing rides on the chips instead, so an empty strip takes no room.
- */
 .grid-period-sites {
   display: flex;
   flex-wrap: wrap;
-  gap: 2px;
+  gap: 3px;
+  flex: 1 1 auto;
+  min-inline-size: 0;
 }
 
 .grid-period-site {
-  margin-block-start: 2px;
-  padding: 0 4px;
+  padding: 1px 6px;
+  border: 1px solid transparent;
   border-radius: var(--radius-sm);
-  font-size: 9.5px;
+  font-family: inherit;
+  font-size: 10px;
   font-weight: var(--fw-bold);
   line-height: 14px;
+  white-space: nowrap;
+  cursor: pointer;
 
   /* The chip is the word Old/New, so it follows the page's direction — the site
      it stands for is on the tooltip, where it can read LTR in prose. */
-  white-space: nowrap;
+  opacity: .55;
+  transition: opacity .12s ease, box-shadow .12s ease;
 }
 
-.grid-period-site.is-old { background: var(--color-old-bg); color: var(--color-old-fg); }
-.grid-period-site.is-new { background: var(--color-new-bg); color: var(--color-new-fg); }
+.grid-period-site:hover:not(:disabled) { opacity: 1; }
+
+.grid-period-site:focus-visible {
+  outline: 2px solid var(--color-border-focus);
+  outline-offset: 1px;
+  opacity: 1;
+}
+
+.grid-period-site:disabled {
+  cursor: not-allowed;
+  opacity: .55;
+}
+
+/*
+ * The ring. Full opacity plus a border in the chip's own colour, so which period
+ * the row settles as reads as "this one is switched on" rather than as a fourth
+ * colour nobody was taught.
+ */
+.grid-period-site.is-selected {
+  opacity: 1;
+  box-shadow: var(--shadow-sm);
+}
+
+.grid-period-site.is-old {
+  background: var(--color-old-bg);
+  color: var(--color-old-fg);
+}
+.grid-period-site.is-old.is-selected { border-color: var(--color-old-fg); }
+
+.grid-period-site.is-new {
+  background: var(--color-new-bg);
+  color: var(--color-new-fg);
+}
+.grid-period-site.is-new.is-selected { border-color: var(--color-new-fg); }
 
 .grid-period-site.is-unknown {
   background: var(--color-surface-3);
   color: var(--color-text-muted);
+}
+.grid-period-site.is-unknown.is-selected { border-color: var(--color-text-muted); }
+
+/*
+ * The override chip: the row settles as a period NO site on it agrees with.
+ * Dashed, because it is the coordinator's answer rather than the lookup's.
+ */
+.grid-period-site.is-override { border-style: dashed; }
+
+/*
+ * The split button, offered only while the sites actually disagree. It sits in
+ * the cell rather than in the banner because the cell is where the problem is
+ * visible.
+ */
+.grid-period-split {
+  flex: 0 0 auto;
+  padding: 1px 5px;
+  border: 1px solid var(--color-warning-strong);
+  border-radius: var(--radius-sm);
+  background: var(--color-warning-bg);
+  color: var(--color-warning-strong);
+  font-family: inherit;
+  font-size: 11px;
+  font-weight: var(--fw-bold);
+  line-height: 14px;
+  cursor: pointer;
+}
+
+.grid-period-split:hover {
+  background: var(--color-warning-strong);
+  color: var(--color-text-inverse);
+}
+
+.grid-period-split:focus-visible {
+  outline: 2px solid var(--color-border-focus);
+  outline-offset: 1px;
 }
 
 /* ================================================================== *

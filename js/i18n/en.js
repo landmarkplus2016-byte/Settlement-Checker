@@ -238,6 +238,15 @@ export const en = {
   grid_jc_no_date: 'no date',
   grid_period_site: '{site} is {period}',
   grid_period_site_unknown: '{site} is not in the lookup',
+  grid_period_row: 'This row settles as {period}',
+  grid_period_unset: 'No period yet — click to set one',
+  grid_period_override: 'Settling as {period}, which no site on this row agrees with',
+  grid_period_set: 'click to settle the row this way',
+
+  /* --- splitting a mixed-period row (6.6.7) --- */
+  grid_split_period: 'Split this row by period — the old sites on one row, the new sites on another, with the amount divided evenly by site',
+  grid_split_glyph: '⇅',
+  grid_split_done: 'Split into {count} rows ({periods}). The amount was divided evenly by site — correct it if the real split is different.',
 
   paste_from_excel: 'Paste from Excel',
   paste_title: 'Paste rows from Excel',
