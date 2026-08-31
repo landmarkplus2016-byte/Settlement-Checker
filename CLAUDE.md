@@ -101,7 +101,7 @@ Everything downstream depends on these. Never break one without confirming with 
 
 ### Export
 
-15. **Export is per team + period, and pulls only `approved` and not-yet-`exported` rows.** Nothing that has been exported is ever offered again unless the manager explicitly asks to re-include.
+15. **Export is per team + month + period, and pulls only `approved` and not-yet-`exported` rows.** Nothing that has been exported is ever offered again unless the manager explicitly asks to re-include. It can be **narrowed to one settlement** (`<user_id>::<settlement_id>`) — necessary since rule 9, because a team's month may span two batches under two Tracking#s. Unnarrowed is the default and means the whole team-month.
 16. **Committing an export is server-side and atomic.** The server re-selects the same predicate and stamps the rows `exported` in one pass (claim-then-build), so two managers exporting the same team at once cannot double-settle a row.
 17. **Every export mirrors the template** — the header block (Name / Account / Total), the big Old/New marker, and the Arabic footer (المدير المسؤل / مدير الحسابات / إعتماد) with the period's Tracking# and the date.
 18. **The per-site export divides money, never KM.** A multi-site line (`site_id` joined by `/`) explodes into one row per site; `amount`, `fuel_amount`, and `karta_amount` are split; `start_km` / `end_km` are copied unchanged. See Section 6.4 for the exact rounding.
@@ -226,6 +226,7 @@ One spreadsheet, shared, owned by the developer. Tabs:
 | `month` | text | |
 | `fiscal_year` | text | |
 | `tracking_no` | integer | The period's Tracking# |
+| `settlement_id` | text | `<user_id>::<settlement_id>` when the batch was narrowed to one settlement; blank for a whole team-month |
 | `report_type` | text | `normal` \| `persite` |
 | `row_count` | integer | |
 | `exported_by` | user_id | Server-set from session |
@@ -353,8 +354,8 @@ Every one resolves the target spreadsheet from the session, and rejects if `role
 
 ## 3.7 Export — manager-only (2)
 
-- **`export_query`** — `{team, month, period, exclude_exported}` → the `approved` rows for that team+month+period across all coordinators (excluding `exported` unless told otherwise), plus the resolved Tracking# and the coordinator name for the header. The client renders Normal or Per-site and builds the `.xlsx` with xlsx-js-style. The **per-site explosion is computed client-side** for display and the file (Section 6.4), because it is a pure transform of returned rows.
-- **`export_commit`** — `{team, month, period, report_type}` → **re-selects the same predicate server-side**, stamps those rows `exported` + `export_batch_id` + `exported_at`, writes an `ExportLog` row, returns `{batch_id, row_count}`. This is the atomic claim (rule 16). The client only downloads the file it already built; the commit is what makes the rows disappear from future queries.
+- **`export_query`** — `{team, month, period, settlement?, exclude_exported}` → the `approved` rows for that team+month+period across all coordinators (excluding `exported` unless told otherwise), plus the resolved Tracking# and the coordinator name for the header. It also returns `settlements`: every batch that team-month-period holds, **tallied before the `settlement` narrowing is applied**, so the screen's settlement selector still lists the siblings of the one already chosen. The client renders Normal or Per-site and builds the `.xlsx` with xlsx-js-style. The **per-site explosion is computed client-side** for display and the file (Section 6.4), because it is a pure transform of returned rows.
+- **`export_commit`** — `{team, month, period, settlement?, report_type}` → **re-selects the same predicate server-side**, stamps those rows `exported` + `export_batch_id` + `exported_at`, writes an `ExportLog` row, returns `{batch_id, row_count}`. This is the atomic claim (rule 16). The client only downloads the file it already built; the commit is what makes the rows disappear from future queries.
 
 ## 3.8 Cross-cutting rules
 
@@ -494,6 +495,8 @@ The coordinator's grid is the one local-first surface:
 ## 7.1 The four possible files
 
 Per team + month, each period can produce two report types, so up to four files: **normal-old**, **normal-new**, **persite-old**, **persite-new**. Each is a separate `.xlsx` with its own period's Tracking# and its own dedup — a row can never appear across two of them.
+
+Where a team's month spans several settlements (rule 9), the export screen's **settlement selector** narrows the four to one batch at a time, so each batch goes out under its own Tracking# instead of one file carrying both. The dedup is unchanged: the commit claims only what its own predicate selects, so the batches cannot overlap.
 
 ## 7.2 File layout (mirrors the workbook)
 

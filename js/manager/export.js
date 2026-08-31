@@ -26,6 +26,11 @@
  *     predicate, not a row list — it re-selects server-side (rule 16). A preview
  *     left on screen after its filter changed would let a manager commit
  *     something he never looked at.
+ *   - **One team-month can be several settlements.** A month holds as many as a
+ *     coordinator opens (rule 9), each with its own pair of Tracking#s, so the
+ *     settlement selector exists to send them as separate files rather than one
+ *     file with two numbers in its footer. It appears only once a query has
+ *     found more than one batch, because most months are one.
  *
  * Changing the REPORT TYPE does not refetch: it is a pure re-rendering of rows
  * already in hand, and an Apps Script round trip across every coordinator's
@@ -56,8 +61,27 @@ const LOG_LIMIT = 50;
  * Screen state
  * ------------------------------------------------------------------ */
 
-/** The selection. `team` and `month` are required by `export_query`. */
-let filter = { team: '', month: '', report_type: 'normal', exclude_exported: true };
+/**
+ * The selection. `team` and `month` are required by `export_query`; `settlement`
+ * is the optional narrowing to ONE batch, empty for the whole team-month.
+ */
+let filter = { team: '', month: '', settlement: '', report_type: 'normal', exclude_exported: true };
+
+/**
+ * The batches this team-month holds, merged across both periods, as
+ * `{ key, label }`.
+ *
+ * A month can hold several settlements (rule 9) and each carries its own pair of
+ * Tracking#s, so one team's August may be two batches under two numbers. Without
+ * this the only possible export is both of them in one file, with both numbers
+ * in the footer.
+ *
+ * It is filled from the query rather than asked for up front, because "which
+ * settlements have approved rows for team Ashraf in August" is a question only
+ * the sweep can answer — and the server answers it whether or not the filter is
+ * already narrowed, so the selector keeps working after it has been used once.
+ */
+let settlementOptions = [];
 
 /**
  * Per period: the raw `export_query` response, the document built from it, the
@@ -127,8 +151,9 @@ export function bindExportEvents() {
   const page$ = qs('#export-page');
   if (!page$) return;
 
-  filter = { team: '', month: '', report_type: 'normal', exclude_exported: true };
+  filter = { team: '', month: '', settlement: '', report_type: 'normal', exclude_exported: true };
   periods = emptyPeriods();
+  settlementOptions = [];
   generated = false;
   generating = false;
   teams = [];
@@ -182,6 +207,18 @@ export function bindExportEvents() {
       rebuildDocuments();
       paintResults();
       return;
+    }
+
+    /*
+     * A different team or month is a different question entirely, so the
+     * batches offered for the old one are gone — including one the manager had
+     * narrowed to, which would otherwise silently keep filtering a team it does
+     * not belong to.
+     */
+    if (key === 'team' || key === 'month') {
+      filter.settlement = '';
+      settlementOptions = [];
+      paintSettlementFilter();
     }
 
     invalidate();
@@ -267,12 +304,7 @@ async function generate() {
   paintResults();
 
   const results = await Promise.all(PERIODS.map(function (period) {
-    return api.call('export_query', {
-      team: filter.team,
-      month: filter.month,
-      period: period,
-      exclude_exported: filter.exclude_exported
-    }).then(
+    return api.call('export_query', queryPayload(period)).then(
       function (data) { return { period: period, data: data }; },
       function (err) { return { period: period, error: errorMessage(err) }; }
     );
@@ -286,10 +318,79 @@ async function generate() {
   });
 
   rebuildDocuments();
+  collectSettlementOptions();
 
   generating = false;
   paintGenerateButton();
+  paintSettlementFilter();
   paintResults();
+}
+
+/**
+ * The predicate, as `export_query` and `export_commit` both take it.
+ *
+ * One function for both so the preview and the claim can never disagree about
+ * what is being selected — the commit re-runs this same selection server-side
+ * (rule 16), and a settlement in one call and not the other would claim rows the
+ * manager never saw.
+ *
+ * @param {string} period 'old' | 'new'
+ * @return {Object}
+ */
+function queryPayload(period) {
+  return {
+    team: filter.team,
+    month: filter.month,
+    period: period,
+    settlement: filter.settlement,
+    exclude_exported: filter.exclude_exported
+  };
+}
+
+/**
+ * Merge both periods' batch lists into the selector's options.
+ *
+ * A union, not one period's list: a settlement may hold only old rows or only
+ * new ones, and offering it under one track and not the other would make the
+ * selector's contents depend on which panel the manager happens to be looking
+ * at. The server tallies these before applying the narrowing, so re-generating
+ * a narrowed query still returns every sibling batch.
+ */
+function collectSettlementOptions() {
+  const seen = {};
+  const out = [];
+
+  PERIODS.forEach(function (period) {
+    const found = (periods[period].query && periods[period].query.settlements) || [];
+
+    found.forEach(function (batch) {
+      const key = String(batch.key || '');
+
+      // An entry whose settlement row is missing is tallied under an empty id.
+      // It cannot be narrowed to — there is nothing to name — so it stays in
+      // the whole-team-month file and out of the selector.
+      if (!key || !batch.settlement_id || seen[key]) return;
+
+      seen[key] = true;
+      out.push({
+        value: key,
+        label: [batchCoordinator(batch), batch.settlement_id].filter(Boolean).join(' · ')
+      });
+    });
+  });
+
+  settlementOptions = out;
+}
+
+/**
+ * The coordinator a batch belongs to, in the active language (8.1).
+ * @param {Object} batch
+ * @return {string}
+ */
+function batchCoordinator(batch) {
+  const person = batch.coordinator || {};
+  if (getLang() === 'ar' && person.display_name_ar) return person.display_name_ar;
+  return person.display_name || person.user_id || '';
 }
 
 /**
@@ -425,6 +526,14 @@ function confirmExport(period) {
         }))}
       </div>
 
+      ${filter.settlement ? `
+        <div class="alert alert-info mt-4">
+          ${escapeHtml(t('export_settlement_scoped', {
+            settlement: settlementLabel(filter.settlement)
+          }))}
+        </div>
+      ` : ''}
+
       ${state.downloaded ? '' : `
         <div class="alert alert-info mt-4">
           ${escapeHtml(t('export_confirm_not_downloaded'))}
@@ -458,6 +567,7 @@ function confirmExport(period) {
         team: filter.team,
         month: filter.month,
         period: period,
+        settlement: filter.settlement,
         report_type: filter.report_type
       });
 
@@ -494,12 +604,7 @@ async function requery(period) {
   paintResults();
 
   try {
-    state.query = await api.call('export_query', {
-      team: filter.team,
-      month: filter.month,
-      period: period,
-      exclude_exported: filter.exclude_exported
-    });
+    state.query = await api.call('export_query', queryPayload(period));
     state.error = '';
   } catch (err) {
     state.query = null;
@@ -510,6 +615,12 @@ async function requery(period) {
   state.busy = false;
 
   rebuildDocuments();
+
+  // A batch that has just been claimed in full drops out of the list, so the
+  // selector has to follow the commit rather than outlast it.
+  collectSettlementOptions();
+
+  paintSettlementFilter();
   paintResults();
 }
 
@@ -578,6 +689,8 @@ function renderFilters() {
       return { value: month, label: month };
     }))}
 
+    <span id="export-settlement-filter">${renderSettlementFilter()}</span>
+
     ${renderSelect('report_type', '', [
       { value: 'normal', label: t('export_report_normal') },
       { value: 'persite', label: t('export_report_persite') }
@@ -597,6 +710,40 @@ function renderFilters() {
       ${escapeHtml(generating ? t('export_generating') : t('export_generate'))}
     </button>
   `;
+}
+
+/**
+ * The settlement narrowing, when there is a choice to make.
+ *
+ * Hidden until a query has found more than one batch for this team-month: a
+ * coordinator who opened a single settlement for August is the ordinary case,
+ * and a select with one option in it is furniture that asks a question with no
+ * second answer.
+ *
+ * A batch the manager has narrowed to keeps its option even after it stops
+ * coming back from the query — which is what happens the moment he commits all
+ * of it — so the select never renders with a value it cannot show.
+ *
+ * @return {string} HTML
+ */
+function renderSettlementFilter() {
+  const options = settlementOptions.slice();
+
+  if (filter.settlement && !options.some(function (option) { return option.value === filter.settlement; })) {
+    options.unshift({ value: filter.settlement, label: filter.settlement });
+  }
+
+  // One batch and no narrowing is nothing to ask about; one batch WITH a
+  // narrowing still needs its way back to the whole team-month.
+  if (options.length < 2 && !filter.settlement) return '';
+
+  return renderSelect('settlement', t('export_all_settlements'), options);
+}
+
+/** Repaint just the settlement select, leaving the rest of the toolbar alone. */
+function paintSettlementFilter() {
+  const host = qs('#export-settlement-filter');
+  if (host) host.innerHTML = renderSettlementFilter();
 }
 
 /**
@@ -766,10 +913,24 @@ function renderPanelWarnings(period, state, doc) {
     })));
   }
 
-  // Two coordinators on the same team with different numbers for one period.
+  /*
+   * Two settlements' worth of numbers in one file. Two coordinators on the same
+   * team, or — since a month holds as many settlements as a coordinator opens
+   * (rule 9) — one coordinator's two batches. The settlement selector is the way
+   * out of the second case, so the warning names it.
+   */
   if ((header.tracking_numbers || []).length > 1) {
-    out.push(renderAlert('warning', t('export_tracking_conflict', {
-      numbers: (header.tracking_numbers || []).join(t('list_separator'))
+    out.push(renderAlert('warning', t(
+      settlementOptions.length > 1 ? 'export_tracking_conflict_split' : 'export_tracking_conflict',
+      { numbers: (header.tracking_numbers || []).join(t('list_separator')) }
+    )));
+  }
+
+  // Narrowed to one batch: the header block names one settlement, not the whole
+  // team-month, and that is worth saying before the file goes to finance.
+  if (filter.settlement) {
+    out.push(renderAlert('info', t('export_settlement_scoped', {
+      settlement: settlementLabel(filter.settlement)
     })));
   }
 
@@ -785,6 +946,16 @@ function renderPanelWarnings(period, state, doc) {
 
   if (!out.length) return '';
   return `<div class="tpl-warnings">${out.join('')}</div>`;
+}
+
+/**
+ * A batch key as the manager chose it, falling back to the raw key.
+ * @param {string} key `<user_id>::<settlement_id>`
+ * @return {string}
+ */
+function settlementLabel(key) {
+  const found = settlementOptions.filter(function (option) { return option.value === key; })[0];
+  return found ? found.label : key;
 }
 
 /**
@@ -1018,7 +1189,13 @@ function renderLogRow(batch) {
   return `
     <tr>
       <td class="num text-bold">${escapeHtml(batch.batch_id)}</td>
-      <td>${escapeHtml(batch.team || '—')}</td>
+
+      <td>
+        <div>${escapeHtml(batch.team || '—')}</div>
+        ${batch.settlement_id
+          ? `<div class="text-tiny text-muted num">${escapeHtml(batchSettlement(batch))}</div>`
+          : ''}
+      </td>
       <td>${escapeHtml([batch.month, batch.fiscal_year].filter(Boolean).join(' '))}</td>
 
       <td>
@@ -1039,6 +1216,22 @@ function renderLogRow(batch) {
       </td>
     </tr>
   `;
+}
+
+/**
+ * The settlement a logged batch was narrowed to, without the coordinator half of
+ * the key — the row already names the team, and the id is what a manager
+ * recognises.
+ *
+ * Empty for a whole-team-month batch, which is most of them, and empty for a log
+ * written before the column existed.
+ *
+ * @param {Object} batch a row from `list_export_log`.
+ * @return {string}
+ */
+function batchSettlement(batch) {
+  const parts = String(batch.settlement_id || '').split('::');
+  return parts[parts.length - 1] || '';
 }
 
 /**

@@ -472,6 +472,7 @@ export const en = {
 
   export_pick_team: 'Choose a team…',
   export_pick_month: 'Choose a month…',
+  export_all_settlements: 'All settlements',
   export_report_type: 'Report type',
   export_report_normal: 'Normal',
   export_report_persite: 'Per-site',
@@ -507,6 +508,8 @@ export const en = {
   export_already_exported: '{count} entries here have already been exported. They are shown because “hide already-exported” is off, and they will not be exported again.',
   export_claimable_zero: 'Everything here has already been exported. You can still download the file, but there is nothing left to mark.',
   export_tracking_conflict: 'These entries resolve to more than one tracking number: {numbers}. Check the settlements before sending this file.',
+  export_tracking_conflict_split: 'These entries resolve to more than one tracking number: {numbers}, because this team’s month covers more than one settlement. Pick a settlement above to send them as separate files.',
+  export_settlement_scoped: 'This file covers one settlement only: {settlement}. Entries in the same team and month that belong to another settlement are not in it.',
   export_no_tracking: 'These settlements have no tracking number for this period: {settlements}. Export is blocked until a coordinator sets it — the footer would go out blank and the number cannot be changed afterwards.',
   export_sweep_incomplete: 'Some coordinators could not be read, so this file is incomplete: {names}. Export is blocked until that is fixed.',
 

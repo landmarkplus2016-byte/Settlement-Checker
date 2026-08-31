@@ -53,6 +53,16 @@ var MAX_EXPORT_ROWS = 2000;
 /** Only `approved` rows are ever claimed. `exported` is offered back read-only. */
 var EXPORT_CLAIMABLE_STATUSES = ['approved'];
 
+/**
+ * What joins a coordinator to a settlement in the optional `settlement` filter.
+ *
+ * A `settlement_id` is unique inside ONE coordinator's spreadsheet and nowhere
+ * else — every coordinator's August is `S-2026-08` — so a batch can only be
+ * named by the pair. `U-004::S-2026-08` is one batch; `S-2026-08` on its own is
+ * three people's Augusts.
+ */
+var EXPORT_BATCH_SEPARATOR = '::';
+
 /** How many ExportLog batches `list_export_log` returns by default. */
 var DEFAULT_EXPORT_LOG_LIMIT = 50;
 var MAX_EXPORT_LOG_LIMIT = 200;
@@ -76,8 +86,16 @@ var MAX_EXPORT_LOG_LIMIT = 200;
  * — an export that selected differently from the approvals list it was built out
  * of would be very hard to notice and very expensive to be wrong about.
  *
+ * `settlement` is the one OPTIONAL field, and it is the narrowing rule 9 made
+ * necessary: a month holds as many settlements as a coordinator opens, each with
+ * its own pair of Tracking#s, so one team's August can legitimately be two
+ * batches under two different numbers. Left empty — the default — the export is
+ * the whole team-month exactly as before. Set to `<user_id>::<settlement_id>` it
+ * is one batch, and the file carries that batch's number alone.
+ *
  * @param {Object} body the payload.
- * @return {Object} { team, coordinator, period, month, exclude_exported }
+ * @return {Object} { team, coordinator, period, month, settlement,
+ *                    exclude_exported }
  * @throws {Object} appError('validation_failed') with per-field errors.
  */
 function readExportFilter(body) {
@@ -92,6 +110,17 @@ function readExportFilter(body) {
 
   var period = normalizePeriod(raw.period);
   if (!period) fieldErrors.period = 'must_be_old_or_new';
+
+  var settlement = normalizeKey(raw.settlement);
+  if (settlement) {
+    var parts = settlement.split(EXPORT_BATCH_SEPARATOR);
+
+    if (parts.length !== 2 || !normalizeKey(parts[0]) || !normalizeKey(parts[1])) {
+      fieldErrors.settlement = 'must_be_user_id_and_settlement_id';
+    } else {
+      settlement = exportBatchKey(parts[0], parts[1]);
+    }
+  }
 
   if (Object.keys(fieldErrors).length) {
     throw appError('validation_failed', 'invalid_export_filter', fieldErrors);
@@ -113,13 +142,43 @@ function readExportFilter(body) {
     period: period,
     month: month.toLowerCase(),
 
+    // The batch narrowing, matched the same way. '' means the whole team-month.
+    settlement: settlement.toLowerCase(),
+
     // As the manager sees them. What goes on the ExportLog row and back to the
     // screen — a log that recorded "team ashraf" would not match the Teams tab.
     team_label: team,
     month_label: month,
+    settlement_label: settlement,
 
     exclude_exported: excludeExported
   };
+}
+
+/**
+ * The identity of one settlement inside the export, as one string.
+ *
+ * @param {*} userId the coordinator who owns the sheet it lives in.
+ * @param {*} settlementId the settlement's own id.
+ * @return {string} e.g. `U-004::S-2026-08`.
+ */
+function exportBatchKey(userId, settlementId) {
+  return normalizeKey(userId) + EXPORT_BATCH_SEPARATOR + normalizeKey(settlementId);
+}
+
+/**
+ * Does this batch pass the optional `settlement` narrowing?
+ *
+ * Compared case-insensitively, like every other key the two manager filters
+ * match on.
+ *
+ * @param {Object} filter from readExportFilter().
+ * @param {string} key from exportBatchKey().
+ * @return {boolean}
+ */
+function exportBatchMatches(filter, key) {
+  if (!filter.settlement) return true;
+  return key.toLowerCase() === filter.settlement;
 }
 
 /**
@@ -152,16 +211,25 @@ function exportStatusesFor(filter) {
  * implementation. A second, subtly different selection path is how a row ends up
  * in a file it was never claimed for.
  *
+ * `batches` is tallied BEFORE the `settlement` narrowing is applied and after
+ * everything else, so it always answers the question the screen has to put to
+ * the manager: which settlements have rows for this team, month and period? A
+ * list that shrank to the one already chosen would be a selector that can be
+ * used once.
+ *
  * @param {Object} filter from readExportFilter().
  * @param {Array<string>} statuses which statuses to take.
  * @return {{expenses:Array<Object>, fuel:Array<Object>, claims:Array<Object>,
- *           total:number, sweep:Object}}
+ *           batches:Array<Object>, total:number, sweep:Object}}
  *         `claims` carry the in-memory blocks and offsets; nothing is written.
  */
 function sweepExportRows(filter, statuses) {
   var expenses = [];
   var fuel = [];
   var claims = [];
+
+  var batches = [];
+  var batchIndex = {};
 
   var sweep = forEachCoordinator(function (userRow, ss) {
     var settlements = readSettlementMap(ss);
@@ -183,9 +251,17 @@ function sweepExportRows(filter, statuses) {
 
         if (!entryMatchesFilter(filter, row, settlement)) continue;
 
-        var entry = toManagerEntry(
-          kind, row, settlement || missingSettlement(settlementId), userRow
+        var parent = settlement || missingSettlement(settlementId);
+        var claimable = (EXPORT_CLAIMABLE_STATUSES.indexOf(status) !== -1);
+
+        // Tallied for every row the team-month-period matched, chosen or not.
+        var batch = trackExportBatch(
+          batches, batchIndex, userRow, parent, filter.period, claimable
         );
+
+        if (!exportBatchMatches(filter, batch.key)) continue;
+
+        var entry = toManagerEntry(kind, row, parent, userRow);
 
         if (kind === 'fuel') fuel.push(entry);
         else expenses.push(entry);
@@ -193,7 +269,7 @@ function sweepExportRows(filter, statuses) {
         // Only a claimable row is offered to the commit. An `exported` row that
         // the manager asked to see again is in the lists above — so the preview
         // shows it — and deliberately not here (rule 13).
-        if (EXPORT_CLAIMABLE_STATUSES.indexOf(status) !== -1) offsets.push(row._offset);
+        if (claimable) offsets.push(row._offset);
       }
 
       if (!offsets.length) continue;
@@ -210,14 +286,79 @@ function sweepExportRows(filter, statuses) {
 
   expenses.sort(compareExportEntries);
   fuel.sort(compareExportEntries);
+  batches.sort(compareExportBatchOptions);
 
   return {
     expenses: expenses,
     fuel: fuel,
     claims: claims,
+    batches: batches,
     total: expenses.length + fuel.length,
     sweep: sweep
   };
+}
+
+/**
+ * Tally one row against the settlement it belongs to.
+ *
+ * The counts are what make the selector readable: "Mahmoud · S-2026-08 · #12 ·
+ * 34 rows" tells a manager which of two August batches he is about to send, and
+ * `claimable` tells him whether there is anything left in it at all.
+ *
+ * @param {Array<Object>} batches accumulator, in first-seen order.
+ * @param {Object} index key (lowercased) -> the entry in `batches`.
+ * @param {Object} userRow the coordinator's raw Users row.
+ * @param {Object} settlement the parent Settlements row (or missingSettlement()).
+ * @param {string} period 'old' | 'new' — which Tracking# this batch resolves to.
+ * @param {boolean} claimable whether this row could still be exported.
+ * @return {Object} the batch entry.
+ */
+function trackExportBatch(batches, index, userRow, settlement, period, claimable) {
+  var key = exportBatchKey(userRow.user_id, settlement.settlement_id);
+  var found = index[key.toLowerCase()];
+
+  if (!found) {
+    found = {
+      key: key,
+      coordinator: toEntryCoordinator(userRow),
+      settlement_id: normalizeKey(settlement.settlement_id),
+      month: normalizeKey(settlement.month),
+      fiscal_year: normalizeKey(settlement.fiscal_year),
+      account: normalizeKey(settlement.account),
+
+      // Resolved from the settlement by period like everything else (6.2), so
+      // the selector shows the number the file would actually carry.
+      tracking_no: resolveTracking(settlement, period),
+
+      rows: 0,
+      claimable: 0
+    };
+
+    index[key.toLowerCase()] = found;
+    batches.push(found);
+  }
+
+  found.rows++;
+  if (claimable) found.claimable++;
+
+  return found;
+}
+
+/**
+ * Selector order: coordinator, then settlement id — the same order the file
+ * itself is sorted in (compareExportEntries), so the list reads like the batch.
+ *
+ * @param {Object} a
+ * @param {Object} b
+ * @return {number}
+ */
+function compareExportBatchOptions(a, b) {
+  var coordA = a.coordinator.user_id;
+  var coordB = b.coordinator.user_id;
+  if (coordA !== coordB) return (coordA < coordB) ? -1 : 1;
+
+  if (a.settlement_id !== b.settlement_id) return (a.settlement_id < b.settlement_id) ? -1 : 1;
+  return 0;
 }
 
 /**
@@ -397,10 +538,16 @@ function joinDistinct(values) {
  * to re-include, and the screen needs the difference to label the Confirm button
  * honestly.
  *
+ * `settlements` is the list of batches this team-month-period holds, whether or
+ * not the filter has been narrowed to one of them (see sweepExportRows). It is
+ * what the screen's settlement selector is built from — the manager cannot be
+ * asked to type `U-004::S-2026-08` from memory.
+ *
  * @param {Object} session auth context; must be a manager.
- * @param {Object} payload { team, month, period, exclude_exported? }
- * @return {Object} { filter, expenses, fuel, header, total, claimable,
- *                    already_exported, coordinators_visited, errors, skipped }
+ * @param {Object} payload { team, month, period, settlement?, exclude_exported? }
+ * @return {Object} { filter, expenses, fuel, header, settlements, total,
+ *                    claimable, already_exported, coordinators_visited, errors,
+ *                    skipped }
  */
 function handleExportQuery(session, payload) {
   requireManager(session);
@@ -418,12 +565,14 @@ function handleExportQuery(session, payload) {
       team: filter.team_label,
       month: filter.month_label,
       period: filter.period,
+      settlement: filter.settlement_label,
       exclude_exported: filter.exclude_exported
     },
 
     expenses: found.expenses,
     fuel: found.fuel,
     header: buildExportHeader(found.expenses, found.fuel),
+    settlements: found.batches,
 
     total: found.total,
     claimable: claimable,
@@ -450,7 +599,9 @@ function handleExportQuery(session, payload) {
  * Re-selects the same predicate server-side and stamps every `approved` row it
  * finds as `exported`, with the batch id and the timestamp, in one pass under
  * the script lock. The client does not send a row list and cannot influence what
- * is claimed beyond the four fields of the predicate.
+ * is claimed beyond the fields of the predicate — team, month, period and the
+ * optional `settlement`, which must be the same one the preview was built with
+ * or the manager claims rows he never looked at.
  *
  * `exclude_exported` is ignored here, on purpose. A manager may ask to SEE rows
  * that already went out (7.3, rebuilding a lost file); he may never claim them a
@@ -473,7 +624,7 @@ function handleExportQuery(session, payload) {
  * snapshots until `flush()`.
  *
  * @param {Object} session auth context; must be a manager.
- * @param {Object} payload { team, month, period, report_type }
+ * @param {Object} payload { team, month, period, report_type, settlement? }
  * @return {Object} { batch_id, row_count, by_kind, by_coordinator, tracking_no,
  *                    report_type, filter, exported_at, coordinators_visited,
  *                    errors, skipped }
@@ -536,7 +687,8 @@ function handleExportCommit(session, payload) {
         filter: {
           team: filter.team_label,
           month: filter.month_label,
-          period: filter.period
+          period: filter.period,
+          settlement: filter.settlement_label
         },
         exported_at: '',
         coordinators_visited: found.sweep.visited,
@@ -594,6 +746,12 @@ function handleExportCommit(session, payload) {
       month: joinDistinct(header.months) || filter.month_label,
       fiscal_year: joinDistinct(header.fiscal_years),
       tracking_no: joinDistinct(header.tracking_numbers),
+
+      // Blank for a whole-team-month batch, which is what most of them are.
+      // appendRow ignores a key the tab has no column for, so a config sheet
+      // that predates this column simply does not record it.
+      settlement_id: filter.settlement_label,
+
       report_type: reportType,
       row_count: rowCount,
       exported_by: session.user_id,
@@ -612,7 +770,8 @@ function handleExportCommit(session, payload) {
       filter: {
         team: filter.team_label,
         month: filter.month_label,
-        period: filter.period
+        period: filter.period,
+        settlement: filter.settlement_label
       },
       exported_at: stamp,
       coordinators_visited: found.sweep.visited,
@@ -731,6 +890,11 @@ function handleListExportLog(session, payload) {
       month: normalizeKey(row.month),
       fiscal_year: normalizeKey(row.fiscal_year),
       tracking_no: normalizeKey(row.tracking_no),
+
+      // '' both for a whole-team-month batch and for a config sheet with no
+      // such column — neither is worth telling the screen apart.
+      settlement_id: normalizeKey(row.settlement_id),
+
       report_type: normalizeKey(row.report_type).toLowerCase(),
       row_count: toFiniteNumber(row.row_count),
 

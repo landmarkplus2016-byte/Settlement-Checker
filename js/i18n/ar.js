@@ -468,6 +468,7 @@ export const ar = {
 
   export_pick_team: 'اختر فريقاً…',
   export_pick_month: 'اختر شهراً…',
+  export_all_settlements: 'كل التسويات',
   export_report_type: 'نوع التقرير',
   export_report_normal: 'عادي',
   export_report_persite: 'حسب الموقع',
@@ -503,6 +504,8 @@ export const ar = {
   export_already_exported: '{count} من البنود هنا صُدِّرت بالفعل. تظهر لأن «إخفاء المُصدَّر سابقاً» متوقف، ولن تُصدَّر مرة أخرى.',
   export_claimable_zero: 'كل ما هنا صُدِّر بالفعل. يمكنك تنزيل الملف، لكن لا يوجد ما يُعلَّم.',
   export_tracking_conflict: 'هذه البنود تؤول إلى أكثر من رقم تتبع: {numbers}. راجع التسويات قبل إرسال هذا الملف.',
+  export_tracking_conflict_split: 'هذه البنود تؤول إلى أكثر من رقم تتبع: {numbers}، لأن شهر هذا الفريق يضم أكثر من تسوية. اختر تسوية من الأعلى لإرسالها كملفات منفصلة.',
+  export_settlement_scoped: 'هذا الملف يغطي تسوية واحدة فقط: {settlement}. البنود التي تخص تسوية أخرى في الفريق والشهر نفسه ليست فيه.',
   export_no_tracking: 'هذه التسويات بلا رقم تتبع لهذه الفترة: {settlements}. التصدير موقوف حتى يضبطه المنسّق — سيخرج التذييل فارغاً ولا يمكن تغيير الرقم بعد ذلك.',
   export_sweep_incomplete: 'تعذّرت قراءة بعض المنسّقين، فهذا الملف ناقص: {names}. التصدير موقوف حتى يُعالَج ذلك.',
 
