@@ -220,6 +220,17 @@ export const ar = {
   grid_add_row: 'إضافة صف',
   grid_delete_row: 'حذف الصف',
   grid_row_deleted: 'تم حذف الصف.',
+
+  grid_select_all: 'تحديد كل الصفوف',
+  grid_select_row: 'تحديد الصف {row}',
+  grid_delete_selected: 'حذف {count} صفاً محدداً',
+  grid_delete_selected_title: 'حذف الصفوف المحددة؟',
+  grid_delete_selected_text: 'سيتم حذف {count} صفاً من هذا الجدول.',
+  grid_delete_saved_note: '{count} منها محفوظة بالفعل. لا يُحذف إلا ما هو مسودة — أي صف مؤكَّد أو بعده يبقى، وسيُعرض عليك.',
+  grid_delete_confirm: 'حذف الصفوف',
+  grid_rows_deleted: 'تم حذف {count} صفاً.',
+  grid_delete_refused: 'تعذّر حذف {count} صفاً — لم تعد مسودات. تمت إعادتها.',
+
   grid_row_locked: 'مُصدَّر — هذا الصف مقفل.',
   grid_total: 'الإجمالي',
   grid_empty_title: 'لا توجد إدخالات بعد',
@@ -256,6 +267,7 @@ export const ar = {
   paste_nothing: 'لا يوجد ما يُضاف — الصق بعض الصفوف أولاً.',
   paste_added: 'تمت إضافة {count} صفاً.',
   paste_header_skipped: 'تم تخطي صف العناوين.',
+  paste_corrected: 'تمت مطابقة {count} خلية مع القائمة التي تنتمي إليها (مثال: AUG ← Aug).',
   paste_truncated: 'تم استبعاد {count} صفاً — الصقها في دفعة ثانية.',
 
   /* Validation codes — shared with apps-script/Validate.gs (6.3). */
@@ -269,6 +281,7 @@ export const ar = {
   valid_missing_period: 'لا توجد فترة — هذا الصف لا يُسوّى على أي رقم تتبع',
   valid_job_code_count_mismatch: 'عدد المواقع لا يطابق عدد أكواد العمل',
   valid_mixed_period: 'مواقع هذا الصف ليست كلها في الفترة نفسها — الصف يُسوّى على رقم تتبع واحد فقط، فقسّمه',
+  valid_unknown_list_value: 'ليست من خيارات هذا العمود — والصف الذي لا يطابق فريقه أي فريق لا يظهر في أي تصدير',
   valid_km_gap: 'قراءة العداد لا تتصل بالقراءة السابقة',
 
   /* --- admin: teams (3.4) --- */

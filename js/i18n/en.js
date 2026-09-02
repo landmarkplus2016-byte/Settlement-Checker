@@ -222,6 +222,17 @@ export const en = {
   grid_add_row: 'Add row',
   grid_delete_row: 'Delete row',
   grid_row_deleted: 'Row deleted.',
+
+  grid_select_all: 'Select every row',
+  grid_select_row: 'Select row {row}',
+  grid_delete_selected: 'Delete {count} selected',
+  grid_delete_selected_title: 'Delete the selected rows?',
+  grid_delete_selected_text: '{count} rows will be removed from this grid.',
+  grid_delete_saved_note: '{count} of them are already saved. Only rows still in draft can be deleted — anything confirmed or later stays, and is listed back to you.',
+  grid_delete_confirm: 'Delete rows',
+  grid_rows_deleted: '{count} rows deleted.',
+  grid_delete_refused: '{count} rows could not be deleted — they are no longer drafts. They have been put back.',
+
   grid_row_locked: 'Exported — this row is locked.',
   grid_total: 'Total',
   grid_empty_title: 'No entries yet',
@@ -258,6 +269,7 @@ export const en = {
   paste_nothing: 'Nothing to add — paste some rows first.',
   paste_added: '{count} rows added.',
   paste_header_skipped: 'The header row was skipped.',
+  paste_corrected: '{count} cells were matched to the list they come from (for example AUG → Aug).',
   paste_truncated: '{count} rows were left out — paste them in a second batch.',
 
   /* Validation codes — shared with apps-script/Validate.gs (6.3). */
@@ -271,6 +283,7 @@ export const en = {
   valid_missing_period: 'No period — this row settles against neither tracking number',
   valid_job_code_count_mismatch: 'Site and Job Code counts do not match',
   valid_mixed_period: 'The sites on this row are not all the same period — it can only settle against one tracking number, so split it',
+  valid_unknown_list_value: 'Not one of the options for this column — a row whose team matches no team appears in no export',
   valid_km_gap: 'KM does not follow on from the last reading',
 
   /* --- admin: teams (3.4) --- */

@@ -24,6 +24,8 @@
  * what a draft is.
  */
 
+import { isKnownListValue } from './lists.js';
+
 /** Codes that block Confirm. Same list as VALIDATION_FLAG_CODES in Validate.gs. */
 export const FLAG_CODES = [
   'missing_site_id',
@@ -40,6 +42,7 @@ export const WARNING_CODES = [
   'missing_period',
   'job_code_count_mismatch',
   'mixed_period',
+  'unknown_list_value',
   'km_gap'
 ];
 
@@ -61,12 +64,17 @@ export const WARNING_CODES = [
  *        raised against it, 2.1). These checks only ask whether a site is there.
  *        When absent, the lookup checks are skipped rather than guessed at — see
  *        checkSiteAgainstLookup().
+ * @param {Object|null} [options.listOptions] field -> the reference list that
+ *        field's cell must come from, e.g. `{ month: ['Aug', …], team: […] }`.
+ *        Built by the grid from its own column definitions. Absent means the
+ *        client never loaded the lists and cannot judge — see checkListValues().
  * @return {{rows: Array<{flags: Array, warnings: Array}>, flagCount: number,
  *           warningCount: number, flaggedRows: Array<number>, byCode: Object}}
  */
 export function validateRows(kind, rows, options = {}) {
   const list = rows || [];
   const siteJcMap = options.siteJcMap || null;
+  const listOptions = options.listOptions || null;
 
   const report = {
     rows: [],
@@ -77,7 +85,7 @@ export function validateRows(kind, rows, options = {}) {
   };
 
   for (let i = 0; i < list.length; i++) {
-    report.rows.push(validateRow(kind, list[i], siteJcMap));
+    report.rows.push(validateRow(kind, list[i], siteJcMap, listOptions));
   }
 
   if (kind === 'fuel') applyKmContinuity(list, report);
@@ -108,9 +116,10 @@ export function validateRows(kind, rows, options = {}) {
  * @param {string} kind 'expense' | 'fuel'
  * @param {Object} row
  * @param {Object|null} siteJcMap
+ * @param {Object|null} [listOptions] field -> reference list (6.6.4).
  * @return {{flags: Array<Object>, warnings: Array<Object>}}
  */
-export function validateRow(kind, row, siteJcMap) {
+export function validateRow(kind, row, siteJcMap, listOptions) {
   const isFuel = kind === 'fuel';
   const flags = [];
   const warnings = [];
@@ -157,8 +166,46 @@ export function validateRow(kind, row, siteJcMap) {
   if (!period(row.period)) warn('missing_period', 'period');
 
   checkMixedPeriod(row, warn);
+  checkListValues(row, listOptions, warn);
 
   return { flags, warnings };
+}
+
+/**
+ * A dropdown cell holding something its list has never heard of (6.6.4).
+ *
+ * Amber, not red, and one warning per offending cell so the column itself goes
+ * amber rather than the coordinator having to hunt for which of six list cells is
+ * the wrong one.
+ *
+ * A warning because two innocent things produce it. An option deactivated after
+ * the row was typed still describes what actually happened, and the row must not
+ * become unconfirmable because an admin tidied a list; and a team named on paper
+ * before it reaches the Teams tab is a real Tuesday. What it is NOT is harmless:
+ * the export filters on `team` by value (Manager.gs), so a team that matches no
+ * team is a row that quietly appears in no finance file at all. That is exactly
+ * the kind of absence nobody notices, which is why it is surfaced here even
+ * though it blocks nothing.
+ *
+ * Case and spacing are not the coordinator's problem — `AUG` against a list that
+ * says `Aug` is rewritten to the list's spelling before it ever gets here
+ * (utils/lists.js, and Coordinator.gs on the way into the sheet). What reaches
+ * this check is a value that genuinely matches nothing.
+ *
+ * @param {Object} row
+ * @param {Object|null} listOptions field -> the list that field comes from.
+ * @param {Function} warn
+ */
+function checkListValues(row, listOptions, warn) {
+  if (!listOptions) return;
+
+  Object.keys(listOptions).forEach(function (field) {
+    const value = text(row[field]);
+    if (!value) return;                       // blank is a different problem
+
+    if (isKnownListValue(value, listOptions[field])) return;
+    warn('unknown_list_value', field, { field: field, value: value });
+  });
 }
 
 /**

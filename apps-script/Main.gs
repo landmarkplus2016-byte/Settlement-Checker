@@ -175,6 +175,10 @@ var ACTIONS = {
     auth: true,
     handler: function (session, payload) { return handleDeleteEntry(session, payload); }
   },
+  delete_entries: {
+    auth: true,
+    handler: function (session, payload) { return handleDeleteEntries(session, payload); }
+  },
   confirm_track: {
     auth: true,
     handler: function (session, payload) { return handleConfirmTrack(session, payload); }

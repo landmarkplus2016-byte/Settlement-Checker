@@ -41,6 +41,7 @@ var VALIDATION_WARNING_CODES = [
   'missing_job_code',
   'missing_period',
   'job_code_count_mismatch',
+  'unknown_list_value',
   'km_gap'
 ];
 
@@ -164,6 +165,56 @@ function validateEntryRow(kind, row, siteMap, result) {
    */
   if (!normalizePeriod(row.period)) {
     result.warnings.push({ code: 'missing_period', field: 'period' });
+  }
+
+  validateListValues(row, result);
+}
+
+/**
+ * The six dropdown cells, against the lists they come from (6.6.4).
+ *
+ * By the time a row reaches a sheet, a value that differs from its list only in
+ * case or spacing has already been settled onto the list's spelling
+ * (Coordinator.gs `canonicalEntryListValue`). So what this finds is a value that
+ * matches NOTHING — a project that was never added, a driver who left, a team
+ * spelled wrong in a way no rule can straighten out.
+ *
+ * Amber and never blocking, for the reason the whole warning tier exists: an
+ * option deactivated after the row was typed still describes what happened, and a
+ * month must not become unconfirmable because an admin tidied a list. But it is
+ * far from cosmetic on `team` — Manager.gs matches team by value, so a row whose
+ * team matches no team is one that shows up in no export and on no approvals
+ * screen. That absence is exactly what this makes visible.
+ *
+ * @param {Object} row a raw entry row.
+ * @param {{flags: Array, warnings: Array}} result appended to in place.
+ */
+function validateListValues(row, result) {
+  var fields = Object.keys(ENTRY_LIST_FIELDS);
+
+  for (var i = 0; i < fields.length; i++) {
+    var field = fields[i];
+
+    var value = normalizeKey(row[field]);
+    if (!value) continue;                  // blank is a different problem
+
+    var options = getEntryListOptions(field);
+    if (!options.length) continue;         // no list loaded: no standing to judge
+
+    var wanted = listMatchKey(value);
+    var known = false;
+
+    for (var o = 0; o < options.length; o++) {
+      if (listMatchKey(options[o]) === wanted) { known = true; break; }
+    }
+
+    if (!known) {
+      result.warnings.push({
+        code: 'unknown_list_value',
+        field: field,
+        detail: { field: field, value: value }
+      });
+    }
   }
 }
 

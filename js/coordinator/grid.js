@@ -32,6 +32,7 @@ import { formatMoney } from '../utils/money.js';
 import { resolveSite, rowEntryDate } from './gridAutofill.js';
 import { canSplitByPeriod, planPeriodSplit } from './gridSplit.js';
 import { SPLIT_MONEY_FIELDS } from '../utils/explode.js';
+import { canonicalListValue } from '../utils/lists.js';
 import { saveDraft, getDraft } from '../state.js';
 
 /**
@@ -266,6 +267,77 @@ function isRowLocked(row) {
 }
 
 /* ================================================================== *
+ * The list columns (6.6.4)
+ * ================================================================== */
+
+/**
+ * Which of this kind's columns come from a reference list, and what that list
+ * holds right now.
+ *
+ * Derived from COLUMNS rather than written out a second time, so a column that
+ * gains or loses its `list` starts or stops being corrected and validated with no
+ * second edit. A list the client never loaded is left OUT of the result entirely
+ * — an empty entry would read as "this field has no valid values", and everything
+ * downstream would warn on every row.
+ *
+ * @param {string} kind
+ * @param {Object|null} reference { months, projects, categories, areas, drivers,
+ *        teams } as settlement.js loads it.
+ * @return {Object} field -> Array<string>
+ */
+export function listOptionsFor(kind, reference) {
+  const out = {};
+  if (!reference) return out;
+
+  gridColumns(kind).forEach(function (column) {
+    if (column.type !== 'list' || !column.list) return;
+
+    const options = reference[column.list];
+    if (options && options.length) out[column.key] = options;
+  });
+
+  return out;
+}
+
+/**
+ * Rewrite this row's list cells to the list's own spelling (6.6.4).
+ *
+ * The fix for the mis-cased month: a cell holding `AUG` where `Lists.months` says
+ * `Aug` is the same answer written differently, and treating the two as different
+ * strings is what put a value the select could not show into a row — and, for
+ * `team`, into a row the export's team filter would step past.
+ *
+ * Only an EXACT match ignoring case and spacing is rewritten (see utils/lists.js).
+ * A value that matches nothing is left exactly as typed and picked up by
+ * validate.js's `unknown_list_value` warning: this is a normaliser, not a
+ * guesser, and it must never invent an answer the coordinator did not give.
+ *
+ * Idempotent, so it is safe to run on every render as well as on every commit.
+ *
+ * @param {string} kind
+ * @param {Object} row mutated in place.
+ * @param {Object|null} reference
+ * @return {Array<Object>} one { field, from, to } per cell actually rewritten.
+ */
+export function canonicalizeRowLists(kind, row, reference) {
+  const lists = listOptionsFor(kind, reference);
+  const fixed = [];
+
+  Object.keys(lists).forEach(function (field) {
+    const raw = asText(row[field]);
+    if (!raw) return;
+
+    const canonical = canonicalListValue(raw, lists[field]);
+    if (!canonical || canonical === row[field]) return;
+
+    row[field] = canonical;
+    fixed.push({ field: field, from: raw, to: canonical });
+  });
+
+  return fixed;
+}
+
+/* ================================================================== *
  * Rendering
  * ================================================================== */
 
@@ -278,14 +350,24 @@ function isRowLocked(row) {
 export function renderGrid(model) {
   const kind = model.kind;
   const columns = gridColumns(kind);
-  const report = validateRows(kind, model.rows, { siteJcMap: model.siteJcMap });
+  const report = validateRows(kind, model.rows, {
+    siteJcMap: model.siteJcMap,
+    listOptions: listOptionsFor(kind, model.reference)
+  });
 
   return `
     <div class="grid-scroll">
       <table class="grid" data-kind="${escapeHtml(kind)}">
         <thead>
           <tr>
-            <th class="grid-gutter"><span class="sr-only">${escapeHtml(t('grid_row_number'))}</span></th>
+            <th class="grid-gutter">
+              <div class="grid-gutter-inner">
+                <input class="grid-check" type="checkbox" data-grid-select-all
+                       title="${escapeHtml(t('grid_select_all'))}"
+                       aria-label="${escapeHtml(t('grid_select_all'))}">
+                <span class="sr-only">${escapeHtml(t('grid_row_number'))}</span>
+              </div>
+            </th>
             <th class="grid-status-col">${escapeHtml(t('status'))}</th>
             ${columns.map(function (column) {
               return `<th style="min-inline-size:${column.width}px">${escapeHtml(t(column.labelKey))}</th>`;
@@ -321,12 +403,22 @@ export function renderGrid(model) {
 function renderRow(kind, columns, row, index, check) {
   const locked = isRowLocked(row);
   const issues = check || { flags: [], warnings: [] };
+  const selected = !locked && !!row.__selected;
 
   return `
-    <tr class="grid-row ${rowStateClass(issues, locked)}"
+    <tr class="grid-row ${rowStateClass(issues, locked)}${selected ? ' is-selected' : ''}"
         data-uid="${escapeHtml(row._uid)}" data-index="${index}">
 
-      <td class="grid-gutter num">${index + 1}</td>
+      <td class="grid-gutter">
+        <div class="grid-gutter-inner">
+          ${locked
+            ? '<span class="grid-check-spacer" aria-hidden="true"></span>'
+            : `<input class="grid-check" type="checkbox" data-grid-select
+                      data-uid="${escapeHtml(row._uid)}" ${selected ? 'checked' : ''}
+                      aria-label="${escapeHtml(t('grid_select_row', { row: index + 1 }))}">`}
+          <span class="grid-row-no num">${index + 1}</span>
+        </div>
+      </td>
 
       <td class="grid-status-col">${renderStatusCell(row)}</td>
 
@@ -768,8 +860,13 @@ export { formatMoney };
  * @param {Function} [hooks.onCellCommit] called as (row, field, value) once an
  *        edit settles. This is where gridAutofill.js hangs the Site -> Job Code
  *        lookup (6.6.3).
- * @param {Function} [hooks.onDeleteSaved] called as (row) when a row that exists
- *        on the server is deleted, so the page can call `delete_entry`.
+ * @param {Function} [hooks.onDeleteRows] called as (items) with the
+ *        [{row, index}] pairs a delete removed, so the page can send the saved
+ *        ones to `delete_entries` and hand back — through `restoreRows()` — any
+ *        the server refused.
+ * @param {Function} [hooks.onSelectionChange] called as (selected, selectable)
+ *        after every change to the tick boxes, so the page can label its bulk
+ *        Delete button with a count.
  * @param {Function} [hooks.onSplit] called as (row, plan, produced) after a
  *        mixed-period row is split (6.6.7), so the page can say what it did to
  *        the money — the division is a default the coordinator may want to
@@ -858,9 +955,13 @@ export function bindGridEvents(model, hooks = {}) {
   /* --- validation, totals and the banner, without a re-render --- */
 
   const revalidate = function () {
-    const report = validateRows(model.kind, model.rows, { siteJcMap: model.siteJcMap });
+    const report = validateRows(model.kind, model.rows, {
+      siteJcMap: model.siteJcMap,
+      listOptions: listOptionsFor(model.kind, model.reference)
+    });
     paintIssues(report);
     paintTotals();
+    paintSelection();
     if (typeof hooks.onChange === 'function') hooks.onChange(report, model);
     return report;
   };
@@ -893,6 +994,78 @@ export function bindGridEvents(model, hooks = {}) {
     qsa('[data-total-for]', host).forEach(function (cell) {
       cell.textContent = formatMoney(sumColumn(model.rows, cell.dataset.totalFor));
     });
+  };
+
+  /* --- selection (6.6.8) --- */
+
+  /** @return {Array<Object>} the rows a delete could actually take. */
+  const selectableRows = function () {
+    return model.rows.filter(function (row) { return !isRowLocked(row); });
+  };
+
+  /** @return {Array<Object>} the rows currently ticked. */
+  const selectedRows = function () {
+    return selectableRows().filter(function (row) { return !!row.__selected; });
+  };
+
+  /**
+   * Repaint everything the tick boxes drive, in place.
+   *
+   * The header box is the "all" of "delete all at once": checked when every
+   * selectable row is ticked, indeterminate when only some are. Indeterminate is
+   * not an attribute and cannot be rendered into the HTML string, which is the
+   * reason this runs after every render rather than being part of one.
+   *
+   * The count goes out through `onSelectionChange` so the page can label its
+   * Delete button with a number — a bulk delete that does not say how many rows
+   * it is about to take is not a thing anybody should press.
+   */
+  const paintSelection = function () {
+    const selectable = selectableRows().length;
+    const selected = selectedRows().length;
+
+    // Driven from the model, not from the boxes: the rows and the <tr>s are
+    // index-aligned (the same assumption paintIssues makes), and one source of
+    // truth is what keeps a tick and its highlight from ever disagreeing.
+    qsa('#grid-body tr.grid-row', host).forEach(function (tr, index) {
+      const row = model.rows[index];
+      tr.classList.toggle('is-selected', !!(row && row.__selected && !isRowLocked(row)));
+    });
+
+    const all = host.querySelector('[data-grid-select-all]');
+    if (all) {
+      all.checked = selectable > 0 && selected === selectable;
+      all.indeterminate = selected > 0 && selected < selectable;
+      all.disabled = selectable === 0;
+    }
+
+    if (typeof hooks.onSelectionChange === 'function') {
+      hooks.onSelectionChange(selected, selectable);
+    }
+  };
+
+  /**
+   * Tick or untick one row.
+   * @param {Object} row
+   * @param {boolean} value
+   */
+  const setSelected = function (row, value) {
+    if (isRowLocked(row)) return;
+    row.__selected = !!value;
+  };
+
+  /** Tick or untick every row a delete could take. */
+  const selectAll = function (value) {
+    selectableRows().forEach(function (row) { setSelected(row, value); });
+
+    qsa('[data-grid-select]', host).forEach(function (box) { box.checked = !!value; });
+    paintSelection();
+  };
+
+  const clearSelection = function () {
+    model.rows.forEach(function (row) { row.__selected = false; });
+    qsa('[data-grid-select]', host).forEach(function (box) { box.checked = false; });
+    paintSelection();
   };
 
   /* --- a full re-render, with the caret put back --- */
@@ -950,8 +1123,20 @@ export function bindGridEvents(model, hooks = {}) {
 
     row[field] = control.value;
 
+    /*
+     * A list cell settles to the list's own spelling (6.6.4). This is the free-
+     * text path — a value pasted into one cell, or a cell the client had no
+     * option list for when it was rendered — since a real <select> can only ever
+     * hand back an option it was given. Written back into the control so the
+     * coordinator SEES the correction, rather than only the sheet getting it.
+     */
+    const fixes = canonicalizeRowLists(model.kind, row, model.reference);
+    if (fixes.some(function (fix) { return fix.field === field; })) {
+      control.value = row[field];
+    }
+
     if (typeof hooks.onCellCommit === 'function') {
-      hooks.onCellCommit(row, field, control.value, controller);
+      hooks.onCellCommit(row, field, row[field], controller);
     }
 
     flushMirror();
@@ -1029,25 +1214,89 @@ export function bindGridEvents(model, hooks = {}) {
     rerender();
   };
 
+  /**
+   * Remove rows from the grid.
+   *
+   * The one delete path — the row's own ✕ goes through it with a list of one —
+   * so a single delete and a delete of thirty behave identically, including what
+   * happens when the server refuses.
+   *
+   * Each removal is handed back with the INDEX it was taken from, because the
+   * server is the authority on whether a saved row may go at all (only a `draft`
+   * may, rule 9.3) and a refused row has to go back where it was rather than at
+   * the bottom of the grid. `restoreRows()` is the other half of that.
+   *
+   * Nothing here talks to the server. The page's `onDeleteRows` hook does, which
+   * keeps rule 19 intact and keeps this file about the grid.
+   *
+   * @param {Array<string>} uids
+   * @param {Object} [focusHint] where to put the caret afterwards.
+   * @return {Array<{row: Object, index: number}>} what was actually removed.
+   */
+  const deleteRows = function (uids, focusHint) {
+    const wanted = {};
+    (uids || []).forEach(function (uid) { wanted[uid] = true; });
+
+    const removed = [];
+    const kept = [];
+
+    model.rows.forEach(function (row, index) {
+      // Rule 13: an exported row is not deletable by any route.
+      if (wanted[row._uid] && !isRowLocked(row)) removed.push({ row: row, index: index });
+      else kept.push(row);
+    });
+
+    if (!removed.length) return [];
+
+    // In place: settlement.js holds this same array as the grid's row model.
+    model.rows.length = 0;
+    kept.forEach(function (row) { model.rows.push(row); });
+
+    removed.forEach(function (item) { item.row.__selected = false; });
+
+    flushMirror();
+    rerender(focusHint || null);
+
+    if (typeof hooks.onDeleteRows === 'function') hooks.onDeleteRows(removed);
+
+    return removed;
+  };
+
+  /**
+   * Put refused rows back where they were taken from.
+   *
+   * Re-inserted in ascending index order so each splice lands at the position the
+   * row held before any of them were removed. A row whose index is now past the
+   * end — the grid shrank underneath it — goes on the end rather than being lost.
+   *
+   * @param {Array<{row: Object, index: number}>} items from deleteRows().
+   */
+  const restoreRows = function (items) {
+    const list = (items || []).slice().sort(function (a, b) { return a.index - b.index; });
+    if (!list.length) return;
+
+    list.forEach(function (item) {
+      model.rows.splice(Math.min(item.index, model.rows.length), 0, item.row);
+    });
+
+    flushMirror();
+    rerender();
+  };
+
   const deleteRow = function (uid) {
     const index = model.rows.findIndex(function (row) { return row._uid === uid; });
     if (index === -1) return;
-
-    const row = model.rows[index];
-    if (isRowLocked(row)) return;                    // rule 13
 
     // Which column the coordinator was in, so a run of deletions keeps its place.
     const before = captureFocus(host);
     const column = (before && before.field) ? before.field : gridColumns(model.kind)[0].key;
 
-    model.rows.splice(index, 1);
-    flushMirror();
+    const removed = deleteRows([uid]);
+    if (!removed.length) return;
 
     // Focus the row that slid up into the gap.
     const next = model.rows[Math.min(index, model.rows.length - 1)];
-    rerender(next ? { uid: next._uid, field: column, start: null, end: null } : null);
-
-    if (row.entry_id && typeof hooks.onDeleteSaved === 'function') hooks.onDeleteSaved(row);
+    if (next) focusCell(host, next._uid, column);
   };
 
   /**
@@ -1073,6 +1322,25 @@ export function bindGridEvents(model, hooks = {}) {
   };
 
   host.addEventListener('click', function (event) {
+    /*
+     * The tick boxes. Handled on `click` rather than `change` because the row's
+     * <input> handler above listens for [data-field][data-uid] and these carry
+     * no field — they are not a cell, they are how a row is picked out.
+     */
+    const all = event.target.closest('[data-grid-select-all]');
+    if (all) {
+      selectAll(all.checked);
+      return;
+    }
+
+    const box = event.target.closest('[data-grid-select]');
+    if (box) {
+      const picked = rowFor(box.dataset.uid);
+      if (picked) setSelected(picked, box.checked);
+      paintSelection();
+      return;
+    }
+
     /*
      * A chip. Clicking one that disagrees with the row files the row under THAT
      * period; clicking the ringed one flips it, which is what makes an ordinary
@@ -1282,6 +1550,11 @@ export function bindGridEvents(model, hooks = {}) {
     addRow: addRow,
     addRows: addRows,
     deleteRow: deleteRow,
+    deleteRows: deleteRows,
+    restoreRows: restoreRows,
+    selectedRows: selectedRows,
+    selectAll: selectAll,
+    clearSelection: clearSelection,
     splitRow: splitRow,
     flushMirror: flushMirror,
 
@@ -1341,6 +1614,10 @@ export function bindGridEvents(model, hooks = {}) {
 function captureFocus(host) {
   const active = document.activeElement;
   if (!active || !host.contains(active) || !active.dataset || !active.dataset.uid) return null;
+
+  // A tick box carries a uid but is not a cell, so there is no column to put the
+  // caret back into. Its own render restores its state; this is about the caret.
+  if (!active.dataset.field) return null;
 
   return {
     uid: active.dataset.uid,
@@ -1403,12 +1680,23 @@ function cssEscape(value) {
  * a site had a second job code, or that a multi-site line straddles old and new,
  * without having to retype the Site ID to find out.
  *
+ * It also does the one thing here that is not decoration: it settles each row's
+ * list cells onto the list's own spelling (6.6.4). That belongs at load and not
+ * only at edit, because the rows worth correcting are exactly the ones nobody is
+ * about to retype — a month pasted as `AUG` last week is a select with an option
+ * the list does not have, and it stays that way until something touches it. This
+ * is the something. It only ever rewrites a case or spacing difference, never a
+ * value the list does not hold.
+ *
  * @param {Object} model
  * @return {Object} the same model.
  */
 function decorate(model) {
   model.rows.forEach(function (row) {
     row.__reference = model.reference;
+
+    // Rule 13: an exported row is a record of what went out, not a draft.
+    if (!isRowLocked(row)) canonicalizeRowLists(model.kind, row, model.reference);
 
     const resolved = model.siteJcMap
       ? resolveSite(row.site_id, model.siteJcMap, rowEntryDate(row, model.fiscalYear))

@@ -47,6 +47,9 @@ var __teamsCache = null;
 var __siteJcCache = null;
 var __listsCache = null;
 
+/* list name -> its active option strings; built on top of the two above. */
+var __entryListCache = null;
+
 /* ================================================================== *
  * Shared readers — the per-request caches promised by CLAUDE.md 2.4.
  * Coordinator.gs and Validate.gs read the lookup through these too; the
@@ -66,6 +69,7 @@ function getTeamsRegistry() {
 /** Drop the cached Teams rows after a write. */
 function invalidateTeamsRegistry() {
   __teamsCache = null;
+  __entryListCache = null;      // the team option list is built out of these
 }
 
 /**
@@ -265,6 +269,88 @@ function getListsRows() {
 /** Drop the cached Lists rows after a write. */
 function invalidateLists() {
   __listsCache = null;
+  __entryListCache = null;      // the five option lists are built out of these
+}
+
+/* ------------------------------------------------------------------ *
+ * The reference lists, as plain option arrays (6.6.4)
+ *
+ * Coordinator.gs settles an entry's list cells onto these spellings on the way
+ * into a sheet, and Validate.gs warns about a cell that matches none of them.
+ * Both read through here so there is one answer to "what are the valid teams",
+ * cached for the request like everything else in 2.4.
+ * ------------------------------------------------------------------ */
+
+/**
+ * The comparison form of a list value.
+ *
+ * Case-folded, ends trimmed, runs of whitespace collapsed — the three ways two
+ * people write the same option. Deliberately nothing else: this is a normaliser,
+ * not a fuzzy match, and `POC-3` and `POC3` must stay two different things.
+ *
+ * The client applies exactly this rule in js/utils/lists.js. When one changes,
+ * the other changes with it — the same standing arrangement Validate.gs has with
+ * js/utils/validate.js.
+ *
+ * @param {*} value
+ * @return {string} '' for blank.
+ */
+function listMatchKey(value) {
+  if (value === null || value === undefined) return '';
+  return String(value).replace(/\s+/g, ' ').trim().toLowerCase();
+}
+
+/**
+ * The ACTIVE options of one entry list.
+ *
+ * Active only, on purpose: these drive what a new value is corrected to and what
+ * counts as recognised, and a deactivated option is one an admin has taken out of
+ * circulation. A row that already carries it keeps it — nothing here rewrites a
+ * stored value that matches nothing (see canonicalEntryListValue).
+ *
+ * @param {string} field 'month' | 'project' | 'category' | 'area' | 'driver' |
+ *        'team' — the ENTRY_LIST_FIELDS keys.
+ * @return {Array<string>} [] for an unknown field, or a list nobody has filled in.
+ */
+function getEntryListOptions(field) {
+  var name = ENTRY_LIST_FIELDS[field];
+  if (!name) return [];
+
+  /*
+   * Memoised per request on top of the row caches above. validateEntries() asks
+   * for all six lists on every row of a tab, and rebuilding each of them out of
+   * the raw Lists rows two hundred times is real time for no new information.
+   */
+  if (!__entryListCache) __entryListCache = {};
+  if (__entryListCache[name]) return __entryListCache[name];
+
+  if (name === 'teams') {
+    var teams = getTeamsRegistry();
+    var names = [];
+
+    for (var t = 0; t < teams.length; t++) {
+      if (!normalizeBoolean(teams[t].active)) continue;
+      var teamName = normalizeKey(teams[t].name);
+      if (teamName) names.push(teamName);
+    }
+
+    __entryListCache[name] = names;
+    return names;
+  }
+
+  var rows = getListsRows();
+  var values = [];
+
+  for (var i = 0; i < rows.length; i++) {
+    if (normalizeKey(rows[i].list_name).toLowerCase() !== name) continue;
+    if (!normalizeBoolean(rows[i].active)) continue;
+
+    var value = normalizeKey(rows[i].value);
+    if (value) values.push(value);
+  }
+
+  __entryListCache[name] = values;
+  return values;
 }
 
 /* ================================================================== *

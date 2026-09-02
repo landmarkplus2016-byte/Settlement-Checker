@@ -24,6 +24,7 @@ import { escapeHtml, qs, qsa, setBusy } from '../utils/dom.js';
 import { getDraft } from '../state.js';
 import { toNumber } from '../utils/validate.js';
 import { toastSuccess, toastError, toastInfo } from '../components/toast.js';
+import { openModal } from '../components/modal.js';
 import { renderLoading, renderLoadError } from '../components/table.js';
 import {
   renderGrid, bindGridEvents, entryToRow, makeRow, gridColumns, rowToPayload,
@@ -353,6 +354,11 @@ function renderBody() {
           <span class="num text-bold" id="live-total">—</span>
         </div>
 
+        <button class="btn btn-danger btn-sm hidden" type="button"
+                id="btn-delete-selected" data-action="delete-selected">
+          ${escapeHtml(t('grid_delete_selected', { count: 0 }))}
+        </button>
+
         <button class="btn btn-secondary btn-sm" type="button" data-action="paste">
           ${escapeHtml(t('paste_from_excel'))}
         </button>
@@ -581,7 +587,10 @@ function mountGrid() {
       }
     }),
 
-    onDeleteSaved: deleteSavedRow,
+    // The tick boxes drive the toolbar's Delete button and nothing else.
+    onSelectionChange: paintDeleteSelected,
+
+    onDeleteRows: commitDeletedRows,
 
     /*
      * A split divides the money evenly by site (6.6.7). That is the same rule the
@@ -718,6 +727,7 @@ function pasteOptions() {
     getSiteJcMap: function () { return state.siteJcMap; },
     getFiscalYear: fiscalYear,
     getDefaults: rowDefaults,
+    getReference: function () { return state.reference; },
     onRows: onPastedRows
   };
 }
@@ -766,6 +776,11 @@ function onPastedRows(result) {
   toastSuccess(t('paste_added', { count: result.rows.length }));
 
   if (result.skippedHeader) toastSuccess(t('paste_header_skipped'));
+
+  // Say so rather than doing it quietly: the coordinator pasted `AUG` and the
+  // grid now shows `Aug`, and a value changing by itself is worth a sentence.
+  if (result.corrected) toastInfo(t('paste_corrected', { count: result.corrected }));
+
   if (result.truncated) toastError(t('paste_truncated', { count: result.truncated }));
   if (result.unknownSites.length) {
     toastError(t('autofill_unknown', { sites: result.unknownSites.join(', ') }));
@@ -773,30 +788,131 @@ function onPastedRows(result) {
 }
 
 /**
- * A row that exists on the server was deleted from the grid.
+ * The toolbar's bulk delete (6.6.8).
  *
- * `delete_entry` is the only hard delete in the app and only accepts a `draft`
- * row (rule 9.3), which is why the grid offers the button on draft rows alone.
- * If the server refuses, the row is put back — the grid must not show a row as
- * gone when it is not.
- *
- * @param {Object} row
+ * Asks first, and says the number. A grid delete is the one thing on this screen
+ * that takes rows away rather than changing them, and "delete 13 rows" is a
+ * different decision from "delete this row" even though it is the same button
+ * thirteen times.
  */
-async function deleteSavedRow(row) {
+function deleteSelected() {
+  if (!state.controller) return;
+
+  const rows = state.controller.selectedRows();
+  if (!rows.length) return;
+
+  const saved = rows.filter(function (row) { return !!row.entry_id; }).length;
+
+  openModal({
+    title: t('grid_delete_selected_title'),
+    confirmLabel: t('grid_delete_confirm'),
+    confirmVariant: 'btn-danger',
+
+    bodyHtml: `
+      <div class="stack">
+        <p>${escapeHtml(t('grid_delete_selected_text', { count: rows.length }))}</p>
+        ${saved
+          ? `<p class="text-small text-secondary">${escapeHtml(t('grid_delete_saved_note', { count: saved }))}</p>`
+          : ''}
+      </div>
+    `,
+
+    onConfirm: function () {
+      const uids = rows.map(function (row) { return row._uid; });
+      if (state.controller) state.controller.deleteRows(uids);
+    }
+  });
+}
+
+/**
+ * Rows have left the grid; make the sheet agree (3.5).
+ *
+ * Anything without an `entry_id` was never stored, so it is simply gone. The rest
+ * go to `delete_entries`, which is the only hard delete in the app and takes a
+ * `draft` row and nothing else (rule 9.3) — a confirmed row is with a manager, an
+ * approved one has been signed off, an exported one is in a finance file.
+ *
+ * The server does what it can and NAMES what it would not, rather than refusing
+ * the whole batch: a coordinator clearing a bad paste should not be stopped by
+ * the one row he has already confirmed. Whatever came back refused is put back at
+ * the index it was taken from — the grid must never show a row as gone when the
+ * sheet still holds it.
+ *
+ * @param {Array<{row: Object, index: number}>} items from the grid's deleteRows().
+ */
+async function commitDeletedRows(items) {
+  // Captured now: the await below can outlive a tab switch, and putting a row
+  // back into a grid that is no longer the one it came from would be worse than
+  // the failure it is recovering from.
+  const kind = state.kind;
+  const controller = state.controller;
+
+  const saved = items.filter(function (item) { return !!item.row.entry_id; });
+
+  if (!saved.length) {
+    toastSuccess(deletedMessage(items.length));
+    return;
+  }
+
   try {
-    await api.call('delete_entry', {
+    const result = await api.call('delete_entries', {
       settlement_id: state.settlementId,
-      kind: state.kind,
-      entry_id: row.entry_id
+      kind: kind,
+      entry_ids: saved.map(function (item) { return item.row.entry_id; })
     });
-    toastSuccess(t('grid_row_deleted'));
+
+    const refusedIds = {};
+    (result.refused || []).forEach(function (entry) {
+      // `not_found` is not a refusal to act on: the sheet does not hold that row,
+      // so the grid not holding it either is the two of them agreeing. Putting it
+      // back would show a row that exists nowhere.
+      if (entry.status !== 'not_found') refusedIds[entry.entry_id] = entry.status;
+    });
+
+    const putBack = saved.filter(function (item) { return refusedIds[item.row.entry_id]; });
+
+    if (putBack.length && controller === state.controller) {
+      controller.restoreRows(putBack);
+    }
+
+    const gone = items.length - putBack.length;
+    if (gone) toastSuccess(deletedMessage(gone));
+    if (putBack.length) toastError(t('grid_delete_refused', { count: putBack.length }));
 
   } catch (err) {
     toastError(errorMessage(err));
 
-    state.grids[state.kind].rows.push(row);
-    if (state.controller) state.controller.rerender();
+    // Nothing is known to have been deleted, so everything that was saved goes
+    // back. Unsaved rows stay gone: they never existed anywhere but here.
+    if (controller === state.controller) controller.restoreRows(saved);
   }
+}
+
+/**
+ * "Row deleted." for one, "{n} rows deleted." for the rest.
+ *
+ * The one delete path now serves both the row's own ✕ and the bulk button
+ * (6.6.8), so the message it produces has to read right at a count of one — the
+ * ✕ is still the commonest way a single row goes.
+ *
+ * @param {number} count
+ * @return {string}
+ */
+function deletedMessage(count) {
+  return (count === 1) ? t('grid_row_deleted') : t('grid_rows_deleted', { count: count });
+}
+
+/**
+ * Label the bulk Delete button, or take it away.
+ *
+ * @param {number} selected
+ */
+function paintDeleteSelected(selected) {
+  const button = qs('#btn-delete-selected');
+  if (!button) return;
+
+  button.classList.toggle('hidden', selected === 0);
+  button.textContent = t('grid_delete_selected', { count: selected });
 }
 
 /* ================================================================== *
@@ -901,6 +1017,7 @@ function bindHeaderEvents() {
 
     if (action === 'tab') return switchKind(trigger.dataset.kind);
     if (action === 'add-row' && state.controller) return state.controller.addRow();
+    if (action === 'delete-selected') return deleteSelected();
     if (action === 'paste') return openPasteDialog(pasteOptions());
     if (action === 'goto-row') return gotoRow(Number(trigger.dataset.row));
 

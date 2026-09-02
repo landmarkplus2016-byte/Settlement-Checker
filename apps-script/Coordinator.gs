@@ -71,6 +71,27 @@ var MONTH_NUMBERS = {
   jul: 7, aug: 8, sep: 9, oct: 10, nov: 11, dec: 12
 };
 
+/**
+ * The entry fields that must come from a reference list, and which list
+ * (CLAUDE.md 2.1, 6.6.4).
+ *
+ * `team` is the one that costs money to get wrong. The export and the approvals
+ * list both match team BY VALUE (Manager.gs `entryMatchesFilter`), so a row filed
+ * under a team that does not match the Teams tab is a row that appears in no
+ * finance file and on no approvals screen — an absence, which is the hardest kind
+ * of error to notice. The rest are a readability problem: a month cell that says
+ * `AUG` where the list says `Aug` prints as `AUG` in the workbook the file mirrors
+ * (7.2), beside twenty rows that say `Aug`.
+ */
+var ENTRY_LIST_FIELDS = {
+  month: 'months',
+  project: 'projects',
+  category: 'categories',
+  area: 'areas',
+  driver: 'drivers',
+  team: 'teams'
+};
+
 /* ================================================================== *
  * The shared opening
  * ================================================================== */
@@ -949,11 +970,57 @@ function readEntryFields(kind, raw) {
       continue;
     }
 
+    if (ENTRY_LIST_FIELDS[key]) {
+      out[key] = canonicalEntryListValue(key, raw[key]);
+      continue;
+    }
+
     var value = raw[key];
     out[key] = (value === null || value === undefined) ? '' : value;
   }
 
   return out;
+}
+
+/**
+ * One list cell, in the list's own spelling (6.6.4).
+ *
+ * This is the durable half of the fix for `AUG` where `Lists.months` says `Aug`.
+ * The grid corrects the same cells as they are typed and pasted, but the grid is
+ * one route into a sheet and the server is all of them — an older client, a
+ * device that failed to load the option lists, whatever writes here next. A rule
+ * that only holds where the UI enforced it is not a rule.
+ *
+ * Matching ignores case, surrounding space and doubled spaces, and nothing else.
+ * A value that matches no option is stored EXACTLY as it arrived, never blanked
+ * and never guessed at: it may be a team that is about to be added, and the row
+ * is the record of what somebody actually wrote. Validate.gs warns about it
+ * (`unknown_list_value`) rather than this function deciding for them.
+ *
+ * Note what this does to rule 12: an APPROVED row still holding `AUG` from before
+ * this existed reverts to `confirmed` the first time it is saved, because `Aug`
+ * is not the string a manager approved. That is the rule working, not an
+ * exception to it — and it happens once per row, since the value is canonical
+ * from then on.
+ *
+ * @param {string} field an ENTRY_LIST_FIELDS key.
+ * @param {*} value as it arrived from the client.
+ * @return {string|*} the canonical option, or the value unchanged.
+ */
+function canonicalEntryListValue(field, value) {
+  if (value === null || value === undefined) return '';
+
+  var options = getEntryListOptions(field);
+  if (!options.length) return value;
+
+  var wanted = listMatchKey(value);
+  if (!wanted) return value;
+
+  for (var i = 0; i < options.length; i++) {
+    if (listMatchKey(options[i]) === wanted) return options[i];
+  }
+
+  return value;
 }
 
 /**
@@ -1063,6 +1130,171 @@ function handleDeleteEntry(session, payload) {
   });
 
   return { deleted: true, entry_id: entryId, kind: kind, settlement_id: settlementId };
+}
+
+/* ================================================================== *
+ * delete_entries — the same rule, in one call
+ * ================================================================== */
+
+/**
+ * Ceiling on one bulk delete.
+ *
+ * Higher than a paste's 500 (gridPaste.js) because the thing this exists for is
+ * clearing up after a paste that went wrong, and a coordinator who has to do that
+ * twice will reasonably wonder why. Well under MAX_SAVE_ROWS, because deleting is
+ * the more expensive direction: rows are physically removed and everything below
+ * shifts up.
+ */
+var MAX_DELETE_ROWS = 1000;
+
+/**
+ * `delete_entries` — hard-delete several `draft` rows in one call.
+ *
+ * `delete_entry` already does exactly this for one row, and looping it from the
+ * client would work — but at one Apps Script round trip each, clearing a grid of
+ * thirty rows is most of a minute of a coordinator watching rows disappear one at
+ * a time, and any of those calls can fail on its own leaving the sheet in a state
+ * neither side predicted. This takes the whole list, under one lock, in one pass.
+ *
+ * Deliberately NOT all-or-nothing, which is the opposite of `save_entries`. The
+ * situation this is for is a bad paste that has been partly confirmed: refusing
+ * to delete twenty-eight junk drafts because two of them are with a manager would
+ * leave the coordinator worse off than the one-at-a-time loop he was trying to
+ * escape. So every row is judged on its own, the deletable ones go, and the rest
+ * come back NAMED — with the status that saved them — so the grid can put those
+ * rows back exactly where they were and say why.
+ *
+ * The rule itself is unchanged and is the same one `delete_entry` enforces: a
+ * `draft` row of the caller's own settlement, and nothing else (rule 9.3).
+ *
+ * @param {Object} session auth context.
+ * @param {Object} payload { settlement_id, kind, entry_ids: [...] }
+ * @return {Object} { deleted: [...], refused: [{entry_id, status}], ... }
+ */
+function handleDeleteEntries(session, payload) {
+  var ss = coordinatorContext(session, payload);
+  var body = payload || {};
+
+  var kind = normalizeEntryKind(body.kind);
+  var settlement = readSettlementOrThrow(ss, body.settlement_id);
+  var settlementId = normalizeKey(settlement.settlement_id);
+
+  var wanted = body.entry_ids;
+  if (!(wanted instanceof Array)) {
+    throw appError('validation_failed', 'invalid_entry_ids', { entry_ids: 'must_be_array' });
+  }
+  if (wanted.length > MAX_DELETE_ROWS) {
+    throw appError('validation_failed', 'too_many_rows', { entry_ids: 'max_' + MAX_DELETE_ROWS });
+  }
+
+  var ids = {};
+  var order = [];
+
+  for (var w = 0; w < wanted.length; w++) {
+    var asked = normalizeKey(wanted[w]);
+    if (!asked || ids[asked]) continue;
+    ids[asked] = true;
+    order.push(asked);
+  }
+
+  if (!order.length) {
+    return {
+      settlement_id: settlementId, kind: kind,
+      deleted: [], refused: [], deleted_count: 0, refused_count: 0
+    };
+  }
+
+  var tab = entrySheetName(kind);
+
+  var outcome = withScriptLock(function () {
+    // Re-read inside the lock, exactly as delete_entry does: status is what
+    // decides, and a stale read could delete a row a manager just approved.
+    var rows = readAllRows(ss, tab);
+
+    var deleted = [];
+    var refused = [];
+    var targets = [];
+    var seen = {};
+
+    for (var i = 0; i < rows.length; i++) {
+      var row = rows[i];
+      var entryId = normalizeKey(row.entry_id);
+      if (!entryId || !ids[entryId]) continue;
+
+      seen[entryId] = true;
+
+      if (normalizeKey(row.settlement_id) !== settlementId) {
+        // Another month of this coordinator's own work. Not this call's business.
+        refused.push({ entry_id: entryId, status: 'wrong_settlement' });
+        continue;
+      }
+
+      var status = normalizeKey(row.status).toLowerCase() || 'draft';
+      if (status !== 'draft') {
+        refused.push({ entry_id: entryId, status: status });
+        continue;
+      }
+
+      targets.push(row._row);
+      deleted.push(entryId);
+    }
+
+    // An id nobody has heard of is refused rather than ignored, so the grid can
+    // tell "already gone" from "still there" and put back only the second.
+    for (var o = 0; o < order.length; o++) {
+      if (!seen[order[o]]) refused.push({ entry_id: order[o], status: 'not_found' });
+    }
+
+    deleteSheetRows(getSheet(ss, tab), targets);
+
+    return { deleted: deleted, refused: refused };
+  });
+
+  return {
+    settlement_id: settlementId,
+    kind: kind,
+    deleted: outcome.deleted,
+    refused: outcome.refused,
+    deleted_count: outcome.deleted.length,
+    refused_count: outcome.refused.length
+  };
+}
+
+/**
+ * Remove a set of sheet rows by their 1-based row numbers.
+ *
+ * Two things make this more than a loop. Rows are removed from the BOTTOM up,
+ * because deleting row 7 renumbers everything below it and a list gathered before
+ * the first delete would then be pointing one row short. And runs of adjacent
+ * rows are removed together, because `deleteRows(start, count)` is one call where
+ * `deleteRow()` is one call per row — and the case this is for, a whole pasted
+ * block, is adjacent by construction. Clearing a grid of thirty becomes one API
+ * call instead of thirty.
+ *
+ * @param {GoogleAppsScript.Spreadsheet.Sheet} sheet
+ * @param {Array<number>} rowNumbers 1-based; order and duplicates do not matter.
+ */
+function deleteSheetRows(sheet, rowNumbers) {
+  var sorted = (rowNumbers || []).slice().sort(function (a, b) { return b - a; });
+
+  // Deduped: a repeated row number would look like the start of a new run and
+  // take a row that was never asked for.
+  var list = [];
+  for (var d = 0; d < sorted.length; d++) {
+    if (d === 0 || sorted[d] !== sorted[d - 1]) list.push(sorted[d]);
+  }
+
+  var i = 0;
+  while (i < list.length) {
+    var last = list[i];        // the highest row of this run
+    var count = 1;
+
+    // Walk down while the next number is the one immediately above.
+    while (i + count < list.length && list[i + count] === last - count) count++;
+
+    sheet.deleteRows(last - count + 1, count);
+    i += count;
+  }
 }
 
 /* ================================================================== *

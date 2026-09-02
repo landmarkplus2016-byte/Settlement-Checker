@@ -103,8 +103,8 @@
   inset-inline-start: 0;
   z-index: 2;
 
-  inline-size: 40px;
-  min-inline-size: 40px;
+  inline-size: 62px;
+  min-inline-size: 62px;
   padding: 6px 8px;
   text-align: end;
 
@@ -115,6 +115,38 @@
 }
 
 .grid thead .grid-gutter { z-index: 4; }
+
+/*
+ * The tick box and the row number share the gutter, so a row can be picked out
+ * without losing which row it is. The flex lives on an inner element rather than
+ * on the <td> itself: a table cell that becomes a flex container stops being a
+ * table cell, and this one is also `position: sticky`.
+ */
+.grid-gutter-inner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+}
+
+.grid-row-no { flex: 0 0 auto; }
+
+/* The spacer keeps the number in the same place on an exported row, which has no
+   tick box at all because it is locked against every kind of edit (rule 13). */
+.grid-check,
+.grid-check-spacer {
+  flex: 0 0 auto;
+  inline-size: 13px;
+  block-size: 13px;
+  margin: 0;
+}
+
+.grid-check { cursor: pointer; accent-color: var(--color-primary); }
+.grid-check:disabled { cursor: not-allowed; opacity: .35; }
+
+/* A picked row, distinct from the amber and red of a validation issue. */
+.grid-row.is-selected > td { background: var(--color-primary-subtle); }
+.grid-row.is-selected .grid-gutter { color: var(--color-primary); font-weight: var(--fw-semibold); }
 
 .grid-status-col {
   inline-size: 104px;

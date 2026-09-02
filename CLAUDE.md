@@ -333,7 +333,7 @@ The Apps Script keeps a per-request cache of: the config map, the `Users` regist
 - **`list_site_jc`** / **`upsert_site_jc`** / **`bulk_import_site_jc`** / **`delete_site_jc`** — the lookup, keyed on `site_id + job_code`. `bulk_import_site_jc` takes rows parsed from an uploaded Excel (client parses with xlsx-js-style, splits the file's combined `Site ID-JC` cell on its last hyphen, sends JSON) and **replaces** the tab by default (`mode: 'merge'` for a partial file): the source is a dated full export, so a pair that has left the file leaves the lookup. `period` is derived server-side from `task_date` and is never accepted from the import. `delete_site_jc` takes an optional `job_code` — without one it removes every task on the site.
 - **`list_lists`** / **`update_lists`** — dropdown reference data.
 
-## 3.5 Coordinator — own sheet only (7)
+## 3.5 Coordinator — own sheet only (8)
 
 Every one resolves the target spreadsheet from the session, and rejects if `role !== 'coordinator'`.
 
@@ -341,8 +341,8 @@ Every one resolves the target spreadsheet from the session, and rejects if `role
 - **`create_settlement`** — `{month, account, old_tracking_no, new_tracking_no}`.
 - **`update_settlement`** — edit month/account/tracking numbers (only while the relevant track has no `exported` rows).
 - **`list_entries`** — `{settlement_id, kind}` → rows for the grid.
-- **`save_entries`** — bulk upsert of `draft` rows to the caller's sheet (this is the grid's Save). Rejects any row whose current stored status is `exported`. **If a row being saved is currently `approved` and its values changed, the server reverts it to `confirmed` and clears `approved_by/at`** (rule 12).
-- **`delete_entry`** — remove a single `draft` row (the only hard-delete in the app).
+- **`save_entries`** — bulk upsert of `draft` rows to the caller's sheet (this is the grid's Save). Rejects any row whose current stored status is `exported`. **If a row being saved is currently `approved` and its values changed, the server reverts it to `confirmed` and clears `approved_by/at`** (rule 12). It also settles the six list cells onto the list's own spelling (6.6.4) before storing them.
+- **`delete_entry`** / **`delete_entries`** — remove `draft` rows (the only hard-delete in the app). `delete_entries` takes a list and is what the grid's bulk delete calls; unlike `save_entries` it is **not** all-or-nothing — it deletes every `draft` it was given and returns the rest as `refused: [{entry_id, status}]`, so one already-confirmed row cannot block the clearing of a bad paste. The client puts the refused rows back where they were.
 - **`confirm_track`** — `{settlement_id, period}` → sets that settlement's `draft` rows of that period to `confirmed`. Requires the matching tracking number to be set.
 
 ## 3.6 Manager — consolidated across coordinators (4)
@@ -481,15 +481,19 @@ The coordinator's grid is the one local-first surface:
 - We do **not** write to Sheets on every keystroke — Apps Script round-trips are ~1–2 s and would make the grid lag. The localStorage mirror is the safety net between saves.
 - On load, the grid seeds from the server rows, then overlays any newer localStorage draft.
 
-## 6.6 The seven grid behaviours ("easy as Excel")
+## 6.6 The eight grid behaviours ("easy as Excel")
 
 1. **Paste from Excel** — a paste of tab-separated rows appends multiple rows; `job_code`/`period` auto-fill per row.
 2. **Carry-down** — a new row inherits `team`, `project`, `month`, `day`, and `period` from the row above.
 3. **Site → JC + period autofill** — entering a Site ID fills `job_code` and `period` from `SiteJC`; multi-site cells look up each segment and join the codes in order, flagging any unknown segment. Where a site has several job codes, the one matching the entry's day wins and the Job Code cell offers the rest (each labelled with its task date) — so `month` and `day` re-run the pick, and a hand-chosen code is never overwritten.
-4. **Inline dropdowns** — month / project / category / area / team / period as in-cell selects. A new row's month defaults to the settlement's own and stays editable; the options come from `Lists.months`, so a typed "Augst" cannot reach a sheet the export filters on.
+4. **Inline dropdowns, and the list is the authority on spelling** — month / project / category / area / driver / team as in-cell selects. A new row's month defaults to the settlement's own and stays editable; the options come from `Lists`/`Teams`, so a typed "Augst" cannot reach a sheet the export filters on.
+   - A select stops a coordinator *typing* a wrong value, but it is not the only way one arrives: a **paste from Excel** writes whatever the workbook held, and `AUG` where the list says `Aug` is the ordinary case. So every list cell is matched against its list **ignoring case, surrounding space and doubled spaces**, and where it matches, the **list's spelling wins** — on paste, on commit, on load, and again server-side in `save_entries`. The server is the one that makes it a rule rather than a UI courtesy.
+   - Matching is deliberately **not fuzzy**. Case and whitespace, nothing else. `POC-3` and `POC3` stay two different things; guessing which was meant is how a wrong value reaches a finance file.
+   - A value that matches **nothing** is stored exactly as typed — never blanked, never guessed — and warned as `unknown_list_value` (amber, blocks nothing). It matters most on `team`: the export and approvals filters match team by value, so a row whose team matches no team appears in **no** file and on **no** approvals screen. That absence is what the warning exists to make visible.
 5. **Keyboard nav** — Tab across, Enter moves to the same column in the next row (adding a row at the end).
 6. **The period cell is chips, not a dropdown** — one chip per site, in the Site ID cell's order. The chip's **colour** is what the lookup says that site is (amber old, blue new, grey `?` for a site it does not know); the chip's **ring** is what the *row* does, since the row settles against exactly one Tracking# (6.2). So `0004/0025` reads `Old New` with the ring on the one it is filed under. Clicking a chip files the row under that period, clicking the ringed chip flips it — this is where rule 14's override lives now that there is no select. A row whose period matches no site (an override) grows a dashed chip carrying it, so the ring is never invisible.
 7. **Split a mixed line by period** — a row whose sites straddle old and new cannot be settled as it stands: one row carries one period, and half the money would go out under the wrong Tracking#. The period cell offers a split button that breaks it into **two rows in the same settlement** — old sites on one, new sites on the other — pairing site *i* with job code *i* (6.4), and **dividing the money evenly by site count** with the same integer-cent rounding as the per-site export, so the halves re-sum to the original exactly. KM is copied, never divided (rule 18). The first half stays on the original row so an already-saved entry keeps its `entry_id`; the other half is a new `draft`. The division is a *default* — both rows are ordinary editable drafts and a toast says so, because only the coordinator knows the real breakdown. Lives in `js/coordinator/gridSplit.js` as a pure plan; grid.js applies it.
+8. **Select rows and delete them together** — a tick box in the row-number gutter, and one in the header that takes the whole grid at once. A "Delete *n* selected" button appears in the toolbar carrying the count, and confirms before acting. Deleting one row through its own ✕ runs the same path with a list of one, so both behave identically — including what happens when the server says no. Only `draft` rows can actually be deleted (rule 9.3): an `exported` row has no tick box at all (rule 13), and anything confirmed or later is refused **by name** and put back at the index it was taken from, rather than the whole batch failing.
 
 ---
 
@@ -640,6 +644,7 @@ settlement-checker/
     utils/
       hash.js                    # SHA-256
       dates.js  money.js  dom.js
+      lists.js                   # match a cell to its reference list (6.6.4)
       validate.js                # grid validation (Section 6.3)
       explode.js                 # per-site split (Section 6.4)
       xlsx.js                    # xlsx-js-style wrappers + cell styling

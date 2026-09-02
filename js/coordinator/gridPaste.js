@@ -22,7 +22,7 @@ import { t } from '../i18n/i18n.js';
 import { escapeHtml } from '../utils/dom.js';
 import { openModal } from '../components/modal.js';
 import { text as asText, period as asPeriod } from '../utils/validate.js';
-import { gridColumns, makeRow } from './grid.js';
+import { gridColumns, makeRow, canonicalizeRowLists } from './grid.js';
 import { autofillRow, rowEntryDate } from './gridAutofill.js';
 
 /** Refuse a paste larger than this — it is a convenience, not an importer. */
@@ -151,7 +151,11 @@ export function looksLikeHeader(kind, cells) {
  *        day become the date its job code is chosen by.
  * @param {Object} [options.defaults] the settlement's month and anything else a
  *        row falls back to when neither the paste nor the row above supplied it.
- * @return {{rows: Array<Object>, skippedHeader: boolean, unknownSites: Array<string>}}
+ * @param {Object|null} [options.reference] the dropdown option lists, so a cell
+ *        the workbook spells `AUG` lands as the list's own `Aug` (6.6.4). This is
+ *        the route the mis-cased value actually arrives by.
+ * @return {{rows: Array<Object>, skippedHeader: boolean, unknownSites: Array<string>,
+ *           corrected: number}}
  */
 export function rowsFromMatrix(kind, matrix, options = {}) {
   const columns = gridColumns(kind);
@@ -162,6 +166,7 @@ export function rowsFromMatrix(kind, matrix, options = {}) {
 
   const rows = [];
   const unknownSites = [];
+  let corrected = 0;
   const indexOf = function (key) {
     return columns.findIndex(function (column) { return column.key === key; });
   };
@@ -178,6 +183,15 @@ export function rowsFromMatrix(kind, matrix, options = {}) {
 
       row[column.key] = (column.key === 'period') ? asPeriod(value) : value;
     });
+
+    /*
+     * A month the workbook wrote as `AUG` is the list's `Aug` written by someone
+     * in a hurry, and keeping the two apart is what put a value the grid's month
+     * select could not show onto thirteen rows. Corrected here, at the point the
+     * value enters, so the row is right in the model, in the localStorage mirror
+     * and on the sheet — not just wherever it happens to be looked at.
+     */
+    corrected += canonicalizeRowLists(kind, row, options.reference || null).length;
 
     // A period that arrived WITH the paste is the coordinator's own answer, so
     // autofill must not overrule it (rule 14). Same for a job code.
@@ -199,7 +213,12 @@ export function rowsFromMatrix(kind, matrix, options = {}) {
     previous = row;
   });
 
-  return { rows: rows, skippedHeader: skippedHeader, unknownSites: unknownSites };
+  return {
+    rows: rows,
+    skippedHeader: skippedHeader,
+    unknownSites: unknownSites,
+    corrected: corrected
+  };
 }
 
 /* ------------------------------------------------------------------ *
@@ -220,6 +239,8 @@ export function rowsFromMatrix(kind, matrix, options = {}) {
  * @param {Function} options.getSiteJcMap
  * @param {Function} [options.getDefaults] the row defaults (the settlement's
  *        month), for a paste with no month column of its own.
+ * @param {Function} [options.getReference] the dropdown option lists, so a
+ *        mis-cased month or team lands as the list spells it (6.6.4).
  * @param {Function} options.onRows called with the parse result.
  * @return {Function} a detach function.
  */
@@ -312,7 +333,8 @@ function applyPaste(raw, options) {
     previous: existing.length ? existing[existing.length - 1] : null,
     siteJcMap: options.getSiteJcMap(),
     fiscalYear: (typeof options.getFiscalYear === 'function') ? options.getFiscalYear() : '',
-    defaults: (typeof options.getDefaults === 'function') ? options.getDefaults() : null
+    defaults: (typeof options.getDefaults === 'function') ? options.getDefaults() : null,
+    reference: (typeof options.getReference === 'function') ? options.getReference() : null
   });
 
   result.truncated = truncated;
