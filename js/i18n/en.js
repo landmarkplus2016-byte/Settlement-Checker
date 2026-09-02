@@ -228,10 +228,10 @@ export const en = {
   grid_delete_selected: 'Delete {count} selected',
   grid_delete_selected_title: 'Delete the selected rows?',
   grid_delete_selected_text: '{count} rows will be removed from this grid.',
-  grid_delete_saved_note: '{count} of them are already saved. Only rows still in draft can be deleted — anything confirmed or later stays, and is listed back to you.',
+  grid_delete_saved_note: '{count} of them are already saved. Only draft and returned rows can be deleted — anything confirmed or later stays, and is listed back to you.',
   grid_delete_confirm: 'Delete rows',
   grid_rows_deleted: '{count} rows deleted.',
-  grid_delete_refused: '{count} rows could not be deleted — they are no longer drafts. They have been put back.',
+  grid_delete_refused: '{count} rows could not be deleted — they are with a manager. They have been put back.',
 
   grid_row_locked: 'Exported — this row is locked.',
   grid_total: 'Total',

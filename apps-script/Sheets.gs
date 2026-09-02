@@ -283,8 +283,9 @@ function updateRowAt(ss, name, rowIndex, updates) {
 
 /**
  * Remove one row entirely. The app hard-deletes exactly two things: an expired
- * Sessions row and a `draft` entry via delete_entry (CLAUDE.md 9.3). Everything
- * else is deactivated or status-changed, never deleted.
+ * Sessions row, and a `draft` or `returned` entry via delete_entry /
+ * delete_entries (CLAUDE.md 9.3) — both of which are in the coordinator's own
+ * hands. Everything else is deactivated or status-changed, never deleted.
  *
  * @return {boolean} true when a row was removed.
  */

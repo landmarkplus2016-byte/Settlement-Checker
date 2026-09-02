@@ -364,7 +364,9 @@ role==='coordinator', resolve the sheet via Registry.resolveCoordinatorSheet(ses
   row whose stored status is 'exported'; for any row currently 'approved' whose
   meaningful fields changed, set status='confirmed' and clear approved_by/at
   (rule 12); set audit fields server-side
-- delete_entry {settlement_id, kind, entry_id} — only if status==='draft'
+- delete_entry {settlement_id, kind, entry_id} — only if status is 'draft' or
+  'returned' (DELETABLE_STATUSES); delete_entries takes a list and refuses the rest
+  by name rather than failing the batch
 - confirm_track {settlement_id, period} — set that period's draft rows to confirmed;
   refuse if the matching tracking number is unset, or if any row of that period fails
   validation (use Validate.gs)

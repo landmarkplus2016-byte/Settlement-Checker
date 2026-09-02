@@ -828,9 +828,10 @@ function deleteSelected() {
  * Rows have left the grid; make the sheet agree (3.5).
  *
  * Anything without an `entry_id` was never stored, so it is simply gone. The rest
- * go to `delete_entries`, which is the only hard delete in the app and takes a
- * `draft` row and nothing else (rule 9.3) — a confirmed row is with a manager, an
- * approved one has been signed off, an exported one is in a finance file.
+ * go to `delete_entries`, the only hard delete in the app, which takes a `draft`
+ * or `returned` row and nothing else (rule 9.3) — a returned row is back in the
+ * coordinator's hands, but a confirmed one is with a manager, an approved one has
+ * been signed off, and an exported one is in a finance file.
  *
  * The server does what it can and NAMES what it would not, rather than refusing
  * the whole batch: a coordinator clearing a bad paste should not be stopped by

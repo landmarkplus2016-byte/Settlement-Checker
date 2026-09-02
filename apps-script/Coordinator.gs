@@ -1084,13 +1084,40 @@ function copyInto(target, source) {
  * ================================================================== */
 
 /**
- * `delete_entry` — the only hard delete in the app (rule 9.3), and only for a
- * `draft` row.
+ * The statuses a hard delete may touch (rule 9.3).
  *
- * Everything past draft has been seen by somebody else. A confirmed row is
- * waiting on a manager, an approved one has been signed off, an exported one is
- * in a finance file — none of those may vanish, and each is returned or kept
- * with its status instead.
+ * `draft` is the obvious one: nobody but the coordinator has ever seen it.
+ *
+ * `returned` is here because 6.1 already says so. A returned row is back in the
+ * coordinator's hands — `save_entries` turns it into a `draft` the moment they
+ * edit it (see the returned branch above) — so it is a draft that happens to
+ * still be carrying a note. Refusing to delete it only meant the coordinator had
+ * to type something meaningless into a row they were about to bin, save, and
+ * then delete: two round trips and an edit that lied about what they were doing.
+ *
+ * This is also the app's answer to a duplicate that got confirmed. The manager
+ * returns it, which takes it out of the `approved` pool `export_query` draws
+ * from (rule 15), so it can never reach a finance file; the coordinator then
+ * deletes it outright instead of leaving it lying around as `returned` forever.
+ *
+ * Nothing else is deletable, and the reasons are unchanged: a `confirmed` row is
+ * with a manager, an `approved` one has been signed off, an `exported` one is in
+ * a finance file (rule 13). Each of those is returned or kept with its status.
+ */
+var DELETABLE_STATUSES = ['draft', 'returned'];
+
+/**
+ * @param {*} value a row's stored status.
+ * @return {boolean} whether a hard delete may remove it.
+ */
+function isDeletableStatus(value) {
+  var status = normalizeKey(value).toLowerCase() || 'draft';
+  return DELETABLE_STATUSES.indexOf(status) !== -1;
+}
+
+/**
+ * `delete_entry` — the only hard delete in the app (rule 9.3), and only for a
+ * `draft` or `returned` row (DELETABLE_STATUSES).
  *
  * @param {Object} session auth context.
  * @param {Object} payload { settlement_id, kind, entry_id }
@@ -1122,8 +1149,8 @@ function handleDeleteEntry(session, payload) {
     }
 
     var status = normalizeKey(row.status).toLowerCase() || 'draft';
-    if (status !== 'draft') {
-      throw appError('validation_failed', 'entry_not_draft', { status: status });
+    if (!isDeletableStatus(status)) {
+      throw appError('validation_failed', 'entry_not_deletable', { status: status });
     }
 
     getSheet(ss, tab).deleteRow(row._row);
@@ -1148,7 +1175,7 @@ function handleDeleteEntry(session, payload) {
 var MAX_DELETE_ROWS = 1000;
 
 /**
- * `delete_entries` — hard-delete several `draft` rows in one call.
+ * `delete_entries` — hard-delete several `draft` or `returned` rows in one call.
  *
  * `delete_entry` already does exactly this for one row, and looping it from the
  * client would work — but at one Apps Script round trip each, clearing a grid of
@@ -1164,8 +1191,9 @@ var MAX_DELETE_ROWS = 1000;
  * come back NAMED — with the status that saved them — so the grid can put those
  * rows back exactly where they were and say why.
  *
- * The rule itself is unchanged and is the same one `delete_entry` enforces: a
- * `draft` row of the caller's own settlement, and nothing else (rule 9.3).
+ * The rule itself is the same one `delete_entry` enforces: a row of the caller's
+ * own settlement whose status is in DELETABLE_STATUSES, and nothing else
+ * (rule 9.3).
  *
  * @param {Object} session auth context.
  * @param {Object} payload { settlement_id, kind, entry_ids: [...] }
@@ -1230,7 +1258,7 @@ function handleDeleteEntries(session, payload) {
       }
 
       var status = normalizeKey(row.status).toLowerCase() || 'draft';
-      if (status !== 'draft') {
+      if (!isDeletableStatus(status)) {
         refused.push({ entry_id: entryId, status: status });
         continue;
       }

@@ -1223,8 +1223,9 @@ export function bindGridEvents(model, hooks = {}) {
    *
    * Each removal is handed back with the INDEX it was taken from, because the
    * server is the authority on whether a saved row may go at all (only a `draft`
-   * may, rule 9.3) and a refused row has to go back where it was rather than at
-   * the bottom of the grid. `restoreRows()` is the other half of that.
+   * or a `returned` row may, rule 9.3) and a refused row has to go back where it
+   * was rather than at the bottom of the grid. `restoreRows()` is the other half
+   * of that.
    *
    * Nothing here talks to the server. The page's `onDeleteRows` hook does, which
    * keeps rule 19 intact and keeps this file about the grid.

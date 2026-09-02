@@ -226,10 +226,10 @@ export const ar = {
   grid_delete_selected: 'حذف {count} صفاً محدداً',
   grid_delete_selected_title: 'حذف الصفوف المحددة؟',
   grid_delete_selected_text: 'سيتم حذف {count} صفاً من هذا الجدول.',
-  grid_delete_saved_note: '{count} منها محفوظة بالفعل. لا يُحذف إلا ما هو مسودة — أي صف مؤكَّد أو بعده يبقى، وسيُعرض عليك.',
+  grid_delete_saved_note: '{count} منها محفوظة بالفعل. لا يُحذف إلا ما هو مسودة أو مُعاد — أي صف مؤكَّد أو بعده يبقى، وسيُعرض عليك.',
   grid_delete_confirm: 'حذف الصفوف',
   grid_rows_deleted: 'تم حذف {count} صفاً.',
-  grid_delete_refused: 'تعذّر حذف {count} صفاً — لم تعد مسودات. تمت إعادتها.',
+  grid_delete_refused: 'تعذّر حذف {count} صفاً — فهي لدى المدير. تمت إعادتها.',
 
   grid_row_locked: 'مُصدَّر — هذا الصف مقفل.',
   grid_total: 'الإجمالي',
