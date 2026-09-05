@@ -45,7 +45,7 @@ export const SHEET_TITLES = {
 
 /** The header block's labels (7.2). */
 const META_LABELS = {
-  name: 'Name',
+  name: 'Coordinator Name',
   account: 'Account',
   total: 'Total',
   team: 'Team',
@@ -265,7 +265,7 @@ function buildSheet(spec) {
      * The header block. `Total` is this sheet's own money — the expense total on
      * the expenses sheet, the fuel total on the fuel sheet (7.2).
      */
-    meta: buildMeta(spec, totals, moneyKeys),
+    meta: buildMeta(spec, columns, totals, moneyKeys),
 
     columns: columns,
     rows: rows,
@@ -287,27 +287,48 @@ function buildSheet(spec) {
 /**
  * The header block's label/value pairs.
  *
- * Name, Account and Total are the three 7.2 names; Team and Month are added
- * because an export is per team and month (7.1) and a finance file that does not
- * say which team it is for cannot be filed by the person receiving it.
+ * Coordinator Name, Account and Total are the three 7.2 names; Team and Month
+ * are added because an export is per team and month (7.1) and a finance file
+ * that does not say which team it is for cannot be filed by the person
+ * receiving it.
+ *
+ * `Total` is every money column of the sheet added together — on the fuel sheet
+ * that is Fuel PLUS Karta, because both are money the coordinator spent and a
+ * headline that quietly omitted one would understate what the file is claiming.
+ * Where a sheet has more than one money column the header then breaks that
+ * figure back down, one line per column ("Total Fuel", "Total Karta"), so the
+ * reader can see what the headline is made of without adding up the table. The
+ * expenses sheet has a single money column, so it gets no breakdown — the
+ * headline already IS the amount.
  *
  * @param {Object} spec
+ * @param {Array<Object>} columns the sheet's columns, for the money labels.
  * @param {Object} totals
  * @param {Array<string>} moneyKeys
  * @return {Array<{label: string, value: *, type: string}>}
  */
-function buildMeta(spec, totals, moneyKeys) {
-  // The sheet's headline figure: the first money column — Amount on expenses,
-  // Fuel on fuel. Karta is in the totals row, not the header.
-  const headline = moneyKeys.length ? totals[moneyKeys[0]] : 0;
+function buildMeta(spec, columns, totals, moneyKeys) {
+  const headline = moneyKeys.reduce(function (sum, key) {
+    return sum + (toNumber(totals[key]) || 0);
+  }, 0);
+
+  const breakdown = (moneyKeys.length > 1) ? moneyKeys.map(function (key) {
+    const column = columns.find(function (item) { return item.key === key; });
+    return {
+      label: META_LABELS.total + ' ' + ((column && column.label) || key),
+      value: totals[key],
+      type: 'money'
+    };
+  }) : [];
 
   return [
     { label: META_LABELS.name, value: spec.coordinators.join(' / '), type: 'text' },
     { label: META_LABELS.account, value: spec.account, type: 'text' },
-    { label: META_LABELS.total, value: headline, type: 'money' },
+    { label: META_LABELS.total, value: headline, type: 'money' }
+  ].concat(breakdown, [
     { label: META_LABELS.team, value: spec.team, type: 'text' },
     { label: META_LABELS.month, value: spec.month, type: 'text' }
-  ];
+  ]);
 }
 
 /**
@@ -372,11 +393,13 @@ function cellValue(row, column) {
  *     ┌─────────────────────────────────────────────┬──────────┐
  *     │ Expenses Tracking                           │          │  title
  *     ├──────────┬──────────────────────────────────┤   NEW    │  header block
- *     │ Name     │ Mahmoud Shaarawy                 │  marker  │  + the big
- *     │ Account  │ VF                               │          │    marker
- *     │ Total    │ 12,480.00                        ├──────────┤
- *     │ Team     │ Team Ashraf                      │          │
- *     │ Month    │ Aug                              │          │
+ *     │ COORDINATOR NAME │ Mahmoud Shaarawy         │  marker  │  + the big
+ *     │ ACCOUNT          │ VF                       │          │    marker
+ *     │ TOTAL            │ 12,480.00                ├──────────┤
+ *     │ TOTAL FUEL       │ 11,880.00                │          │  (fuel sheet
+ *     │ TOTAL KARTA      │ 600.00                   │          │   only)
+ *     │ TEAM             │ Team Ashraf              │          │
+ *     │ MONTH            │ Aug                      │          │
  *     ├──────────┴──────────────────────────────────┴──────────┤
  *     │ Month │ Day │ Project │ … │ Amount                     │  columns
  *     │ …data rows…                                            │
@@ -440,16 +463,30 @@ export function sheetToAoa(sheet) {
   const markerStart = Math.max(2, width - 2);
   const metaValueEnd = markerStart - 1;
 
+  /*
+   * The label occupies the first TWO columns. One column is the width of the
+   * Month column beside it, and "COORDINATOR NAME" does not fit in it — Excel
+   * clips a label whose neighbour is occupied, which is exactly the case here.
+   */
+  const metaLabelEnd = Math.min(1, metaValueEnd);
+  const metaValueStart = Math.min(metaLabelEnd + 1, metaValueEnd);
+
   const firstMetaRow = aoa.length;
 
   sheet.meta.forEach(function (item) {
-    const row = push([item.label.toUpperCase(), item.value]);
-    merge(row, 1, row, metaValueEnd);
+    const row = push([]);
+    aoa[row][0] = item.label.toUpperCase();
+    aoa[row][metaValueStart] = item.value;
+
+    merge(row, 0, row, metaLabelEnd);
+    merge(row, metaValueStart, row, metaValueEnd);
     height(row, 16);
 
     // The header block's Total is money and is formatted like the column it
     // summarises, not like the text beside it.
-    if (item.type === 'money') style(row, 1, row, 1, { numFmt: MONEY_FORMAT });
+    if (item.type === 'money') {
+      style(row, metaValueStart, row, metaValueStart, { numFmt: MONEY_FORMAT });
+    }
   });
 
   const lastMetaRow = aoa.length - 1;
@@ -482,11 +519,11 @@ export function sheetToAoa(sheet) {
     font: { name: ink.font, sz: 14, bold: true, color: { rgb: ink.navy } }
   });
 
-  style(firstMetaRow, 0, lastMetaRow, 0, {
+  style(firstMetaRow, 0, lastMetaRow, metaLabelEnd, {
     font: { name: ink.font, sz: 9, bold: true, color: { rgb: ink.textMuted } }
   });
 
-  style(firstMetaRow, 1, lastMetaRow, metaValueEnd, {
+  style(firstMetaRow, metaValueStart, lastMetaRow, metaValueEnd, {
     font: { name: ink.font, sz: 11, bold: true, color: { rgb: ink.textPrimary } }
   });
 
