@@ -128,6 +128,17 @@ export const en = {
 
   settlement_new: 'New settlement',
   settlement_created: 'Settlement created.',
+
+  /* Deleting a settlement — offered only while nothing in it has left the
+   * coordinator's hands (delete_settlement, rule 9.3). */
+  settlement_delete_title: 'Delete this settlement',
+  settlement_delete_body: 'Delete {settlement} and the {count} entries in it? This cannot be undone.',
+  settlement_delete_note: 'Only a settlement whose entries are all still drafts or returned can be deleted. Once anything has been confirmed, it is with a manager and stays.',
+  settlement_deleted: '{settlement} and its entries were deleted.',
+  err_msg_settlement_not_empty: 'This settlement has entries that are already with a manager or exported, so it cannot be deleted. Reload the page to see where they are now.',
+  err_msg_settlement_not_found: 'That settlement no longer exists. Reload the page.',
+  err_msg_tracking_no_taken: 'Another of your settlements already uses that tracking number. Each batch needs its own, or two finance files go out stamped the same.',
+  err_msg_tracking_no_same_for_both: 'Old and New must have different tracking numbers — they are two separate tracks.',
   settlement_pick_month: 'Pick a month…',
   settlement_month_placeholder: 'e.g. Aug',
   settlement_no_months: 'No months have been set up yet, so type the label you use — e.g. Aug.',
@@ -281,6 +292,15 @@ export const en = {
   valid_missing_project: 'No project',
   valid_missing_category: 'No category',
   valid_missing_driver: 'No driver',
+  valid_missing_month: 'No month',
+  valid_missing_day: 'No day',
+  valid_missing_item_description: 'No description',
+  valid_missing_area: 'No area',
+  valid_missing_city: 'No city',
+  valid_missing_start_km: 'No start KM',
+  valid_missing_end_km: 'No end KM',
+  valid_missing_karta_amount: 'No karta amount',
+  valid_missing_team: 'No team',
   valid_unknown_site: 'Site not in the lookup',
   valid_missing_job_code: 'No Job Code',
   valid_missing_period: 'No period — this row settles against neither tracking number',
@@ -537,13 +557,14 @@ export const en = {
 
   export_already_exported: '{count} entries here have already been exported. They are shown because “hide already-exported” is off, and they will not be exported again.',
   export_claimable_zero: 'Everything here has already been exported. You can still download the file, but there is nothing left to mark.',
-  export_tracking_conflict: 'These entries resolve to more than one tracking number: {numbers}. Check the settlements before sending this file.',
-  export_tracking_conflict_split: 'These entries resolve to more than one tracking number: {numbers}, because this team’s month covers more than one settlement. Pick a settlement above to send them as separate files.',
+  export_tracking_conflict: 'These entries resolve to more than one tracking number: {numbers}. Export is blocked — one file can carry only one number in its footer, and once these rows are exported they are locked.',
+  export_tracking_conflict_split: 'These entries resolve to more than one tracking number: {numbers}, because this team’s month covers more than one settlement. Export is blocked — pick a settlement above to send them as separate files, each under its own number.',
   export_settlement_scoped: 'This file covers one settlement only: {settlement}. Entries in the same team and month that belong to another settlement are not in it.',
   export_no_tracking: 'These settlements have no tracking number for this period: {settlements}. Export is blocked until a coordinator sets it — the footer would go out blank and the number cannot be changed afterwards.',
   export_sweep_incomplete: 'Some coordinators could not be read, so this file is incomplete: {names}. Export is blocked until that is fixed.',
 
   export_blocked_tracking: 'A settlement in this batch has no tracking number for this period.',
+  export_blocked_tracking_conflict: 'This batch spans more than one tracking number. Narrow it to one settlement.',
   export_blocked_sweep: 'A coordinator’s sheet could not be read, so this batch is incomplete.',
 
   /* The log of what has already gone out (7.3). */
@@ -650,6 +671,7 @@ export const en = {
   err_msg_invalid_export_filter: 'Choose a team, a month and a period before exporting.',
   err_msg_invalid_report_type: 'Choose Normal or Per-site.',
   err_msg_tracking_no_missing: 'A settlement in this batch has no tracking number for this period. It has to be set before these entries can be exported.',
+  err_msg_tracking_no_conflict: 'These entries settle against more than one tracking number, and one file can carry only one. Narrow the export to a single settlement and send each batch under its own number.',
   err_msg_coordinator_sheet_unreadable: 'A coordinator’s spreadsheet could not be read, so this batch would be incomplete. Nothing was exported. Tell the developer.',
   err_msg_export_too_large: 'That is more entries than one export allows. Narrow it to one team and month and try again.',
   err_msg_invalid_limit: 'That is not a valid number of rows to show.',

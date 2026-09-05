@@ -388,6 +388,11 @@ function handleCreateSettlement(session, payload) {
       ids.push(normalizeKey(rows[i].settlement_id));
     }
 
+    // Same read, same lock: a Tracking# already spoken for by another of this
+    // coordinator's settlements is refused before the row exists.
+    var clash = findTrackingClash(rows, '', oldTracking, newTracking);
+    if (clash) throw appError('validation_failed', clash.message, clash.field_errors);
+
     var stamp = nowIso();
 
     return appendRow(ss, 'Settlements', {
@@ -469,6 +474,25 @@ function handleUpdateSettlement(session, payload) {
   patch.updated_by = session.user_id;
 
   var written = withScriptLock(function () {
+    /*
+     * Checked inside the lock, against the pair this write would LEAVE BEHIND:
+     * a patch that touches only one track still has to agree with the other
+     * track's stored number, and another settlement may have taken the number
+     * since the reads above.
+     */
+    var finalOld = hasField(patch, 'old_tracking_no')
+      ? toFiniteNumber(patch.old_tracking_no)
+      : toFiniteNumber(settlement.old_tracking_no);
+
+    var finalNew = hasField(patch, 'new_tracking_no')
+      ? toFiniteNumber(patch.new_tracking_no)
+      : toFiniteNumber(settlement.new_tracking_no);
+
+    var clash = findTrackingClash(
+      readAllRows(ss, 'Settlements'), settlementId, finalOld, finalNew
+    );
+    if (clash) throw appError('validation_failed', clash.message, clash.field_errors);
+
     var result = updateRowByKey(ss, 'Settlements', 'settlement_id', settlementId, patch);
     if (!result) throw appError('not_found', 'settlement_not_found');
     return result;
@@ -547,6 +571,68 @@ function readOptionalTracking(value, fieldErrors, key) {
   }
 
   return number;
+}
+
+/**
+ * Is this pair of Tracking#s free?
+ *
+ * A Tracking# is typed by hand, and until this check existed nothing stopped a
+ * coordinator giving two of his settlements the same one — usually by retyping
+ * last month's number. The damage shows up at the far end, where it can no
+ * longer be fixed: rule 9 gives each batch its own pair, and the export screen's
+ * settlement selector (7.1) exists so each batch goes out under its own number.
+ * Two settlements sharing a number means two finance files stamped identically,
+ * and by the time anyone notices, the track is exported and `update_settlement`
+ * refuses to renumber it (3.5). Entry is the only cheap moment to catch it.
+ *
+ * Scope is ONE coordinator's own sheet, which is the whole of what he can see
+ * and the whole of what this can check without sweeping every coordinator's
+ * spreadsheet on every keystroke of a tracking box. Whether two coordinators may
+ * share a number is a question about how finance issues them, and is deliberately
+ * not answered here.
+ *
+ * Both halves of the pair are checked against BOTH columns of every other
+ * settlement, and against each other: old and new route to different Tracking#s
+ * (6.2), so one number on both tracks of one settlement is the same mistake.
+ *
+ * @param {Array<Object>} rows every Settlements row of the caller's sheet.
+ * @param {string} settlementId the row being written; '' when creating. Its own
+ *        current numbers are not a clash with itself.
+ * @param {number|null} oldNo the pair's FINAL old number.
+ * @param {number|null} newNo the pair's FINAL new number.
+ * @return {Object|null} { message, field_errors }, or null when the pair is free.
+ */
+function findTrackingClash(rows, settlementId, oldNo, newNo) {
+  if (oldNo !== null && newNo !== null && oldNo === newNo) {
+    return {
+      message: 'tracking_no_same_for_both',
+      field_errors: { new_tracking_no: 'same_as_old_tracking_no' }
+    };
+  }
+
+  var owner = {};
+  var mine = normalizeKey(settlementId);
+
+  for (var i = 0; i < rows.length; i++) {
+    var id = normalizeKey(rows[i].settlement_id);
+    if (id && id === mine) continue;
+
+    var pair = [rows[i].old_tracking_no, rows[i].new_tracking_no];
+
+    for (var p = 0; p < pair.length; p++) {
+      var n = toFiniteNumber(pair[p]);
+      // First writer keeps the name: the oldest settlement holding a number is
+      // the more useful one to point at.
+      if (n !== null && !owner[n]) owner[n] = id;
+    }
+  }
+
+  var errors = {};
+  if (oldNo !== null && owner[oldNo]) errors.old_tracking_no = owner[oldNo];
+  if (newNo !== null && owner[newNo]) errors.new_tracking_no = owner[newNo];
+
+  if (!Object.keys(errors).length) return null;
+  return { message: 'tracking_no_taken', field_errors: errors };
 }
 
 /**
@@ -1323,6 +1409,106 @@ function deleteSheetRows(sheet, rowNumbers) {
     sheet.deleteRows(last - count + 1, count);
     i += count;
   }
+}
+
+/* ================================================================== *
+ * delete_settlement (3.5)
+ * ================================================================== */
+
+/**
+ * `delete_settlement` — remove a settlement and everything in it.
+ *
+ * This is DELETABLE_STATUSES applied one level up: to the container instead of
+ * the row. A settlement holding nothing but `draft` and `returned` entries has
+ * never left the coordinator's hands, so binning it is the same act as binning
+ * the rows one at a time — which delete_entries already allows — minus thirty
+ * clicks and the empty shell left behind at the end.
+ *
+ * The moment ONE entry is `confirmed`, `approved` or `exported`, the whole
+ * delete is refused. Not "delete what we can": a settlement is the only thing
+ * that carries `old_tracking_no` / `new_tracking_no`, and the Tracking# is
+ * resolved from it at read and export time rather than stored on the entry
+ * (rule 6.2). Take the settlement away from under an exported row and the
+ * ExportLog batch points at a number that no longer exists anywhere — an audit
+ * hole nothing can repair. Refusing wholesale is also what keeps id reuse safe:
+ * buildSettlementId() reclaims a freed id, and `S-2026-08` coming back to life
+ * would collide with an old log row's `<user_id>::<settlement_id>`.
+ *
+ * The refusal names the statuses and their counts, so the coordinator is told
+ * "3 confirmed, 2 approved" rather than just "no".
+ *
+ * @param {Object} session auth context.
+ * @param {Object} payload { settlement_id }
+ * @return {Object} { deleted, settlement_id, entries_deleted, by_kind }
+ */
+function handleDeleteSettlement(session, payload) {
+  var ss = coordinatorContext(session, payload);
+  var body = payload || {};
+
+  var settlement = readSettlementOrThrow(ss, body.settlement_id);
+  var settlementId = normalizeKey(settlement.settlement_id);
+
+  var outcome = withScriptLock(function () {
+    /*
+     * Everything is re-read INSIDE the lock. The status of every entry is what
+     * decides whether this is allowed at all, and a manager approving a row
+     * between the client's check and this one is exactly the race that would
+     * otherwise delete work that had already been signed off.
+     */
+    var current = readRowByKey(ss, 'Settlements', 'settlement_id', settlementId);
+    if (!current) throw appError('not_found', 'settlement_not_found');
+
+    var blocked = {};
+    var blockedCount = 0;
+    var targets = {};
+
+    for (var k = 0; k < ENTRY_KINDS.length; k++) {
+      var kind = ENTRY_KINDS[k];
+      var rows = readAllRows(ss, entrySheetName(kind));
+      targets[kind] = [];
+
+      for (var i = 0; i < rows.length; i++) {
+        if (normalizeKey(rows[i].settlement_id) !== settlementId) continue;
+
+        var status = normalizeKey(rows[i].status).toLowerCase() || 'draft';
+
+        if (!isDeletableStatus(status)) {
+          blocked[status] = (blocked[status] || 0) + 1;
+          blockedCount++;
+          continue;
+        }
+
+        targets[kind].push(rows[i]._row);
+      }
+    }
+
+    if (blockedCount) {
+      throw appError('validation_failed', 'settlement_not_empty', blocked);
+    }
+
+    // Entries first, then the settlement itself: if the run were to fail
+    // half-way, an orphaned entry is recoverable and an orphaned settlement is
+    // merely empty, but an entry whose settlement is gone can resolve no
+    // Tracking# at all.
+    var removed = {};
+
+    for (var k2 = 0; k2 < ENTRY_KINDS.length; k2++) {
+      var kind2 = ENTRY_KINDS[k2];
+      deleteSheetRows(getSheet(ss, entrySheetName(kind2)), targets[kind2]);
+      removed[kind2] = targets[kind2].length;
+    }
+
+    getSheet(ss, 'Settlements').deleteRow(current._row);
+
+    return removed;
+  });
+
+  return {
+    deleted: true,
+    settlement_id: settlementId,
+    entries_deleted: (outcome.expense || 0) + (outcome.fuel || 0),
+    by_kind: outcome
+  };
 }
 
 /* ================================================================== *

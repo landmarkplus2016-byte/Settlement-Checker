@@ -917,10 +917,14 @@ function renderPanelWarnings(period, state, doc) {
    * Two settlements' worth of numbers in one file. Two coordinators on the same
    * team, or — since a month holds as many settlements as a coordinator opens
    * (rule 9) — one coordinator's two batches. The settlement selector is the way
-   * out of the second case, so the warning names it.
+   * out of the second case, so the message names it.
+   *
+   * Danger, not warning: `export_commit` refuses this outright (Export.gs), for
+   * the same reason it refuses a missing Tracking# above — the footer of both
+   * sheets would carry "30, 31", and the rows are locked once claimed.
    */
   if ((header.tracking_numbers || []).length > 1) {
-    out.push(renderAlert('warning', t(
+    out.push(renderAlert('danger', t(
       settlementOptions.length > 1 ? 'export_tracking_conflict_split' : 'export_tracking_conflict',
       { numbers: (header.tracking_numbers || []).join(t('list_separator')) }
     )));
@@ -993,6 +997,11 @@ function commitBlockedReason(state) {
 
   const header = (state.query && state.query.header) || {};
   if ((header.missing_tracking || []).length) return t('export_blocked_tracking');
+
+  // One file, one number in its footer. The commit refuses this too, so the
+  // button must not offer it — a settlement with no fuel at all is unaffected,
+  // since this counts the numbers the selected ROWS resolve to, not the kinds.
+  if ((header.tracking_numbers || []).length > 1) return t('export_blocked_tracking_conflict');
 
   const query = state.query || {};
   if ((query.errors || []).concat(query.skipped || []).length) return t('export_blocked_sweep');

@@ -30,10 +30,62 @@
 var VALIDATION_FLAG_CODES = [
   'missing_site_id',
   'missing_amount',
+  'missing_month',
+  'missing_day',
   'missing_project',
   'missing_category',
-  'missing_driver'
+  'missing_item_description',
+  'missing_area',
+  'missing_driver',
+  'missing_city',
+  'missing_start_km',
+  'missing_end_km',
+  'missing_karta_amount',
+  'missing_team'
 ];
+
+/**
+ * Every cell that must carry something before a row can be confirmed — the
+ * server half of REQUIRED_TEXT_FIELDS in js/utils/validate.js. The two lists are
+ * the same rule and must stay identical; this is the one that enforces it.
+ *
+ * `comment` is excluded by the rule. `job_code` and `period` are excluded
+ * because they are filled FROM the Site->JC lookup (rule 14) and 6.3 says a site
+ * the lookup has never heard of still confirms — they stay warnings.
+ */
+var REQUIRED_ENTRY_FIELDS = {
+  expense: [
+    ['month', 'missing_month'],
+    ['day', 'missing_day'],
+    ['project', 'missing_project'],
+    ['category', 'missing_category'],
+    ['item_description', 'missing_item_description'],
+    ['team', 'missing_team']
+  ],
+  fuel: [
+    ['month', 'missing_month'],
+    ['day', 'missing_day'],
+    ['project', 'missing_project'],
+    ['area', 'missing_area'],
+    ['driver', 'missing_driver'],
+    ['city', 'missing_city'],
+    ['team', 'missing_team']
+  ]
+};
+
+/**
+ * Numeric cells that must be filled but MAY be zero, unlike `amount` /
+ * `fuel_amount` where zero counts as missing (6.3). A trip with no karta spend
+ * and an odometer genuinely reading 0 are both real; an expense of 0 is not.
+ */
+var REQUIRED_ENTRY_NUMBERS = {
+  expense: [],
+  fuel: [
+    ['start_km', 'missing_start_km'],
+    ['end_km', 'missing_end_km'],
+    ['karta_amount', 'missing_karta_amount']
+  ]
+};
 
 /** Codes that are surfaced but never block. */
 var VALIDATION_WARNING_CODES = [
@@ -138,17 +190,18 @@ function validateEntryRow(kind, row, siteMap, result) {
   }
 
   /* --- required fields, per kind (6.3) --- */
-  if (!normalizeKey(row.project)) {
-    result.flags.push({ code: 'missing_project', field: 'project' });
+  var required = REQUIRED_ENTRY_FIELDS[kind] || [];
+  for (var r = 0; r < required.length; r++) {
+    if (!normalizeKey(row[required[r][0]])) {
+      result.flags.push({ code: required[r][1], field: required[r][0] });
+    }
   }
 
-  if (isFuel) {
-    if (!normalizeKey(row.driver)) {
-      result.flags.push({ code: 'missing_driver', field: 'driver' });
-    }
-  } else {
-    if (!normalizeKey(row.category)) {
-      result.flags.push({ code: 'missing_category', field: 'category' });
+  // Filled, but zero is allowed — see REQUIRED_ENTRY_NUMBERS.
+  var numbers = REQUIRED_ENTRY_NUMBERS[kind] || [];
+  for (var n = 0; n < numbers.length; n++) {
+    if (toFiniteNumber(row[numbers[n][0]]) === null) {
+      result.flags.push({ code: numbers[n][1], field: numbers[n][0] });
     }
   }
 

@@ -33,26 +33,45 @@ import { openModal } from '../components/modal.js';
 import { toastSuccess, toastError, showToast } from '../components/toast.js';
 
 /**
+ * The statuses Confirm can still move.
+ *
+ * `draft` is the obvious one. `returned` is here because 6.1 puts such a row
+ * back in the coordinator's hands: `save_entries` turns an edited returned row
+ * into a `draft` (Coordinator.gs), and runConfirm() saves both grids before it
+ * calls `confirm_track` — so by the time the server decides, a fixed returned
+ * row IS a draft and moves with the rest of its track.
+ *
+ * Counting only `draft` here was a dead end: a coordinator who filled in the
+ * very thing a manager returned the row for was told "nothing to confirm", and
+ * pressing the button refused without even saving. The only way out was to press
+ * Save draft first and reload, which nothing on screen said.
+ *
+ * A returned row the coordinator has NOT edited stays `returned` server-side and
+ * simply does not move; the toast reports what actually changed.
+ */
+const CONFIRMABLE_STATUSES = ['draft', 'returned'];
+
+/**
  * Is one track ready to be confirmed?
  *
  * Mirrors what `confirm_track` will decide (3.5, 6.3): the period's Tracking#
  * must be set, and no FLAG may remain on the rows it would move. Warnings are
  * not consulted — an unknown site still confirms.
  *
- * The rows it would move are the DRAFT rows of that period, across both grids.
- * Rows already confirmed or approved belong to a manager now, and a flag on one
- * of those cannot be cleared by the coordinator anyway, so blocking on it would
- * be a dead end.
+ * The rows it would move are the draft and returned rows of that period, across
+ * both grids (CONFIRMABLE_STATUSES). Rows already confirmed or approved belong
+ * to a manager now, and a flag on one of those cannot be cleared by the
+ * coordinator anyway, so blocking on it would be a dead end.
  *
  * @param {Object} page the settlement page's handle (see settlement.js).
  * @param {string} period 'old' | 'new'
- * @return {{ready: boolean, reason: string, draftCount: number,
+ * @return {{ready: boolean, reason: string, pendingCount: number,
  *           flaggedCount: number, trackingNo: number|null}}
  */
 export function trackReadiness(page, period) {
   const trackingNo = toNumber(page.settlement()[period + '_tracking_no']);
 
-  let draftCount = 0;
+  let pendingCount = 0;
   let flaggedCount = 0;
 
   page.kinds.forEach(function (kind) {
@@ -60,23 +79,24 @@ export function trackReadiness(page, period) {
     const report = validateRows(kind, rows, { siteJcMap: page.siteJcMap() });
 
     rows.forEach(function (row, index) {
-      if (String(row.status || 'draft').toLowerCase() !== 'draft') return;
+      const status = String(row.status || 'draft').toLowerCase();
+      if (CONFIRMABLE_STATUSES.indexOf(status) === -1) return;
       if (asPeriod(row.period) !== period) return;
 
-      draftCount++;
+      pendingCount++;
       if (report.rows[index].flags.length) flaggedCount++;
     });
   });
 
   let reason = '';
   if (trackingNo === null) reason = 'tracking';
-  else if (!draftCount) reason = 'nothing';
+  else if (!pendingCount) reason = 'nothing';
   else if (flaggedCount) reason = 'flags';
 
   return {
     ready: reason === '',
     reason: reason,
-    draftCount: draftCount,
+    pendingCount: pendingCount,
     flaggedCount: flaggedCount,
     trackingNo: trackingNo
   };
@@ -278,7 +298,7 @@ function askToConfirm(page, period, readiness) {
         <div class="stack">
           <p class="text-small text-secondary">
             ${escapeHtml(t('confirm_dialog_body', {
-              count: readiness.draftCount,
+              count: readiness.pendingCount,
               period: t('period_' + period)
             }))}
           </p>

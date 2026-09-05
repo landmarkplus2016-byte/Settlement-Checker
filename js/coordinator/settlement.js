@@ -95,6 +95,19 @@ export function bindSettlementPageEvents(settlementId) {
     reports: {}
   };
 
+  /*
+   * Bound ONCE per mount, on the page element the router just created — not in
+   * paint(). paint() replaces #settlement-body's children, never the element
+   * itself, so binding there stacked one more click listener on the same node
+   * every time the screen repainted: a tab switch, a save, a confirm. Two
+   * listeners made "Add row" add two rows, three made it add three, and Save and
+   * Confirm fired as many times as the coordinator had switched tabs.
+   *
+   * Delegation reads `state` and `state.controller` when the click happens, so a
+   * single listener stays correct across every repaint.
+   */
+  bindPageActions(page);
+
   load();
 }
 
@@ -516,7 +529,7 @@ function paintConfirmHints() {
       text = t('confirm_hint_flags', { rows: readiness.flaggedCount });
       tone = 'is-blocked';
     } else {
-      text = t('confirm_hint_ready', { count: readiness.draftCount });
+      text = t('confirm_hint_ready', { count: readiness.pendingCount });
       tone = 'is-ready';
     }
 
@@ -1005,12 +1018,14 @@ function paintTabCounts() {
  * Header events
  * ================================================================== */
 
-/** Wire everything outside the grid itself. */
-function bindHeaderEvents() {
-  const body = qs('#settlement-body');
-  if (!body) return;
-
-  body.addEventListener('click', function (event) {
+/**
+ * The screen's one click listener, bound once per mount by
+ * bindSettlementPageEvents() and never from paint().
+ *
+ * @param {HTMLElement} page the #settlement-page element.
+ */
+function bindPageActions(page) {
+  page.addEventListener('click', function (event) {
     const trigger = event.target.closest('[data-action]');
     if (!trigger) return;
 
@@ -1026,6 +1041,16 @@ function bindHeaderEvents() {
     if (action === 'save') return runSave(pageHandle());
     if (action === 'confirm') return runConfirm(pageHandle(), trigger.dataset.period);
   });
+}
+
+/**
+ * Wire the header's inputs. Unlike the click delegation above, these listeners
+ * sit on elements paint() has just rebuilt, so this DOES belong in paint() —
+ * every repaint hands us new nodes that carry no listeners yet.
+ */
+function bindHeaderEvents() {
+  const body = qs('#settlement-body');
+  if (!body) return;
 
   // A tracking number is committed on change, not per keystroke — it is a header
   // field, not a grid cell.

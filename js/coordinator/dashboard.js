@@ -19,6 +19,7 @@ import { escapeHtml, qs } from '../utils/dom.js';
 import { renderLoading, renderLoadError, renderEmpty } from '../components/table.js';
 import { openModal } from '../components/modal.js';
 import { toastSuccess } from '../components/toast.js';
+import { clearDraft } from '../state.js';
 
 /** The settlements from the last load. */
 let settlements = [];
@@ -81,9 +82,14 @@ export function bindCoordinatorDashboardEvents() {
 
   settlements = [];
 
+  // Bound once per mount, on the page element. The table below is re-rendered
+  // into a child on every load, so delegation here never needs re-binding.
   page.addEventListener('click', function (event) {
-    if (event.target.closest('[data-action="retry"]')) load();
-    if (event.target.closest('[data-action="new-settlement"]')) openNewSettlement();
+    if (event.target.closest('[data-action="retry"]')) return load();
+    if (event.target.closest('[data-action="new-settlement"]')) return openNewSettlement();
+
+    const remove = event.target.closest('[data-action="delete-settlement"]');
+    if (remove) return openDeleteSettlement(remove.dataset.settlementId);
   });
 
   load();
@@ -241,6 +247,85 @@ function renderMonthControl() {
 }
 
 /* ------------------------------------------------------------------ *
+ * Deleting a settlement
+ * ------------------------------------------------------------------ */
+
+/**
+ * Can this settlement be deleted?
+ *
+ * The same rule the server enforces (handleDeleteSettlement): nothing in it may
+ * have left the coordinator's hands. `draft` and `returned` are his; `confirmed`
+ * and `approved` are with a manager; `exported` is in a finance file.
+ *
+ * Read from the roll-up already on screen, so no extra call is needed. The
+ * server re-checks every entry under its lock and is the real gate — this only
+ * decides whether to offer the button, exactly as the grid declines to give an
+ * exported row a tick box (6.6.8). Offering a delete that will be refused is
+ * worse than not offering one.
+ *
+ * @param {Object} settlement
+ * @return {boolean}
+ */
+function isDeletable(settlement) {
+  return ['old', 'new'].every(function (period) {
+    const counts = settlement.tracks[period].counts;
+    return !counts.confirmed && !counts.approved && !counts.exported;
+  });
+}
+
+/** @param {Object} settlement @return {number} entries across both tracks. */
+function entryCount(settlement) {
+  return (settlement.tracks.old.total || 0) + (settlement.tracks.new.total || 0);
+}
+
+/**
+ * Confirm and run `delete_settlement`.
+ *
+ * The local draft mirror is dropped on success and not before. `sc_draft_*`
+ * outlives a sign-out by design (4.4), so leaving it behind would let the grid
+ * re-seed the very rows that were just deleted the next time a settlement of
+ * that id existed — and buildSettlementId reuses a freed id.
+ *
+ * @param {string} settlementId
+ */
+function openDeleteSettlement(settlementId) {
+  const settlement = settlements.find(function (row) {
+    return row.settlement_id === settlementId;
+  });
+  if (!settlement) return;
+
+  const count = entryCount(settlement);
+
+  openModal({
+    title: t('settlement_delete_title'),
+    confirmLabel: t('delete'),
+    confirmVariant: 'btn-danger',
+
+    bodyHtml: `
+      <div class="stack">
+        <p class="text-small text-secondary">
+          ${escapeHtml(t('settlement_delete_body', {
+            settlement: settlement.settlement_id,
+            count: count
+          }))}
+        </p>
+        <p class="text-small text-muted">${escapeHtml(t('settlement_delete_note'))}</p>
+      </div>
+    `,
+
+    onConfirm: async function () {
+      await api.call('delete_settlement', { settlement_id: settlementId });
+
+      clearDraft(settlementId, 'expense');
+      clearDraft(settlementId, 'fuel');
+
+      toastSuccess(t('settlement_deleted', { settlement: settlementId }));
+      load();
+    }
+  });
+}
+
+/* ------------------------------------------------------------------ *
  * Rendering
  * ------------------------------------------------------------------ */
 
@@ -291,7 +376,16 @@ function renderRow(settlement) {
       ${trackCell(settlement.tracks.old, 'old')}
       ${trackCell(settlement.tracks.new, 'new')}
       <td class="col-actions">
-        <a class="btn btn-secondary btn-sm" href="${href}">${escapeHtml(t('open'))}</a>
+        <div class="row-tight row-end">
+          <a class="btn btn-secondary btn-sm" href="${href}">${escapeHtml(t('open'))}</a>
+          ${isDeletable(settlement) ? `
+            <button class="icon-btn icon-btn-danger" type="button"
+                    data-action="delete-settlement"
+                    data-settlement-id="${escapeHtml(settlement.settlement_id)}"
+                    title="${escapeHtml(t('settlement_delete_title'))}"
+                    aria-label="${escapeHtml(t('settlement_delete_title'))}">✕</button>
+          ` : ''}
+        </div>
       </td>
     </tr>
   `;

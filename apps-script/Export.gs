@@ -659,6 +659,30 @@ function handleExportCommit(session, payload) {
         missingTrackingFields(header.missing_tracking, filter.period));
     }
 
+    /*
+     * More than one Tracking# among the rows this commit would claim.
+     *
+     * The preview only warns (js/manager/export.js), which is right for a
+     * preview — but a warning that can be scrolled past ends with a finance file
+     * whose Tracking# cell reads "30, 31", because exportTemplate.js joins the
+     * distinct list into the footer of both sheets. Those rows are then
+     * `exported` and locked (rule 13), so it cannot be corrected afterwards.
+     * This is the same gate `tracking_no_missing` above already is: the preview
+     * shows the problem, the commit is what refuses it.
+     *
+     * The way out is the settlement selector (7.1) — narrow to one batch and
+     * commit each under its own number.
+     *
+     * Note this counts the numbers the CLAIMED ROWS resolve to, not the numbers
+     * of both kinds. A settlement with expenses and no fuel at all contributes
+     * exactly one number and passes; so does a fuel-only one. Nothing here
+     * requires a settlement to have both.
+     */
+    if (header.tracking_numbers.length > 1) {
+      throw appError('validation_failed', 'tracking_no_conflict',
+        trackingConflictFields(found.batches));
+    }
+
     var rowCount = 0;
     for (var c = 0; c < found.claims.length; c++) {
       rowCount += found.claims[c].offsets.length;
@@ -835,6 +859,28 @@ function missingTrackingFields(missing, period) {
     var key = missing[i].coordinator.user_id + '/' + missing[i].settlement_id;
     out[key] = 'no_' + period + '_tracking_no';
   }
+  return out;
+}
+
+/**
+ * Turn a batch carrying several Tracking#s into `field_errors`, keyed the same
+ * way missingTrackingFields() keys its own — so the manager is shown which
+ * settlement holds which number and can pick one in the selector, rather than
+ * being told only that the numbers disagree.
+ *
+ * @param {Array<Object>} batches from sweepExportRows(); every settlement the
+ *        claim touches, whether or not it has fuel rows.
+ * @return {Object}
+ */
+function trackingConflictFields(batches) {
+  var out = {};
+
+  for (var i = 0; i < batches.length; i++) {
+    var batch = batches[i];
+    var key = batch.coordinator.user_id + '/' + batch.settlement_id;
+    out[key] = (batch.tracking_no === null) ? 'no_tracking_no' : String(batch.tracking_no);
+  }
+
   return out;
 }
 

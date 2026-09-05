@@ -30,10 +30,76 @@ import { isKnownListValue } from './lists.js';
 export const FLAG_CODES = [
   'missing_site_id',
   'missing_amount',
+  'missing_month',
+  'missing_day',
   'missing_project',
   'missing_category',
-  'missing_driver'
+  'missing_item_description',
+  'missing_area',
+  'missing_driver',
+  'missing_city',
+  'missing_start_km',
+  'missing_end_km',
+  'missing_karta_amount',
+  'missing_team'
 ];
+
+/**
+ * Every cell that must carry SOMETHING before a row can be confirmed.
+ *
+ * The project owner's rule is "all fields filled except the comment", and this
+ * table is that rule written down. Mirrored by REQUIRED_ENTRY_FIELDS in
+ * Validate.gs — when one moves, the other moves with it.
+ *
+ * Three fields are deliberately NOT here:
+ *
+ *   - `comment` — excluded by the rule itself. It is the one optional cell.
+ *   - `job_code` and `period` — these stay amber (WARNING_CODES). 6.3 is
+ *     explicit that a site missing from the Site→JC lookup still confirms, and
+ *     both of these are filled FROM that lookup (rule 14). Flagging them would
+ *     make a coordinator unable to settle a real expense because an admin has
+ *     not imported the site yet — a wall he cannot climb himself.
+ *
+ * `site_id` and the amount are checked by hand below rather than listed here,
+ * because neither is a plain "is it blank" test.
+ */
+const REQUIRED_TEXT_FIELDS = {
+  expense: [
+    ['month', 'missing_month'],
+    ['day', 'missing_day'],
+    ['project', 'missing_project'],
+    ['category', 'missing_category'],
+    ['item_description', 'missing_item_description'],
+    ['team', 'missing_team']
+  ],
+  fuel: [
+    ['month', 'missing_month'],
+    ['day', 'missing_day'],
+    ['project', 'missing_project'],
+    ['area', 'missing_area'],
+    ['driver', 'missing_driver'],
+    ['city', 'missing_city'],
+    ['team', 'missing_team']
+  ]
+};
+
+/**
+ * Numeric cells that must be filled but MAY hold zero.
+ *
+ * This is the difference between them and `amount` / `fuel_amount`, where zero
+ * counts as missing (6.3): an expense that settles nothing is a mistake, but a
+ * trip with no karta spend and an odometer that genuinely reads 0 are both real
+ * facts. So the test here is "did the coordinator type anything", not "is it
+ * greater than zero".
+ */
+const REQUIRED_NUMBER_FIELDS = {
+  expense: [],
+  fuel: [
+    ['start_km', 'missing_start_km'],
+    ['end_km', 'missing_end_km'],
+    ['karta_amount', 'missing_karta_amount']
+  ]
+};
 
 /** Codes that are shown but never block. */
 export const WARNING_CODES = [
@@ -147,13 +213,15 @@ export function validateRow(kind, row, siteJcMap, listOptions) {
   // not a zero-value fact.
   if (amount === null || amount === 0) flag('missing_amount', amountField);
 
-  if (!text(row.project)) flag('missing_project', 'project');
+  /* --- everything else the rule says must be filled (except comment) --- */
+  (REQUIRED_TEXT_FIELDS[kind] || []).forEach(function (entry) {
+    if (!text(row[entry[0]])) flag(entry[1], entry[0]);
+  });
 
-  if (isFuel) {
-    if (!text(row.driver)) flag('missing_driver', 'driver');
-  } else {
-    if (!text(row.category)) flag('missing_category', 'category');
-  }
+  // Filled, but zero is a legitimate value — see REQUIRED_NUMBER_FIELDS.
+  (REQUIRED_NUMBER_FIELDS[kind] || []).forEach(function (entry) {
+    if (toNumber(row[entry[0]]) === null) flag(entry[1], entry[0]);
+  });
 
   /* --- the lookup: warnings only --- */
   checkSiteAgainstLookup(siteCell, row, siteJcMap, warn);

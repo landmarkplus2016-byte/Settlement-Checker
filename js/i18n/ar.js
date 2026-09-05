@@ -126,6 +126,17 @@ export const ar = {
 
   settlement_new: 'تسوية جديدة',
   settlement_created: 'تم إنشاء التسوية.',
+
+  /* Deleting a settlement — offered only while nothing in it has left the
+   * coordinator's hands (delete_settlement, rule 9.3). */
+  settlement_delete_title: 'حذف هذه التسوية',
+  settlement_delete_body: 'هل تريد حذف {settlement} و{count} بنداً بداخلها؟ لا يمكن التراجع عن ذلك.',
+  settlement_delete_note: 'لا تُحذف إلا التسوية التي ما زالت كل بنودها مسودات أو مُرجَعة. وبمجرد تأكيد أي بند يصبح لدى المدير ويبقى.',
+  settlement_deleted: 'تم حذف {settlement} وبنودها.',
+  err_msg_settlement_not_empty: 'تحتوي هذه التسوية على بنود لدى المدير أو مُصدَّرة بالفعل، فلا يمكن حذفها. أعد تحميل الصفحة لترى حالتها الآن.',
+  err_msg_settlement_not_found: 'لم تعد هذه التسوية موجودة. أعد تحميل الصفحة.',
+  err_msg_tracking_no_taken: 'يوجد لديك تسوية أخرى تستخدم رقم التتبع نفسه. لكل دفعة رقمها الخاص، وإلا خرج ملفان للمالية بالرقم ذاته.',
+  err_msg_tracking_no_same_for_both: 'يجب أن يختلف رقم تتبع القديم عن الجديد — فهما مساران منفصلان.',
   settlement_pick_month: 'اختر الشهر…',
   settlement_month_placeholder: 'مثال: Aug',
   settlement_no_months: 'لم تُضبط الشهور بعد، فاكتب التسمية التي تستخدمها — مثال: Aug.',
@@ -279,6 +290,15 @@ export const ar = {
   valid_missing_project: 'لا يوجد مشروع',
   valid_missing_category: 'لا يوجد تصنيف',
   valid_missing_driver: 'لا يوجد سائق',
+  valid_missing_month: 'لا يوجد شهر',
+  valid_missing_day: 'لا يوجد يوم',
+  valid_missing_item_description: 'لا يوجد وصف',
+  valid_missing_area: 'لا توجد منطقة',
+  valid_missing_city: 'لا توجد مدينة',
+  valid_missing_start_km: 'لا يوجد عداد قبل',
+  valid_missing_end_km: 'لا يوجد عداد بعد',
+  valid_missing_karta_amount: 'لا يوجد مبلغ كارتة',
+  valid_missing_team: 'لا يوجد فريق',
   valid_unknown_site: 'الموقع غير موجود في الجدول',
   valid_missing_job_code: 'لا يوجد كود عمل',
   valid_missing_period: 'لا توجد فترة — هذا الصف لا يُسوّى على أي رقم تتبع',
@@ -533,13 +553,14 @@ export const ar = {
 
   export_already_exported: '{count} من البنود هنا صُدِّرت بالفعل. تظهر لأن «إخفاء المُصدَّر سابقاً» متوقف، ولن تُصدَّر مرة أخرى.',
   export_claimable_zero: 'كل ما هنا صُدِّر بالفعل. يمكنك تنزيل الملف، لكن لا يوجد ما يُعلَّم.',
-  export_tracking_conflict: 'هذه البنود تؤول إلى أكثر من رقم تتبع: {numbers}. راجع التسويات قبل إرسال هذا الملف.',
-  export_tracking_conflict_split: 'هذه البنود تؤول إلى أكثر من رقم تتبع: {numbers}، لأن شهر هذا الفريق يضم أكثر من تسوية. اختر تسوية من الأعلى لإرسالها كملفات منفصلة.',
+  export_tracking_conflict: 'هذه البنود تؤول إلى أكثر من رقم تتبع: {numbers}. التصدير موقوف — لا يحمل الملف الواحد إلا رقماً واحداً في تذييله، وبمجرد تصدير هذه الصفوف تُقفل.',
+  export_tracking_conflict_split: 'هذه البنود تؤول إلى أكثر من رقم تتبع: {numbers}، لأن شهر هذا الفريق يضم أكثر من تسوية. التصدير موقوف — اختر تسوية من الأعلى لإرسالها كملفات منفصلة، كل منها برقمها.',
   export_settlement_scoped: 'هذا الملف يغطي تسوية واحدة فقط: {settlement}. البنود التي تخص تسوية أخرى في الفريق والشهر نفسه ليست فيه.',
   export_no_tracking: 'هذه التسويات بلا رقم تتبع لهذه الفترة: {settlements}. التصدير موقوف حتى يضبطه المنسّق — سيخرج التذييل فارغاً ولا يمكن تغيير الرقم بعد ذلك.',
   export_sweep_incomplete: 'تعذّرت قراءة بعض المنسّقين، فهذا الملف ناقص: {names}. التصدير موقوف حتى يُعالَج ذلك.',
 
   export_blocked_tracking: 'إحدى التسويات في هذه الدفعة بلا رقم تتبع لهذه الفترة.',
+  export_blocked_tracking_conflict: 'هذه الدفعة تضم أكثر من رقم تتبع. ضيّقها إلى تسوية واحدة.',
   export_blocked_sweep: 'تعذّرت قراءة جدول أحد المنسّقين، فهذه الدفعة ناقصة.',
 
   /* سجل ما خرج بالفعل (7.3). */
@@ -646,6 +667,7 @@ export const ar = {
   err_msg_invalid_export_filter: 'اختر الفريق والشهر والفترة قبل التصدير.',
   err_msg_invalid_report_type: 'اختر «عادي» أو «حسب الموقع».',
   err_msg_tracking_no_missing: 'إحدى التسويات في هذه الدفعة بلا رقم تتبع لهذه الفترة. يجب ضبطه قبل تصدير هذه البنود.',
+  err_msg_tracking_no_conflict: 'هذه البنود تُسوَّى مقابل أكثر من رقم تتبع، والملف الواحد لا يحمل إلا رقماً واحداً. ضيّق التصدير إلى تسوية واحدة وأرسل كل دفعة برقمها.',
   err_msg_coordinator_sheet_unreadable: 'تعذّرت قراءة جدول أحد المنسّقين، فكانت الدفعة ستخرج ناقصة. لم يُصدَّر شيء. أبلغ المطوّر.',
   err_msg_export_too_large: 'عدد البنود أكبر مما يسمح به التصدير الواحد. ضيّقه إلى فريق وشهر واحد وحاول مجدداً.',
   err_msg_invalid_limit: 'هذا ليس عدداً صحيحاً من البنود للعرض.',

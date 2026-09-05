@@ -163,6 +163,10 @@ var ACTIONS = {
     auth: true,
     handler: function (session, payload) { return handleUpdateSettlement(session, payload); }
   },
+  delete_settlement: {
+    auth: true,
+    handler: function (session, payload) { return handleDeleteSettlement(session, payload); }
+  },
   list_entries: {
     auth: true,
     handler: function (session, payload) { return handleListEntries(session, payload); }
