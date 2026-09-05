@@ -32,9 +32,23 @@
  *     file with two numbers in its footer. It appears only once a query has
  *     found more than one batch, because most months are one.
  *
- * Changing the REPORT TYPE does not refetch: it is a pure re-rendering of rows
- * already in hand, and an Apps Script round trip across every coordinator's
- * spreadsheet is seconds of waiting for a transform the client can do itself.
+ * ── Where the per-site file comes from ─────────────────────────────────────
+ *
+ * It is NOT a choice made up front. Generate always builds the Normal file, and
+ * the per-site file (6.4) is built afterwards from a batch in the log below —
+ * one button per exported batch.
+ *
+ * That is the order the work actually happens in: the per-site breakdown is the
+ * last step of a settlement, taken once the finance file itself has been revised
+ * and committed. Offering it as a report type beside Normal put the choice
+ * before the review, and made the two files look like alternatives when they are
+ * consecutive.
+ *
+ * It also makes the per-site file exactly the normal file, divided. It is built
+ * from `export_batch_rows` — the rows carrying that `export_batch_id` — rather
+ * than from a fresh predicate, so it cannot pick up a row the finance file did
+ * not have or miss one it did. Nothing is claimed: those rows are already
+ * `exported` and locked (rule 13), and this only reads them.
  */
 
 import { api } from '../api.js';
@@ -64,8 +78,14 @@ const LOG_LIMIT = 50;
 /**
  * The selection. `team` and `month` are required by `export_query`; `settlement`
  * is the optional narrowing to ONE batch, empty for the whole team-month.
+ *
+ * There is no report type here: this screen builds the Normal file, and the
+ * per-site one is built from the log (see the file header).
  */
-let filter = { team: '', month: '', settlement: '', report_type: 'normal', exclude_exported: true };
+let filter = { team: '', month: '', settlement: '', exclude_exported: true };
+
+/** The report this screen generates and commits. The per-site file is 6.4's. */
+const NORMAL_REPORT = 'normal';
 
 /**
  * The batches this team-month holds, merged across both periods, as
@@ -103,6 +123,9 @@ let months = [];
 /** The ExportLog, newest first (7.3). */
 let log = [];
 let logError = '';
+
+/** The batch whose per-site file is being built, so its row can say so. */
+let persiteBusy = '';
 
 /* ================================================================== *
  * Render
@@ -151,7 +174,7 @@ export function bindExportEvents() {
   const page$ = qs('#export-page');
   if (!page$) return;
 
-  filter = { team: '', month: '', settlement: '', report_type: 'normal', exclude_exported: true };
+  filter = { team: '', month: '', settlement: '', exclude_exported: true };
   periods = emptyPeriods();
   settlementOptions = [];
   generated = false;
@@ -160,6 +183,7 @@ export function bindExportEvents() {
   months = [];
   log = [];
   logError = '';
+  persiteBusy = '';
 
   page$.addEventListener('click', function (event) {
     const trigger = event.target.closest('[data-action]');
@@ -182,6 +206,7 @@ export function bindExportEvents() {
 
     if (action === 'download') return download(period);
     if (action === 'confirm-export') return confirmExport(period);
+    if (action === 'persite') return buildPerSite(trigger.dataset.batch || '');
   });
 
   page$.addEventListener('change', function (event) {
@@ -197,17 +222,6 @@ export function bindExportEvents() {
     }
 
     filter[key] = String(control.value || '');
-
-    /*
-     * The report type is a rendering choice over rows already fetched — the
-     * server's selection does not depend on it (3.7). Rebuild locally rather
-     * than making the manager wait for another sweep of every coordinator sheet.
-     */
-    if (key === 'report_type') {
-      rebuildDocuments();
-      paintResults();
-      return;
-    }
 
     /*
      * A different team or month is a different question entirely, so the
@@ -396,9 +410,8 @@ function batchCoordinator(batch) {
 /**
  * Rebuild both documents from whatever queries are in hand.
  *
- * Called after a fetch and after a report-type change — the per-site explosion
- * (6.4) happens inside buildExportDocument(), so switching to Per-site is this
- * one call and a repaint.
+ * Always the Normal report: the per-site file is built from an exported batch
+ * in the log (see the file header), not from this screen's filter.
  */
 function rebuildDocuments() {
   PERIODS.forEach(function (period) {
@@ -410,7 +423,7 @@ function rebuildDocuments() {
           period: period,
           team: filter.team,
           month: filter.month,
-          reportType: filter.report_type
+          reportType: NORMAL_REPORT
         })
       : null;
   });
@@ -568,7 +581,7 @@ function confirmExport(period) {
         month: filter.month,
         period: period,
         settlement: filter.settlement,
-        report_type: filter.report_type
+        report_type: NORMAL_REPORT
       });
 
       const rows = (data && data.row_count) || 0;
@@ -590,6 +603,58 @@ function confirmExport(period) {
       loadLog();
     }
   });
+}
+
+/**
+ * Build and download the per-site file for one already-exported batch (6.4).
+ *
+ * The last step of a settlement, and deliberately a separate act from the export
+ * itself: it happens once the finance file has been issued, on a batch that
+ * already exists. Nothing is claimed — those rows are `exported` and locked
+ * (rule 13); `export_batch_rows` only reads them.
+ *
+ * The rows come from the BATCH, not from a fresh team-month-period predicate, so
+ * the per-site file divides exactly the lines the finance file carried. Rebuilt
+ * from a predicate it could differ from it — a row approved since, or a second
+ * batch on the same team-month — and a per-site breakdown that does not add up
+ * to the file it explains is worse than none.
+ *
+ * @param {string} batchId an ExportLog batch id.
+ */
+async function buildPerSite(batchId) {
+  if (!batchId || persiteBusy) return;
+
+  persiteBusy = batchId;
+  paintLog();
+
+  try {
+    const data = await api.call('export_batch_rows', { batch_id: batchId });
+    const batch = (data && data.batch) || {};
+
+    const doc = buildExportDocument({
+      query: data,
+      period: batch.period,
+      team: batch.team,
+      month: batch.month,
+      reportType: 'persite'
+    });
+
+    if (!doc.has_rows) {
+      toastError(t('export_persite_empty'));
+      return;
+    }
+
+    if (!isXlsxAvailable()) throw new SheetError('xlsx_unavailable');
+
+    toastSuccess(t('export_downloaded', {
+      file: downloadWorkbook(documentToSheets(doc), doc.file_name, { rtl: isRtl() })
+    }));
+  } catch (err) {
+    toastError(errorMessage(err));
+  } finally {
+    persiteBusy = '';
+    paintLog();
+  }
 }
 
 /**
@@ -676,7 +741,7 @@ function paintLog() {
  * ------------------------------------------------------------------ */
 
 /**
- * Team, month, report type, exclude-exported, Generate.
+ * Team, month, settlement, exclude-exported, Generate.
  * @return {string} HTML
  */
 function renderFilters() {
@@ -690,11 +755,6 @@ function renderFilters() {
     }))}
 
     <span id="export-settlement-filter">${renderSettlementFilter()}</span>
-
-    ${renderSelect('report_type', '', [
-      { value: 'normal', label: t('export_report_normal') },
-      { value: 'persite', label: t('export_report_persite') }
-    ], true)}
 
     <label class="check-row" title="${escapeHtml(t('export_exclude_exported_hint'))}">
       <input type="checkbox" data-filter="exclude_exported"
@@ -750,19 +810,18 @@ function paintSettlementFilter() {
  * One toolbar select.
  *
  * @param {string} name a key of `filter`.
- * @param {string} placeholder already translated; '' renders no placeholder
- *        option, for a select that always has a value.
+ * @param {string} placeholder already translated; also the select's label, since
+ *        the toolbar carries no visible labels.
  * @param {Array<{value: string, label: string}>} options
- * @param {boolean} [noPlaceholder=false]
  * @return {string} HTML
  */
-function renderSelect(name, placeholder, options, noPlaceholder) {
+function renderSelect(name, placeholder, options) {
   const current = filter[name] || '';
 
   return `
     <select class="select toolbar-select" data-filter="${escapeHtml(name)}"
-            aria-label="${escapeHtml(placeholder || t('export_report_type'))}">
-      ${noPlaceholder ? '' : `<option value="">${escapeHtml(placeholder)}</option>`}
+            aria-label="${escapeHtml(placeholder)}">
+      <option value="">${escapeHtml(placeholder)}</option>
       ${options.map(function (option) {
         const selected = option.value === current ? ' selected' : '';
         return `<option value="${escapeHtml(option.value)}"${selected}>${escapeHtml(option.label)}</option>`;
@@ -1180,6 +1239,7 @@ function renderLog() {
             <th>${escapeHtml(t('col_report_type'))}</th>
             <th class="text-end">${escapeHtml(t('col_rows'))}</th>
             <th>${escapeHtml(t('col_exported_by'))}</th>
+            <th class="text-end">${escapeHtml(t('col_persite'))}</th>
           </tr>
         </thead>
         <tbody>
@@ -1222,6 +1282,22 @@ function renderLogRow(batch) {
       <td>
         <div>${escapeHtml(batchAuthor(batch))}</div>
         <div class="text-tiny text-muted num">${escapeHtml(formatDateTime(batch.exported_at))}</div>
+      </td>
+
+      <!--
+        The last step of the settlement (6.4). Offered on every batch, including
+        one already logged as per-site: the file is rebuilt from the batch's own
+        rows and nothing is claimed, so building it twice costs a download.
+      -->
+      <td class="text-end">
+        <button class="btn btn-secondary btn-sm" type="button"
+                data-action="persite" data-batch="${escapeHtml(batch.batch_id)}"
+                ${persiteBusy ? 'disabled' : ''}
+                title="${escapeHtml(t('export_persite_hint'))}">
+          ${escapeHtml(persiteBusy === batch.batch_id
+            ? t('export_persite_building')
+            : t('export_persite_build'))}
+        </button>
       </td>
     </tr>
   `;

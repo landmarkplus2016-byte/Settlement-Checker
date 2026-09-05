@@ -65,7 +65,7 @@
  * "new version available" prompt. Any string that changes will do; a date plus
  * a counter reads best in DevTools.
  */
-const APP_VERSION = '2026.09.05-6';
+const APP_VERSION = '2026.09.05-7';
 
 /** This version's cache. Anything not named this is deleted on activate. */
 const CACHE_NAME = 'settlement-checker-' + APP_VERSION;

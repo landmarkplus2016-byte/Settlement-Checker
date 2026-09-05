@@ -962,6 +962,118 @@ function handleListExportLog(session, payload) {
   };
 }
 
+/* ================================================================== *
+ * export_batch_rows
+ * ================================================================== */
+
+/**
+ * `export_batch_rows` — the entries of one already-committed batch.
+ *
+ * This is what the per-site file is built from (6.4). Per-site is the LAST step
+ * of a settlement: it happens once the finance file has been revised and issued,
+ * so the batch already exists and its rows are already stamped.
+ *
+ * It selects on `export_batch_id`, not on the team-month-period predicate the
+ * export uses, and that is the whole point. A predicate re-run later can return
+ * a different set — a row approved since, a second batch on the same team-month
+ * (rule 9) — and a per-site breakdown that does not add up to the file it
+ * explains is worse than not having one. The batch id is the only thing that
+ * names exactly the rows that went out.
+ *
+ * It WRITES NOTHING. Every row it returns is `exported` and locked (rule 13);
+ * this reads them and hands them back. `export_commit` remains the only writer
+ * of that status anywhere in the app (rule 16), and nothing here can claim, or
+ * re-claim, a row.
+ *
+ * Deactivated coordinators are not visited, exactly as the export's own sweep
+ * does not visit them — `errors` and `skipped` come back so the screen can say
+ * the file is incomplete rather than quietly dividing a short list.
+ *
+ * @param {Object} session auth context; must be a manager.
+ * @param {Object} payload { batch_id }
+ * @return {Object} { batch, expenses, fuel, header, total, claimable,
+ *                    already_exported, settlements, coordinators_visited,
+ *                    errors, skipped }
+ */
+function handleExportBatchRows(session, payload) {
+  requireManager(session);
+
+  var batchId = normalizeKey((payload || {}).batch_id);
+  if (!batchId) {
+    throw appError('validation_failed', 'invalid_export_batch', { batch_id: 'required' });
+  }
+
+  // The log row carries the team, month and period the file was issued under —
+  // the header block's own labels. Its absence means the id is not a batch.
+  var logRow = readRowByKey(openConfigSpreadsheet(), 'ExportLog', 'batch_id', batchId);
+  if (!logRow) throw appError('not_found', 'export_batch_not_found');
+
+  var wanted = batchId.toLowerCase();
+  var expenses = [];
+  var fuel = [];
+
+  var sweep = forEachCoordinator(function (userRow, ss) {
+    var settlements = readSettlementMap(ss);
+
+    for (var k = 0; k < ENTRY_KINDS.length; k++) {
+      var kind = ENTRY_KINDS[k];
+      var rows = readAllRows(ss, entrySheetName(kind));
+
+      for (var i = 0; i < rows.length; i++) {
+        var row = rows[i];
+        if (normalizeKey(row.export_batch_id).toLowerCase() !== wanted) continue;
+
+        var settlementId = normalizeKey(row.settlement_id);
+        var parent = settlements[settlementId] || missingSettlement(settlementId);
+
+        var entry = toManagerEntry(kind, row, parent, userRow);
+
+        if (kind === 'fuel') fuel.push(entry);
+        else expenses.push(entry);
+      }
+    }
+  });
+
+  // The file's own order (compareExportEntries), so the per-site file reads as
+  // the finance file does, line for line.
+  expenses.sort(compareExportEntries);
+  fuel.sort(compareExportEntries);
+
+  var total = expenses.length + fuel.length;
+
+  return {
+    batch: {
+      batch_id: batchId,
+      team: normalizeKey(logRow.team),
+      month: normalizeKey(logRow.month),
+      fiscal_year: normalizeKey(logRow.fiscal_year),
+      period: normalizePeriod(logRow.period),
+      settlement_id: normalizeKey(logRow.settlement_id),
+      report_type: normalizeKey(logRow.report_type).toLowerCase(),
+      tracking_no: normalizeKey(logRow.tracking_no)
+    },
+
+    expenses: expenses,
+    fuel: fuel,
+    header: buildExportHeader(expenses, fuel),
+
+    total: total,
+
+    /*
+     * Nothing here is claimable, ever. The fields exist so the response is the
+     * same shape `export_query` returns and the client's document builder needs
+     * no second path — and the zero is the truth: these rows are exported.
+     */
+    claimable: 0,
+    already_exported: total,
+    settlements: [],
+
+    coordinators_visited: sweep.visited,
+    errors: sweep.errors,
+    skipped: sweep.skipped
+  };
+}
+
 /**
  * Newest batch first. `exported_at` is an ISO string (rule 8), so a string
  * compare is a time compare; the batch id breaks a tie and makes the order

@@ -234,6 +234,17 @@ var ACTIONS = {
   list_export_log: {
     auth: true,
     handler: function (session, payload) { return handleListExportLog(session, payload); }
+  },
+
+  /*
+   * Also not in 3.7's two. The per-site report (6.4) is built AFTER a batch has
+   * been exported, from that batch's own rows — this is the read that fetches
+   * them. It writes nothing and can claim nothing; `export_commit` is still the
+   * only writer of `exported` (rule 16). See handleExportBatchRows().
+   */
+  export_batch_rows: {
+    auth: true,
+    handler: function (session, payload) { return handleExportBatchRows(session, payload); }
   }
 };
 

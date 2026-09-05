@@ -518,7 +518,7 @@ export const en = {
    * languages, or two managers would produce two different files for one batch.
    * See the header of js/manager/exportTemplate.js.
    */
-  export_subtitle: 'Build the finance files for one team and month — old and new, normal or per-site.',
+  export_subtitle: 'Build the finance files for one team and month — old and new. The per-site file comes afterwards, from an exported batch below.',
 
   export_pick_team: 'Choose a team…',
   export_pick_month: 'Choose a month…',
@@ -573,11 +573,17 @@ export const en = {
   export_log_empty_title: 'Nothing exported yet',
   export_log_empty_text: 'Every confirmed export appears here with its batch number, so you can see what finance has already been sent.',
 
+  export_persite_build: 'Per-site file',
+  export_persite_building: 'Building…',
+  export_persite_hint: 'Build the per-site file for this batch — the same entries, with every multi-site line divided across its sites. Nothing is exported again.',
+  export_persite_empty: 'This batch has no entries left to build a per-site file from.',
+
   col_batch: 'Batch',
   col_tracking: 'Tracking #',
   col_report_type: 'Report',
   col_rows: 'Rows',
   col_exported_by: 'Exported by',
+  col_persite: 'Per-site',
 
   /* --- routed but not yet built --- */
   screen_not_built_title: 'Not built yet',
