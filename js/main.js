@@ -21,7 +21,7 @@ import { t, getLang, setLang, errorMessage } from './i18n/i18n.js';
 import { escapeHtml, mount, qs, setMessage, setBusy } from './utils/dom.js';
 import { startRouter, setRouterSuspended } from './router.js';
 import { initAppUpdates } from './updates.js';
-import { renderBrandMark } from './components/brandMark.js';
+import { renderBrandMark, renderBrandFooter } from './components/brandMark.js';
 
 /**
  * Run the boot sequence. Safe to call again — "Try again" and "Change server
@@ -95,6 +95,8 @@ function renderSetupScreen() {
             ${escapeHtml(t('setup_connect'))}
           </button>
         </div>
+
+        ${renderBrandFooter()}
       </form>
 
       <div class="lang-toggle" id="setup-lang">
@@ -205,6 +207,8 @@ function renderBootError(err) {
             ${escapeHtml(t('setup_change_url'))}
           </button>
         </div>
+
+        ${renderBrandFooter()}
       </div>
     </div>
   `);

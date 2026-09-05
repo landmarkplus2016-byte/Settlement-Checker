@@ -13,8 +13,10 @@ export const en = {
   /* --- chrome --- */
   app_name: 'Settlement Checker',
   brand_logo_alt: 'Landmark Plus',
-  brand_name: 'Settlement',
+  brand_name: 'Settlement Checker',
   brand_tagline: 'Expense & Fuel · Ops',
+  /* {year} comes from the clock, in renderBrandFooter() — never written here. */
+  brand_copyright: 'Landmark Plus © {year}',
 
   nav_dashboard: 'Dashboard',
   nav_approvals: 'Approvals',
@@ -96,8 +98,9 @@ export const en = {
   boot_failed_subtitle: 'The app could not load its configuration. Check the connection and the Web App URL, then try again.',
 
   /* --- login --- */
-  login_title: 'Sign in',
-  login_subtitle: 'Use your Settlement Checker account.',
+  /* The card is headed by the app, not by the verb — the button says "Sign in". */
+  login_title: 'Settlement Checker',
+  login_subtitle: 'Landmark Plus — Expense & Fuel Settlement',
   login_username: 'Username',
   login_username_placeholder: 'your.username',
   login_password: 'Password',

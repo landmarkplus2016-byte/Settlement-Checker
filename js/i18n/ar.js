@@ -11,8 +11,10 @@ export const ar = {
   /* --- chrome --- */
   app_name: 'مدقق التسويات',
   brand_logo_alt: 'لاندمارك بلس',
-  brand_name: 'التسويات',
+  brand_name: 'مدقق التسويات',
   brand_tagline: 'المصروفات والوقود · العمليات',
+  /* {year} comes from the clock, in renderBrandFooter() — never written here. */
+  brand_copyright: 'لاندمارك بلس © {year}',
 
   nav_dashboard: 'الرئيسية',
   nav_approvals: 'الاعتمادات',
@@ -94,8 +96,9 @@ export const ar = {
   boot_failed_subtitle: 'لم يتمكن التطبيق من تحميل إعداداته. تحقق من الاتصال ومن رابط تطبيق الويب ثم أعد المحاولة.',
 
   /* --- login --- */
-  login_title: 'تسجيل الدخول',
-  login_subtitle: 'استخدم حسابك في مدقق التسويات.',
+  /* The card is headed by the app, not by the verb — the button says "Sign in". */
+  login_title: 'مدقق التسويات',
+  login_subtitle: 'لاندمارك بلس — تسوية المصروفات والوقود',
   login_username: 'اسم المستخدم',
   login_username_placeholder: 'اسم.المستخدم',
   login_password: 'كلمة المرور',

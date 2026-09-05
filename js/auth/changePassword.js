@@ -22,7 +22,7 @@ import { escapeHtml, qs, setMessage, setBusy } from '../utils/dom.js';
 import { sha256Hex } from '../utils/hash.js';
 import { logout } from './session.js';
 import { toastSuccess } from '../components/toast.js';
-import { renderBrandMark } from '../components/brandMark.js';
+import { renderBrandMark, renderBrandFooter } from '../components/brandMark.js';
 
 /**
  * The shortest password we will send. Length is the only strength rule we can
@@ -77,6 +77,8 @@ export function renderChangePassword() {
             ${escapeHtml(t('sign_out'))}
           </button>
         </div>
+
+        ${renderBrandFooter()}
       </form>
 
       <div class="lang-toggle" id="change-password-lang">

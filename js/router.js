@@ -24,7 +24,7 @@ import { renderLogin, bindLoginEvents } from './auth/login.js';
 import { renderChangePassword, bindChangePasswordEvents } from './auth/changePassword.js';
 
 import { renderSidebar, bindSidebarEvents } from './components/sidebar.js';
-import { renderBrandMark } from './components/brandMark.js';
+import { renderBrandMark, renderBrandFooter } from './components/brandMark.js';
 import { logout } from './auth/session.js';
 
 import { renderCoordinatorDashboard, bindCoordinatorDashboardEvents } from './coordinator/dashboard.js';
@@ -397,6 +397,8 @@ function unknownRoleScreen() {
         <button class="btn btn-primary btn-block" id="unknown-role-signout" type="button">
           ${escapeHtml(t('sign_out'))}
         </button>
+
+        ${renderBrandFooter()}
       </div>
     </div>
   `;
