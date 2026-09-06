@@ -1,0 +1,369 @@
+/**
+ * perSiteTemplate.js — the per-site file's shape (CLAUDE.md 7.4, 6.4, rule 18).
+ *
+ * The per-site file is NOT the finance file divided into the same layout. It is
+ * a flat register: one table, one row per site per cost, and nothing else — no
+ * title, no header block, no Old/New marker, no totals row, no approval footer.
+ * The finance file (exportTemplate.js) is the document that gets signed; this is
+ * the working list that gets filtered and pivoted, and everything the finance
+ * file puts *around* its table is furniture in a pivot.
+ *
+ * That is why it lives in its own file rather than as a report type of the
+ * template: the two files no longer share a layout, only their ink and their
+ * naming (both imported from exportTemplate.js, so the palette still has one
+ * home — rule 23).
+ *
+ *     Name │ Tracking# │ Date │ Site ID │ Cost/Site │ Item Description │
+ *     Comment │ Category │ Sub Category │ Coordinator │ Job Code
+ *
+ * Three things about that table are worth stating plainly, because none of them
+ * is guessable from the column names:
+ *
+ *   - **`Category` is the KIND of cost, not the coordinator's category.** It is
+ *     one of exactly three words — `Expenses`, `Fuel`, `Karta`. The system's own
+ *     category cell (Transportation, Accommodation, …) moves down to
+ *     `Sub Category`, where it is filled on expense rows and empty on the other
+ *     two, which have no such cell.
+ *   - **A fuel line becomes TWO rows per site**, one carrying its fuel share and
+ *     one carrying its karta share, because the table has a single `Cost/Site`
+ *     column and a fuel line holds two separate amounts (2.2). A karta of zero
+ *     or blank produces no Karta row — a row claiming 0.00 would be counted as a
+ *     karta claim that was never made.
+ *   - **`Item Description` and `Comment` are blank on fuel and karta rows.** The
+ *     fuel layout has no such cells, and filling them with the driver or the
+ *     area would put a name in a column finance reads as a description of a
+ *     purchase.
+ *
+ * `Name` is the team the batch went out for; `Coordinator` is the person who
+ * filed the line. On a one-team file the first column repeats, which is what
+ * makes the sheet safe to paste under another team's.
+ *
+ * Money is already divided by the time it reaches here: every row comes out of
+ * explodeRows() (6.4), so `Cost/Site` is this site's share and the rows re-sum
+ * to what the coordinator typed. KM never appears in this file at all, which is
+ * one way of keeping rule 18.
+ */
+
+import { entryDate, formatShortDate } from '../utils/dates.js';
+import { explodeRows } from '../utils/explode.js';
+import { toNumber } from '../utils/validate.js';
+import { MONEY_FORMAT, box, buildFileName, palette, solid } from './exportTemplate.js';
+
+/**
+ * The one tab. Named for what the file is, not for a kind — it holds expense,
+ * fuel and karta rows together.
+ */
+export const PER_SITE_SHEET_TITLE = 'Per Site';
+
+/**
+ * The three values of the `Category` column, and the only three.
+ *
+ * File text, deliberately untranslated for the same reason the finance file's
+ * labels are (see the header of exportTemplate.js): finance filters on these
+ * words, and they must not change with the language the manager had selected.
+ */
+const COST_CATEGORIES = {
+  expense: 'Expenses',
+  fuel: 'Fuel',
+  karta: 'Karta'
+};
+
+/**
+ * The table, in the order the finance sheet carries it.
+ *
+ * `type` works exactly as it does in the finance template: `money` gets the
+ * two-decimal format, `id` is written as text and read left-to-right, `text` is
+ * everything else. There is no `num` column here — the only number in the file
+ * is the cost.
+ */
+const COLUMNS = [
+  { key: 'name', label: 'Name', type: 'text', width: 22 },
+  { key: 'tracking_no', label: 'Tracking#', type: 'id', width: 11 },
+  { key: 'date', label: 'Date', type: 'id', width: 12 },
+  { key: 'site_id', label: 'Site ID', type: 'id', width: 14 },
+  { key: 'cost', label: 'Cost/Site', type: 'money', width: 13 },
+  { key: 'item_description', label: 'Item Description', type: 'text', width: 34 },
+  { key: 'comment', label: 'Comment', type: 'text', width: 24 },
+  { key: 'category', label: 'Category', type: 'text', width: 13 },
+  { key: 'sub_category', label: 'Sub Category', type: 'text', width: 18 },
+  { key: 'coordinator', label: 'Coordinator', type: 'text', width: 22 },
+  { key: 'job_code', label: 'Job Code', type: 'id', width: 14 }
+];
+
+/** Nothing in a cell, written rather than left undefined so it can be styled. */
+const BLANK = '';
+
+/* ================================================================== *
+ * Building the document
+ * ================================================================== */
+
+/**
+ * The per-site file for one committed batch, as a model.
+ *
+ * @param {Object} options
+ * @param {Object} options.query the `export_batch_rows` response.
+ * @param {Object} options.batch that response's own log row — the team, month,
+ *        period, fiscal year and Tracking# the batch went out under.
+ * @return {Object} the document model.
+ */
+export function buildPerSiteDocument(options) {
+  const opts = options || {};
+  const query = opts.query || {};
+  const batch = opts.batch || {};
+
+  const team = String(batch.team || '');
+
+  const rows = [].concat(
+    expenseRows(query.expenses, batch, team),
+    fuelRows(query.fuel, batch, team)
+  );
+
+  return {
+    report_type: 'persite',
+    team: team,
+    month: String(batch.month || ''),
+    period: String(batch.period || '').toLowerCase(),
+    tracking_no: String(batch.tracking_no || ''),
+    batch_id: String(batch.batch_id || ''),
+
+    columns: COLUMNS.slice(),
+    rows: rows,
+    row_count: rows.length,
+    has_rows: rows.length > 0,
+
+    file_name: buildFileName({
+      team: team,
+      period: batch.period,
+      trackingNo: batch.tracking_no,
+      month: batch.month,
+      fiscalYear: batch.fiscal_year,
+      isPerSite: true
+    })
+  };
+}
+
+/**
+ * The expense half: one row per site, carrying that site's share of the amount.
+ *
+ * @param {Array<Object>} entries from `export_batch_rows`.
+ * @param {Object} batch the log row.
+ * @param {string} team
+ * @return {Array<Object>}
+ */
+function expenseRows(entries, batch, team) {
+  return explodeRows(entries || [], 'expense').map(function (row) {
+    return costLine(row, batch, team, {
+      cost: row.amount,
+      category: COST_CATEGORIES.expense,
+
+      // The coordinator's own category (2.2) — the finance sheet's second level.
+      sub_category: row.category,
+
+      item_description: row.item_description,
+      comment: row.comment
+    });
+  });
+}
+
+/**
+ * The fuel half: one Fuel row per site, and one Karta row beside it when there
+ * is karta to claim.
+ *
+ * The two are emitted together rather than in two passes so a site's fuel and
+ * its karta sit on consecutive lines, which is how the file is read.
+ *
+ * `Item Description` and `Comment` stay blank: the fuel layout has no such
+ * cells (see the file header).
+ *
+ * @param {Array<Object>} entries from `export_batch_rows`.
+ * @param {Object} batch the log row.
+ * @param {string} team
+ * @return {Array<Object>}
+ */
+function fuelRows(entries, batch, team) {
+  const out = [];
+
+  explodeRows(entries || [], 'fuel').forEach(function (row) {
+    out.push(costLine(row, batch, team, {
+      cost: row.fuel_amount,
+      category: COST_CATEGORIES.fuel,
+      sub_category: BLANK,
+      item_description: BLANK,
+      comment: BLANK
+    }));
+
+    // Blank and zero both mean "no karta was claimed on this line". A 0.00 row
+    // would be counted as a claim in every total the file is used for.
+    const karta = toNumber(row.karta_amount);
+    if (karta === null || karta === 0) return;
+
+    out.push(costLine(row, batch, team, {
+      cost: karta,
+      category: COST_CATEGORIES.karta,
+      sub_category: BLANK,
+      item_description: BLANK,
+      comment: BLANK
+    }));
+  });
+
+  return out;
+}
+
+/**
+ * One table row, as cells in column order.
+ *
+ * @param {Object} row an exploded entry (6.4).
+ * @param {Object} batch the log row, for the fields the entry does not carry.
+ * @param {string} team
+ * @param {Object} own the four fields that differ between a cost's kinds.
+ * @return {{cells: Array<{key: string, type: string, value: *}>}}
+ */
+function costLine(row, batch, team, own) {
+  const settlement = row.settlement || {};
+
+  const values = {
+    // The team the file went out for. An entry's own team cell agrees with it —
+    // the export selected on it (rule 15) — so the batch is the simpler source.
+    name: team || row.team || BLANK,
+
+    // Resolved per row from its settlement (6.2); the batch's number is the
+    // fallback for a row whose settlement could not be read.
+    tracking_no: row.tracking_no || batch.tracking_no || BLANK,
+
+    date: formatShortDate(
+      entryDate(settlement.fiscal_year || batch.fiscal_year, row.month, row.day)
+    ),
+
+    site_id: row.site_id,
+    job_code: row.job_code,
+    cost: own.cost,
+    category: own.category,
+    sub_category: own.sub_category,
+    item_description: own.item_description,
+    comment: own.comment,
+
+    // The English name, in every language, so two managers exporting the same
+    // batch produce the same file (see the header of exportTemplate.js).
+    coordinator: (row.coordinator && row.coordinator.display_name) || BLANK
+  };
+
+  return {
+    cells: COLUMNS.map(function (column) {
+      return { key: column.key, type: column.type, value: cellValue(values[column.key], column) };
+    })
+  };
+}
+
+/**
+ * One cell's value, coerced for its column type.
+ *
+ * Money goes out as a NUMBER so finance can sum the column; a missing amount
+ * stays blank rather than becoming 0.00 (6.4 — the two are different facts).
+ *
+ * @param {*} raw
+ * @param {Object} column
+ * @return {string|number}
+ */
+function cellValue(raw, column) {
+  if (column.type === 'money') {
+    const number = toNumber(raw);
+    return (number === null) ? BLANK : number;
+  }
+
+  return (raw === null || raw === undefined) ? BLANK : String(raw);
+}
+
+/* ================================================================== *
+ * The .xlsx layout
+ * ================================================================== */
+
+/**
+ * The document as the one sheet SheetJS writes.
+ *
+ * A header row and the data, and that is the whole file:
+ *
+ *     ┌──────┬───────────┬──────┬─────────┬───────────┬─────┐
+ *     │ Name │ Tracking# │ Date │ Site ID │ Cost/Site │ …   │  header row
+ *     │ …data rows…                                        │
+ *     └──────┴───────────┴──────┴─────────┴───────────┴─────┘
+ *
+ * @param {Object} doc from buildPerSiteDocument().
+ * @return {{name: string, aoa: Array<Array>, styles: Array<Object>, rows: Array<Object>, cols: Array<Object>}}
+ */
+export function perSiteToAoa(doc) {
+  const columns = doc.columns || [];
+  const width = columns.length;
+  const ink = palette();
+
+  const aoa = [];
+  const styles = [];
+  const heights = [];
+
+  /** @param {Array} cells @return {number} the row index just written. */
+  function push(cells) {
+    const filled = new Array(width).fill(BLANK);
+    (cells || []).forEach(function (cell, index) {
+      if (index < width) filled[index] = cell;
+    });
+    aoa.push(filled);
+    return aoa.length - 1;
+  }
+
+  /** @param {number} r1 @param {number} c1 @param {number} r2 @param {number} c2 @param {Object} spec */
+  function style(r1, c1, r2, c2, spec) {
+    if (r2 < r1 || c2 < c1) return;
+    styles.push({ s: { r: r1, c: c1 }, e: { r: r2, c: c2 }, style: spec });
+  }
+
+  /* --- the header row --- */
+  const headerRow = push(columns.map(function (column) { return column.label; }));
+  heights[headerRow] = { hpt: 20 };
+
+  style(headerRow, 0, headerRow, width - 1, {
+    fill: solid(ink.navy),
+    font: { name: ink.font, sz: 9, bold: true, color: { rgb: ink.inverse } },
+    alignment: { horizontal: 'center', vertical: 'center', wrapText: true },
+    border: box(ink.navy3)
+  });
+
+  /* --- the data --- */
+  const firstDataRow = aoa.length;
+
+  doc.rows.forEach(function (row) {
+    const r = push(row.cells.map(function (cell) { return cell.value; }));
+
+    // Zebra striping only. There is no split tint here: on this file EVERY row
+    // is a divided one, so marking them would mark the whole sheet.
+    style(r, 0, r, width - 1, {
+      fill: solid(((r - firstDataRow) % 2) ? ink.surface2 : ink.surface),
+      font: { name: ink.font, sz: 10, color: { rgb: ink.textPrimary } },
+      alignment: { vertical: 'center' },
+      border: box(ink.gridLine)
+    });
+  });
+
+  const lastDataRow = aoa.length - 1;
+
+  columns.forEach(function (column, index) {
+    if (column.type !== 'money') return;
+    style(firstDataRow, index, lastDataRow, index, { numFmt: MONEY_FORMAT });
+  });
+
+  return {
+    name: PER_SITE_SHEET_TITLE,
+    aoa: aoa,
+    merges: [],
+    styles: styles,
+    rows: heights,
+    cols: columns.map(function (column) { return { wch: column.width || 12 }; })
+  };
+}
+
+/**
+ * The document as the sheet list downloadWorkbook() takes.
+ * @param {Object} doc from buildPerSiteDocument().
+ * @return {Array<Object>}
+ */
+export function perSiteDocumentToSheets(doc) {
+  return [perSiteToAoa(doc)];
+}

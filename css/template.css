@@ -175,14 +175,6 @@
  */
 .tpl-table .tpl-id { text-align: start; }
 
-/*
- * A row the per-site report divided out of a multi-site line (6.4). Tinted, not
- * boxed: on a per-site file most rows are split, and a heavy treatment would
- * make the exceptions — the whole lines — look like the anomaly.
- */
-.tpl-table tbody tr.is-split { background: var(--color-primary-subtle); }
-.tpl-table tbody tr.is-split:nth-child(even) { background: var(--color-primary-subtle); }
-
 .tpl-table tfoot td {
   background: var(--color-surface-3);
   border-block-start: 2px solid var(--color-navy);

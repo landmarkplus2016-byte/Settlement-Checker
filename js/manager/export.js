@@ -49,6 +49,10 @@
  * than from a fresh predicate, so it cannot pick up a row the finance file did
  * not have or miss one it did. Nothing is claimed: those rows are already
  * `exported` and locked (rule 13), and this only reads them.
+ *
+ * Its LAYOUT, though, is nothing like the finance file's: a single flat table
+ * with no header block and no footer, three cost kinds in one Category column.
+ * That is perSiteTemplate.js's, not exportTemplate.js's (7.4).
  */
 
 import { api } from '../api.js';
@@ -61,6 +65,7 @@ import { toastSuccess, toastError } from '../components/toast.js';
 import { renderLoading, renderLoadError, renderEmpty, renderPeriodBadge } from '../components/table.js';
 import { downloadWorkbook, isXlsxAvailable, SheetError } from '../utils/xlsx.js';
 import { buildExportDocument, documentToSheets } from './exportTemplate.js';
+import { buildPerSiteDocument, perSiteDocumentToSheets } from './perSiteTemplate.js';
 
 /** The two tracks, in the order the screen shows them. */
 const PERIODS = ['old', 'new'];
@@ -410,8 +415,8 @@ function batchCoordinator(batch) {
 /**
  * Rebuild both documents from whatever queries are in hand.
  *
- * Always the Normal report: the per-site file is built from an exported batch
- * in the log (see the file header), not from this screen's filter.
+ * Always the Normal file: the per-site one is built from an exported batch in
+ * the log, by a different builder entirely (see the file header).
  */
 function rebuildDocuments() {
   PERIODS.forEach(function (period) {
@@ -422,8 +427,7 @@ function rebuildDocuments() {
           query: state.query,
           period: period,
           team: filter.team,
-          month: filter.month,
-          reportType: NORMAL_REPORT
+          month: filter.month
         })
       : null;
   });
@@ -629,15 +633,8 @@ async function buildPerSite(batchId) {
 
   try {
     const data = await api.call('export_batch_rows', { batch_id: batchId });
-    const batch = (data && data.batch) || {};
 
-    const doc = buildExportDocument({
-      query: data,
-      period: batch.period,
-      team: batch.team,
-      month: batch.month,
-      reportType: 'persite'
-    });
+    const doc = buildPerSiteDocument({ query: data, batch: (data && data.batch) || {} });
 
     if (!doc.has_rows) {
       toastError(t('export_persite_empty'));
@@ -647,7 +644,7 @@ async function buildPerSite(batchId) {
     if (!isXlsxAvailable()) throw new SheetError('xlsx_unavailable');
 
     toastSuccess(t('export_downloaded', {
-      file: downloadWorkbook(documentToSheets(doc), doc.file_name, { rtl: isRtl() })
+      file: downloadWorkbook(perSiteDocumentToSheets(doc), doc.file_name, { rtl: isRtl() })
     }));
   } catch (err) {
     toastError(errorMessage(err));
@@ -1121,7 +1118,7 @@ function renderTemplate(sheet) {
           <tbody>
             ${shown.map(function (row) {
               return `
-                <tr${row.is_split ? ' class="is-split"' : ''}>
+                <tr>
                   ${row.cells.map(function (cell) {
                     return `<td class="${cellClass(cell.type)}">${escapeHtml(cellText(cell))}</td>`;
                   }).join('')}

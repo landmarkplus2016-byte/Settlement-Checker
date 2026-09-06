@@ -67,6 +67,32 @@ function pad2(n) {
 const MONTH_NAMES = ['jan', 'feb', 'mar', 'apr', 'may', 'jun',
                      'jul', 'aug', 'sep', 'oct', 'nov', 'dec'];
 
+/** The same twelve as `dd-mmm-yy` prints them. */
+const MONTH_LABELS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+                      'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+/**
+ * A stored `YYYY-MM-DD` as `dd-mmm-yy` — `2026-08-05` → `05-Aug-26`.
+ *
+ * The per-site finance file asks for the date in this shape (7.4). It is written
+ * as TEXT rather than as an Excel date: the day, the month label and the year
+ * reach the export from three separate cells (2.2), and a text date cannot be
+ * re-formatted into `08/05/26` by whichever locale opens the file.
+ *
+ * @param {*} value `YYYY-MM-DD`, e.g. from entryDate().
+ * @param {string} [fallback=''] shown when there is no usable date.
+ * @return {string}
+ */
+export function formatShortDate(value, fallback = '') {
+  const parts = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(value === null || value === undefined ? '' : value).trim());
+  if (!parts) return fallback;
+
+  const month = MONTH_LABELS[parseInt(parts[2], 10) - 1];
+  if (!month) return fallback;
+
+  return parts[3] + '-' + month + '-' + parts[1].slice(2);
+}
+
 /**
  * A Task Date cell from the Site→JC tracking file, as a stored `YYYY-MM-DD`.
  *

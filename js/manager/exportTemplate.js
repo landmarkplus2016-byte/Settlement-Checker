@@ -30,7 +30,7 @@
  */
 
 import { formatDate } from '../utils/dates.js';
-import { explodeRows, sumField } from '../utils/explode.js';
+import { sumField } from '../utils/explode.js';
 import { toNumber } from '../utils/validate.js';
 
 /* ------------------------------------------------------------------ *
@@ -106,16 +106,6 @@ const COLUMNS = {
   ]
 };
 
-/**
- * The per-site report's extra column (7.2).
- *
- * It exists so a reader can tell a divided row from a whole one at a glance:
- * '2/3' means this is the second of three sites a single line covered, and its
- * amount is a third of what the coordinator typed. Only the per-site report
- * carries it — the Normal report has no split rows to mark.
- */
-const SPLIT_COLUMN = { key: 'split_label', label: 'Split', type: 'id', width: 8 };
-
 /** Which kind each sheet holds, and which entry list it reads. */
 const SHEET_KINDS = [
   { key: 'expenses', kind: 'expense', source: 'expenses' },
@@ -129,15 +119,16 @@ const SHEET_KINDS = [
 /**
  * One period's file, as a model.
  *
- * The per-site explosion happens HERE rather than in the caller, so the preview
- * and the .xlsx cannot drift apart: both render this one document (6.4).
+ * Always the NORMAL report. The per-site file used to be a report type of this
+ * builder, back when it was this same layout with its multi-site lines divided;
+ * it is now a flat register with no header block and no footer at all, and lives
+ * in perSiteTemplate.js (7.4).
  *
  * @param {Object} options
  * @param {Object} options.query the `export_query` response for this period.
  * @param {string} options.period 'old' | 'new'.
  * @param {string} options.team the team's display name.
  * @param {string} options.month the month label.
- * @param {string} options.reportType 'normal' | 'persite'.
  * @return {Object} the document model — see the fields below.
  */
 export function buildExportDocument(options) {
@@ -146,7 +137,6 @@ export function buildExportDocument(options) {
   const header = query.header || {};
 
   const period = String(opts.period || '').toLowerCase();
-  const isPerSite = opts.reportType === 'persite';
 
   const trackingNo = joinValues(header.tracking_numbers);
   const account = joinValues(header.accounts);
@@ -158,14 +148,10 @@ export function buildExportDocument(options) {
   }).filter(Boolean);
 
   const sheets = SHEET_KINDS.map(function (spec) {
-    const source = query[spec.source] || [];
-    const rows = isPerSite ? explodeRows(source, spec.kind) : source.map(passThrough);
-
     return buildSheet({
       key: spec.key,
       kind: spec.kind,
-      rows: rows,
-      isPerSite: isPerSite,
+      rows: (query[spec.source] || []).map(passThrough),
       period: period,
       team: String(opts.team || ''),
       month: monthLabel,
@@ -179,7 +165,7 @@ export function buildExportDocument(options) {
 
   return {
     period: period,
-    report_type: isPerSite ? 'persite' : 'normal',
+    report_type: 'normal',
     team: String(opts.team || ''),
     month: monthLabel,
     fiscal_year: fiscalYear,
@@ -200,26 +186,22 @@ export function buildExportDocument(options) {
       period: period,
       trackingNo: trackingNo,
       month: monthLabel,
-      fiscalYear: fiscalYear,
-      isPerSite: isPerSite
+      fiscalYear: fiscalYear
     })
   };
 }
 
 /**
- * A row used as-is by the Normal report, carrying the same split fields the
- * exploded rows have so one renderer handles both (explode.js does the same for
- * a single-site line).
+ * A row as the Normal report carries it: the coordinator's line, whole.
+ *
+ * A multi-site line stays one line here — dividing it is the per-site file's job
+ * (6.4, perSiteTemplate.js), and finance signs the file the coordinator filed.
  *
  * @param {Object} row
  * @return {Object}
  */
 function passThrough(row) {
-  return Object.assign({}, row, {
-    is_split: false,
-    split_label: '',
-    source_entry_id: row.entry_id || ''
-  });
+  return Object.assign({}, row, { source_entry_id: row.entry_id || '' });
 }
 
 /**
@@ -230,7 +212,6 @@ function passThrough(row) {
  */
 function buildSheet(spec) {
   const columns = COLUMNS[spec.key].slice();
-  if (spec.isPerSite) columns.push(SPLIT_COLUMN);
 
   const moneyKeys = columns
     .filter(function (column) { return column.type === 'money'; })
@@ -244,7 +225,6 @@ function buildSheet(spec) {
       entry_id: row.entry_id || '',
       source_entry_id: row.source_entry_id || '',
       coordinator: (row.coordinator && row.coordinator.display_name) || '',
-      is_split: !!row.is_split,
       cells: columns.map(function (column) {
         return { key: column.key, type: column.type, value: cellValue(row, column) };
       })
@@ -560,18 +540,8 @@ export function sheetToAoa(sheet) {
   sheet.rows.forEach(function (row) {
     const r = push(row.cells.map(function (cell) { return cell.value; }));
 
-    /*
-     * Zebra striping, and the per-site tint over it. A divided row is tinted
-     * rather than boxed for the same reason as in the preview: on a per-site
-     * file most rows are split, so a heavy treatment would make the whole lines
-     * look like the anomaly.
-     */
-    const band = row.is_split
-      ? ink.primarySubtle
-      : (((r - firstDataRow) % 2) ? ink.surface2 : ink.surface);
-
     style(r, 0, r, width - 1, {
-      fill: solid(band),
+      fill: solid(((r - firstDataRow) % 2) ? ink.surface2 : ink.surface),
       font: { name: ink.font, sz: 10, color: { rgb: ink.textPrimary } },
       alignment: { vertical: 'center' },
       border: box(ink.gridLine)
@@ -699,13 +669,17 @@ function signatureBlocks(width) {
  * ================================================================== */
 
 /** Two decimals with thousands separators, for every money cell. */
-const MONEY_FORMAT = '#,##0.00';
+export const MONEY_FORMAT = '#,##0.00';
 
 /**
  * The palette, read from the design tokens.
+ *
+ * Exported because the per-site file (perSiteTemplate.js) is a different layout
+ * drawn in the same ink, and rule 23 allows the brand colours exactly one home.
+ *
  * @return {Object} colours as Excel's RRGGBB, plus the font family.
  */
-function palette() {
+export function palette() {
   return {
     navy: tokenColor('--color-navy', '000000'),
     navy3: tokenColor('--color-navy-3', '000000'),
@@ -720,7 +694,6 @@ function palette() {
     textMuted: tokenColor('--color-text-muted', '000000'),
 
     gridLine: tokenColor('--color-grid-line', '000000'),
-    primarySubtle: tokenColor('--color-primary-subtle', 'FFFFFF'),
 
     oldBg: tokenColor('--color-old-bg', 'FFFFFF'),
     oldFg: tokenColor('--color-old-fg', '000000'),
@@ -780,7 +753,7 @@ function readToken(name) {
  * @param {string} rgb RRGGBB
  * @return {Object}
  */
-function solid(rgb) {
+export function solid(rgb) {
   return { patternType: 'solid', fgColor: { rgb: rgb }, bgColor: { rgb: rgb } };
 }
 
@@ -789,7 +762,7 @@ function solid(rgb) {
  * @param {string} rgb RRGGBB
  * @return {Object}
  */
-function box(rgb) {
+export function box(rgb) {
   const side = { style: 'thin', color: { rgb: rgb } };
   return { top: side, bottom: side, left: side, right: side };
 }

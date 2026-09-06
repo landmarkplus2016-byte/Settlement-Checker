@@ -517,15 +517,28 @@ Per team + month, each period can produce two report types, so up to four files:
 
 Where a team's month spans several settlements (rule 9), the export screen's **settlement selector** narrows the four to one batch at a time, so each batch goes out under its own Tracking# instead of one file carrying both. The dedup is unchanged: the commit claims only what its own predicate selects, so the batches cannot overlap.
 
-## 7.2 File layout (mirrors the workbook)
+## 7.2 The finance file's layout (mirrors the workbook)
 
-Each file reproduces the two entry layouts:
+The Normal file reproduces the two entry layouts:
 
 - **Expenses Tracking** sheet: header block (Name, Account, Total) + the big **Old/New** marker; columns Month, Day, Project, Site ID, Job Code, Category, Item Description, Amount, Comment; the Arabic approval footer with **Tracking#** and date.
 - **Fuel Tracking** sheet: header (Fuel total, marker); columns Month, Day, Project, Site ID, Job Code, Start KM, End KM, Fuel, Area, Driver, City, Karta; same footer.
-- **Per-site** report type: the same two sheets, but every multi-site line is exploded per Section 6.4, with a "split" indicator column.
-
 Built client-side with xlsx-js-style from the `export_query` rows. `js/manager/exportTemplate.js` owns the header/footer construction **and the file's formatting** — fills, fonts, borders, row heights and the `#,##0.00` money format, with every colour read from `css/tokens.css` at export time so rule 23 holds inside the .xlsx too. `js/utils/xlsx.js` owns the library calls and paints the styles onto the cells.
+
+## 7.4 The per-site file is a flat register, not the template divided
+
+It used to be the two sheets above with their multi-site lines exploded. It is now **one sheet, one table, and nothing around it** — no title, no header block, no Old/New marker, no totals row, no approval footer. The finance file is the document that gets signed; the per-site file is the working list that gets filtered and pivoted, and everything the template puts *around* its table is furniture in a pivot. It lives in `js/manager/perSiteTemplate.js`, sharing only its ink and its file naming with `exportTemplate.js` (so the palette still has one home, rule 23).
+
+The columns, in order: **Name · Tracking# · Date · Site ID · Cost/Site · Item Description · Comment · Category · Sub Category · Coordinator · Job Code**.
+
+Four things about that table are not guessable from the column names:
+
+- **`Category` is the KIND of cost**, and one of exactly three words: `Expenses`, `Fuel`, `Karta`. The coordinator's own category cell (Transportation, Accommodation, …) moves down to **`Sub Category`**, filled on expense rows and empty on the other two, which have no such cell.
+- **A fuel line becomes two rows per site** — one carrying its fuel share, one its karta share — because the table has a single `Cost/Site` column and a fuel line holds two amounts (2.2). A karta of zero or blank produces **no** Karta row: a 0.00 row would be counted as a claim that was never made.
+- **`Item Description` and `Comment` are blank on fuel and karta rows.** The fuel layout has no such cells, and filling them with the driver or the area would put a name in a column finance reads as a description of a purchase.
+- **`Name` is the team**, `Coordinator` is the person who filed the line, and **`Date`** is `dd-mmm-yy` (`05-Aug-26`), written as text: the day, the month label and the year reach the export from three separate cells (2.2), and a text date cannot be re-read as `08/05/26` by whichever locale opens the file. `formatShortDate()` in `js/utils/dates.js` builds it from `entryDate()`.
+
+Everything reaching the table has already been through `explodeRows()` (6.4), so `Cost/Site` is that site's share and the rows re-sum to what the coordinator typed. KM appears nowhere in this file at all, which is one way of keeping rule 18.
 
 ## 7.3 Dedup and the log
 
@@ -676,7 +689,8 @@ settlement-checker/
       dashboard.js
       approvals.js               # renderApprovals + approve/return
       export.js                  # renderExport + query/commit
-      exportTemplate.js          # header/footer + sheet construction
+      exportTemplate.js          # the finance file: header/footer + sheet construction
+      perSiteTemplate.js         # the per-site file: one flat table (7.4)
     admin/
       teams.js  siteJc.js  users.js  lists.js
   apps-script/
