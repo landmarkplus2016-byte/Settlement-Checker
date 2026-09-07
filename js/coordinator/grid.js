@@ -30,6 +30,7 @@ import { escapeHtml, qs, qsa } from '../utils/dom.js';
 import { validateRows, toNumber, text as asText, period as asPeriod } from '../utils/validate.js';
 import { formatMoney } from '../utils/money.js';
 import { resolveSite, rowEntryDate } from './gridAutofill.js';
+import { formatShortDate, parseTypedDate } from '../utils/dates.js';
 import { canSplitByPeriod, planPeriodSplit } from './gridSplit.js';
 import { SPLIT_MONEY_FIELDS } from '../utils/explode.js';
 import { canonicalListValue } from '../utils/lists.js';
@@ -40,18 +41,23 @@ import { saveDraft, getDraft } from '../state.js';
  *
  * `type` decides the control:
  *   text   — a plain input
- *   number — an integer input (day)
+ *   date   — a day-first date that rewrites itself to `11-Aug-26` on blur
  *   money  — a decimal input, right-aligned, totalled in the footer
  *   km     — a decimal input, NOT totalled (a KM reading is a position, not a
  *            quantity; summing odometer readings is meaningless)
  *   list   — a <select> when the option list is known, a datalist-backed input
  *            when it is not (see renderListCell)
- *   period — the old/new select, whose two options are fixed and always known
+ *   period — the old/new chips (6.6.6)
+ *
+ * Nine columns on expenses and twelve on fuel, down from eleven and fourteen.
+ * `month` and `day` became the one `date`; `team` left altogether, because the
+ * settlement belongs to a team and the server stamps it onto every row it saves
+ * — a column that can only be filled in one way is a column that only offers the
+ * chance to fill it in wrongly.
  */
 const COLUMNS = {
   expense: [
-    { key: 'month',            type: 'list',   labelKey: 'col_month',    width: 86,  list: 'months' },
-    { key: 'day',              type: 'number', labelKey: 'col_day',      width: 56 },
+    { key: 'date',             type: 'date',   labelKey: 'col_date',     width: 108 },
     { key: 'project',          type: 'list',   labelKey: 'col_project',  width: 120, list: 'projects' },
     { key: 'site_id',          type: 'text',   labelKey: 'col_site_id',  width: 140, num: true },
     { key: 'job_code',         type: 'text',   labelKey: 'col_job_code', width: 130, num: true },
@@ -59,12 +65,10 @@ const COLUMNS = {
     { key: 'category',         type: 'list',   labelKey: 'col_category', width: 130, list: 'categories' },
     { key: 'item_description', type: 'text',   labelKey: 'col_item',     width: 200 },
     { key: 'amount',           type: 'money',  labelKey: 'col_amount',   width: 110 },
-    { key: 'comment',          type: 'text',   labelKey: 'col_comment',  width: 160 },
-    { key: 'team',             type: 'list',   labelKey: 'col_team',     width: 130, list: 'teams' }
+    { key: 'comment',          type: 'text',   labelKey: 'col_comment',  width: 160 }
   ],
   fuel: [
-    { key: 'month',        type: 'list',   labelKey: 'col_month',    width: 86,  list: 'months' },
-    { key: 'day',          type: 'number', labelKey: 'col_day',      width: 56 },
+    { key: 'date',         type: 'date',   labelKey: 'col_date',     width: 108 },
     { key: 'project',      type: 'list',   labelKey: 'col_project',  width: 120, list: 'projects' },
     { key: 'site_id',      type: 'text',   labelKey: 'col_site_id',  width: 140, num: true },
     { key: 'job_code',     type: 'text',   labelKey: 'col_job_code', width: 130, num: true },
@@ -75,13 +79,19 @@ const COLUMNS = {
     { key: 'area',         type: 'list',   labelKey: 'col_area',     width: 120, list: 'areas' },
     { key: 'driver',       type: 'list',   labelKey: 'col_driver',   width: 120, list: 'drivers' },
     { key: 'city',         type: 'text',   labelKey: 'col_city',     width: 110 },
-    { key: 'karta_amount', type: 'money',  labelKey: 'col_karta',    width: 105 },
-    { key: 'team',         type: 'list',   labelKey: 'col_team',     width: 130, list: 'teams' }
+    { key: 'karta_amount', type: 'money',  labelKey: 'col_karta',    width: 105 }
   ]
 };
 
-/** Carried down from the row above onto a new row (CLAUDE.md 6.6.2). */
-const CARRY_DOWN_FIELDS = ['team', 'project', 'month', 'day', 'period'];
+/**
+ * Carried down from the row above onto a new row (CLAUDE.md 6.6.2).
+ *
+ * `team` is gone from the list because it is gone from the grid, and `month` and
+ * `day` are one `date`. Carrying the date down is what makes a run of entries on
+ * one day take one keystroke each — and where the day changes, typing a bare `12`
+ * takes the month and year off the row above anyway (parseTypedDate).
+ */
+const CARRY_DOWN_FIELDS = ['project', 'date', 'period'];
 
 /**
  * How long a burst of typing is allowed to run before the localStorage mirror
@@ -106,11 +116,11 @@ let uidCounter = 0;
 /**
  * A blank row, optionally carrying values down from the row above (6.6.2).
  *
- * `defaults` fills what carry-down could not: the FIRST row of a grid has no row
- * above it, and the month it settles is not a guess — it is the settlement's own
- * month. It is a default and not a fixed value, because a settlement's month is
- * the month being settled and a line inside it may legitimately carry a
- * neighbouring month's date.
+ * `defaults` fills what carry-down could not — the FIRST row of a grid has no row
+ * above it. It is empty now that the settlement has no month to seed one from,
+ * and the date cell covers the same ground better: a bare day typed into the
+ * first row falls back to today's month and year, and every row after that to the
+ * row above's (parseTypedDate).
  *
  * @param {string} kind
  * @param {Object} [previous] the row above.
@@ -125,7 +135,11 @@ export function makeRow(kind, previous, defaults) {
     status: 'draft',
     return_note: '',
     exported: false,
-    tracking_no: null
+    tracking_no: null,
+
+    // What was typed into the date cell when it did not parse. Kept so the cell
+    // can show it back, red, rather than swallowing it (dateCellText).
+    __date_typed: ''
   };
 
   COLUMNS[kind].forEach(function (column) { row[column.key] = ''; });
@@ -175,7 +189,12 @@ function makeSplitRow(kind, source) {
     status: 'draft',
     return_note: '',
     exported: false,
-    tracking_no: null
+    tracking_no: null,
+
+    // Both halves were driven and spent on the same day, so the date copies over
+    // with everything else — including an unparsed one, so the coordinator does
+    // not lose sight of a date he still has to fix.
+    __date_typed: source.__date_typed || ''
   };
 
   COLUMNS[kind].forEach(function (column) { row[column.key] = source[column.key]; });
@@ -219,7 +238,15 @@ export function entryToRow(kind, entry) {
     status: String(entry.status || 'draft').toLowerCase(),
     return_note: entry.return_note || '',
     exported: !!entry.exported,
-    tracking_no: entry.tracking_no === undefined ? null : entry.tracking_no
+    tracking_no: entry.tracking_no === undefined ? null : entry.tracking_no,
+
+    /*
+     * Nothing unparsed can arrive from the server: `date` is stored ISO or blank
+     * (Coordinator.gs), and a LEGACY row arrives with its month + day already
+     * resolved into one. The field exists on every row so the date cell has one
+     * shape to read.
+     */
+    __date_typed: ''
   };
 
   COLUMNS[kind].forEach(function (column) {
@@ -281,8 +308,8 @@ function isRowLocked(row) {
  * downstream would warn on every row.
  *
  * @param {string} kind
- * @param {Object|null} reference { months, projects, categories, areas, drivers,
- *        teams } as settlement.js loads it.
+ * @param {Object|null} reference { projects, categories, areas, drivers } as
+ *        settlement.js loads it.
  * @return {Object} field -> Array<string>
  */
 export function listOptionsFor(kind, reference) {
@@ -302,10 +329,9 @@ export function listOptionsFor(kind, reference) {
 /**
  * Rewrite this row's list cells to the list's own spelling (6.6.4).
  *
- * The fix for the mis-cased month: a cell holding `AUG` where `Lists.months` says
- * `Aug` is the same answer written differently, and treating the two as different
- * strings is what put a value the select could not show into a row — and, for
- * `team`, into a row the export's team filter would step past.
+ * A cell holding `POC-3 ` where `Lists.projects` says `POC-3` is the same answer
+ * written differently, and treating the two as different strings is what put a
+ * value the select could not show into a row.
  *
  * Only an EXACT match ignoring case and spacing is rewritten (see utils/lists.js).
  * A value that matches nothing is left exactly as typed and picked up by
@@ -571,15 +597,16 @@ function renderJcOptions(options) {
 }
 
 /**
- * A text, number, money or KM cell.
+ * A text, date, money or KM cell.
  * @return {string} HTML
  */
 function renderInputCell(column, row, locked) {
-  const numeric = column.type === 'money' || column.type === 'km' || column.type === 'number';
+  const numeric = column.type === 'money' || column.type === 'km';
+  const isDate = column.type === 'date';
 
   const classes = [
     'grid-input',
-    (numeric || column.num) ? 'num' : '',
+    (numeric || isDate || column.num) ? 'num' : '',
     numeric ? 'is-numeric' : ''
   ].filter(Boolean).join(' ');
 
@@ -588,10 +615,28 @@ function renderInputCell(column, row, locked) {
            ${numeric ? 'inputmode="decimal"' : ''}
            data-field="${escapeHtml(column.key)}"
            data-uid="${escapeHtml(row._uid)}"
-           value="${escapeHtml(row[column.key])}"
+           value="${escapeHtml(isDate ? dateCellText(row) : row[column.key])}"
            ${locked ? 'readonly tabindex="-1"' : ''}
+           ${isDate ? `placeholder="${escapeHtml(t('grid_date_placeholder'))}"` : ''}
            aria-label="${escapeHtml(t(column.labelKey))}">
   `;
+}
+
+/**
+ * What a date cell shows.
+ *
+ * A parsed date shows as `11-Aug-26` — the rewrite-on-blur that makes day-first
+ * typing safe (decision 12). An UNPARSED one shows exactly what was typed, kept
+ * on the row as `__date_typed`: blanking it would take away the thing the
+ * coordinator has to look at to see what went wrong, and the cell is red anyway
+ * because `date` itself is empty.
+ *
+ * @param {Object} row
+ * @return {string}
+ */
+function dateCellText(row) {
+  if (row.date) return formatShortDate(row.date, '');
+  return row.__date_typed || '';
 }
 
 /**
@@ -739,16 +784,12 @@ function renderSplitButton(row) {
 }
 
 /**
- * A dropdown cell — project, category, area, driver, team.
+ * A dropdown cell — project, category, area, driver.
  *
  * Renders a real <select> when the option list is known. When it is NOT known it
  * falls back to a plain input rather than an empty select, because an empty
- * select is a cell the coordinator physically cannot fill in.
- *
- * That fallback is load-bearing right now: `list_lists` and `list_teams` are
- * manager-only (3.4), so a coordinator's client cannot read the option lists at
- * all. See the note in settlement.js. The moment the server offers them, these
- * cells become selects with no change here.
+ * select is a cell the coordinator physically cannot fill in — which is what a
+ * failed `list_lists` call leaves behind. See the note in settlement.js.
  *
  * A value already on the row that is not in the list is kept and shown — an
  * option deactivated after the row was typed must not silently vanish from it.
@@ -1085,6 +1126,40 @@ export function bindGridEvents(model, hooks = {}) {
     return model.rows.find(function (row) { return row._uid === uid; }) || null;
   };
 
+  /**
+   * Settle a date cell: parse what was typed, store the ISO, and rewrite the cell
+   * to `11-Aug-26`.
+   *
+   * That rewrite is the whole reason day-first typing is safe (decision 12) —
+   * `11-9` is read as 11 September and the coordinator SEES it as `11-Sep-26`
+   * before he moves on, so a misreading cannot sit unnoticed in a cell that still
+   * says what he typed.
+   *
+   * The parts he did not type come from the ROW ABOVE — a bare `12` after a row
+   * dated 11 August is 12 August (decision 31). The nearest row above that has a
+   * date is used, not simply the previous one, so a half-finished row in between
+   * does not reset the month back to today's.
+   *
+   * @param {Object} row
+   * @param {HTMLInputElement} control
+   */
+  const commitDateCell = function (row, control) {
+    const index = model.rows.indexOf(row);
+    let reference = '';
+
+    for (let i = index - 1; i >= 0; i--) {
+      if (model.rows[i].date) { reference = model.rows[i].date; break; }
+    }
+
+    const typed = String(control.value || '').trim();
+    const parsed = parseTypedDate(typed, reference);
+
+    row.date = parsed;
+    row.__date_typed = parsed ? '' : typed;
+
+    control.value = dateCellText(row);
+  };
+
   /*
    * `input` fires on every keystroke. It writes the model and schedules the
    * mirror, and repaints validation — but it must never touch the element that
@@ -1096,6 +1171,19 @@ export function bindGridEvents(model, hooks = {}) {
 
     const row = rowFor(control.dataset.uid);
     if (!row || isRowLocked(row)) return;
+
+    /*
+     * A date is parsed on COMMIT, not per keystroke. Typing `11-9-26` passes
+     * through `11`, `11-`, `11-9` and `11-9-2` on the way, and re-parsing each of
+     * those would flicker the row between three different days and a red flag
+     * before the coordinator had finished the date. The keystrokes are kept as
+     * typed and settled on blur — which is the rewrite that makes day-first safe.
+     */
+    if (control.dataset.field === 'date') {
+      row.__date_typed = control.value;
+      scheduleMirror();
+      return;
+    }
 
     row[control.dataset.field] = control.value;
 
@@ -1120,6 +1208,18 @@ export function bindGridEvents(model, hooks = {}) {
     // The period cell is chips, not a control with a value — it commits through
     // the click handler below and must not be overwritten by a stray `change`.
     if (field === 'period') return;
+
+    if (field === 'date') {
+      commitDateCell(row, control);
+
+      if (typeof hooks.onCellCommit === 'function') {
+        hooks.onCellCommit(row, field, row.date, controller);
+      }
+
+      flushMirror();
+      revalidate();
+      return;
+    }
 
     row[field] = control.value;
 

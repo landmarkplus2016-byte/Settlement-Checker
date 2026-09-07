@@ -108,6 +108,48 @@ function getColumnIndex(ss, name, column) {
   return getHeaders(ss, name).indexOf(column);
 }
 
+/**
+ * Make sure a tab carries every column in `columns`, appending any that are
+ * missing to the RIGHT of the header row.
+ *
+ * Appending is the whole point: every reader here maps a row by its header
+ * (readAllRows, openRowBlock), so a column's position carries no meaning, and
+ * adding one at the end cannot shift a single existing cell. That is what lets
+ * the app grow a tab it does not own the layout of — the owner is the only
+ * person with sheet access (rule 3), and asking him to add columns by hand
+ * across every coordinator spreadsheet is how a deploy half-lands.
+ *
+ * @param {GoogleAppsScript.Spreadsheet.Spreadsheet} ss
+ * @param {string} name tab name.
+ * @param {Array<string>} columns column keys the caller needs to exist.
+ * @return {Array<string>} the tab's headers after any addition.
+ */
+function ensureColumns(ss, name, columns) {
+  var sheet = getSheet(ss, name);
+  var headers = getHeaders(ss, name);
+  var wanted = columns || [];
+  var missing = [];
+
+  for (var i = 0; i < wanted.length; i++) {
+    var key = wanted[i];
+    if (!key) continue;
+    if (headers.indexOf(key) !== -1) continue;
+    if (missing.indexOf(key) !== -1) continue;
+    missing.push(key);
+  }
+
+  if (!missing.length) return headers;
+
+  var needed = headers.length + missing.length;
+  var have = sheet.getMaxColumns();
+  if (needed > have) sheet.insertColumnsAfter(have, needed - have);
+
+  sheet.getRange(1, headers.length + 1, 1, missing.length).setValues([missing]);
+
+  delete __headerCache[ss.getId() + '::' + name];
+  return getHeaders(ss, name);
+}
+
 /* ------------------------------------------------------------------ *
  * Reading
  * ------------------------------------------------------------------ */

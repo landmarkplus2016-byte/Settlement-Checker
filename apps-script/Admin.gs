@@ -40,6 +40,25 @@ var LIST_NAMES = ['projects', 'categories', 'areas', 'drivers', 'months'];
 /** Ceiling on one bulk_import_site_jc call, so a huge paste cannot time out. */
 var MAX_BULK_SITE_JC_ROWS = 10000;
 
+/**
+ * The three columns Teams grew when the settlement moved from a month to a team:
+ * `code` is the Latin stub that spells a settlement id (`S-MS-01`) and a batch id
+ * (`EXP-MA-01-NEW-02`), and the two counters are the running sequences those ids
+ * and the tracking numbers are issued from. They are created on first read
+ * (getTeamsRegistry) rather than typed in by hand — the owner is the only person
+ * with sheet access, and a half-added column is a deploy that half-lands.
+ */
+var TEAM_EXTRA_COLUMNS = ['code', 'next_tracking_no', 'next_settlement_no'];
+
+/** The counters allocateTeamNumber() is allowed to issue from. */
+var TEAM_COUNTER_FIELDS = ['next_tracking_no', 'next_settlement_no'];
+
+/**
+ * A team code. Latin and short so an id stays LTR in a file name and a cell
+ * (8.1) — the team names themselves are Arabic.
+ */
+var TEAM_CODE_PATTERN = /^[A-Z0-9]{2,4}$/;
+
 /* Per-request caches (CLAUDE.md 2.4). Apps Script gives each request a fresh
  * global scope, so these need no cross-request invalidation — only the
  * invalidate* calls after a write within the same request. */
@@ -62,7 +81,9 @@ var __entryListCache = null;
  */
 function getTeamsRegistry() {
   if (__teamsCache) return __teamsCache;
-  __teamsCache = readAllRows(openConfigSpreadsheet(), 'Teams');
+  var ss = openConfigSpreadsheet();
+  ensureColumns(ss, 'Teams', TEAM_EXTRA_COLUMNS);
+  __teamsCache = readAllRows(ss, 'Teams');
   return __teamsCache;
 }
 
@@ -820,18 +841,130 @@ function assertNotLastManager(userId) {
  * ================================================================== */
 
 /**
+ * A counter cell as the number it will next issue. Blank, junk, or anything
+ * below 1 reads as 1: a team the owner has not typed a starting number for yet
+ * simply starts at one, which is the right answer for a team that has never
+ * settled and a visible one for a team that has (he corrects it on Admin →
+ * Teams, and the number he types is the next one out).
+ *
+ * @param {*} v
+ * @return {number} an integer >= 1.
+ */
+function teamCounterValue(v) {
+  var n = parseInt(normalizeKey(v), 10);
+  if (!isFinite(n) || n < 1) return 1;
+  return n;
+}
+
+/**
+ * A team code as it is stored and compared: upper-case, trimmed.
+ * @param {*} v
+ * @return {string}
+ */
+function normalizeTeamCode(v) {
+  return normalizeKey(v).toUpperCase();
+}
+
+/**
+ * Validate a team code and return its stored form.
+ * @param {*} v
+ * @return {string}
+ * @throws {Object} appError('validation_failed') when it is empty or malformed.
+ */
+function requireTeamCode(v) {
+  var code = normalizeTeamCode(v);
+  if (!code) throw appError('validation_failed', 'invalid_team', { code: 'required' });
+  if (!TEAM_CODE_PATTERN.test(code)) {
+    throw appError('validation_failed', 'invalid_team', { code: 'invalid_format' });
+  }
+  return code;
+}
+
+/**
+ * Refuse a code another ACTIVE team already holds. Scope is deliberately the
+ * active teams: an inactive team keeps its code so its old settlement ids stay
+ * readable, but it must not stop a live team taking the obvious two letters.
+ *
+ * @param {Array<Object>} rows every raw Teams row.
+ * @param {string} code already normalized.
+ * @param {string} exceptTeamId the row being written, or '' when creating.
+ */
+function assertTeamCodeFree(rows, code, exceptTeamId) {
+  for (var i = 0; i < rows.length; i++) {
+    if (normalizeKey(rows[i].team_id) === exceptTeamId) continue;
+    if (!normalizeBoolean(rows[i].active)) continue;
+    if (normalizeTeamCode(rows[i].code) === code) {
+      throw appError('conflict', 'team_code_taken', { code: 'already_exists' });
+    }
+  }
+}
+
+/**
+ * Issue the next number from one of a team's counters and move it on.
+ *
+ * This is the one allocator behind both a settlement id (`S-MS-01`) and a
+ * tracking number, and it replaces the old per-coordinator findTrackingClash:
+ * the counter lives on the shared config spreadsheet, so two coordinators
+ * settling for the same team draw from the same sequence — something a check
+ * that could only see one coordinator's own sheet could never do.
+ *
+ * Read-return-increment happens under the script lock, which is re-entrant, so a
+ * handler that is already inside its own locked block (confirm_track) may call
+ * this without deadlocking or dropping the lock early.
+ *
+ * @param {string} teamId
+ * @param {string} field one of TEAM_COUNTER_FIELDS.
+ * @return {number} the number just issued.
+ */
+function allocateTeamNumber(teamId, field) {
+  if (TEAM_COUNTER_FIELDS.indexOf(field) === -1) {
+    throw appError('server_error', 'unknown_team_counter: ' + field);
+  }
+
+  var id = normalizeKey(teamId);
+  if (!id) throw appError('validation_failed', 'invalid_team', { team_id: 'required' });
+
+  return withScriptLock(function () {
+    var ss = openConfigSpreadsheet();
+    ensureColumns(ss, 'Teams', TEAM_EXTRA_COLUMNS);
+
+    var row = readRowByKey(ss, 'Teams', 'team_id', id);
+    if (!row) throw appError('not_found', 'team_not_found');
+
+    var issued = teamCounterValue(row[field]);
+    var patch = {};
+    patch[field] = issued + 1;
+    updateRowAt(ss, 'Teams', row._row, patch);
+
+    invalidateTeamsRegistry();
+    return issued;
+  });
+}
+
+/**
  * @param {Object} row a raw Teams row.
+ * @param {boolean=} includeCounters managers only — the counters are the id and
+ *        tracking sequences, and a coordinator reads this tab only for the
+ *        grid's team names.
  * @return {Object}
  */
-function toPublicTeam(row) {
-  return {
+function toPublicTeam(row, includeCounters) {
+  var team = {
     team_id: normalizeKey(row.team_id),
     name: normalizeKey(row.name),
+    code: normalizeTeamCode(row.code),
     active: normalizeBoolean(row.active),
     created_at: toStampString(row.created_at),
     updated_at: toStampString(row.updated_at),
     updated_by: normalizeKey(row.updated_by)
   };
+
+  if (includeCounters) {
+    team.next_tracking_no = teamCounterValue(row.next_tracking_no);
+    team.next_settlement_no = teamCounterValue(row.next_settlement_no);
+  }
+
+  return team;
 }
 
 /**
@@ -848,7 +981,8 @@ function handleListTeams(session, payload) {
   requireAnySession(session);
 
   var body = payload || {};
-  var includeInactive = isManagerSession(session)
+  var isManager = isManagerSession(session);
+  var includeInactive = isManager
     ? ((body.include_inactive === undefined) ? true : normalizeBoolean(body.include_inactive))
     : false;
 
@@ -856,7 +990,7 @@ function handleListTeams(session, payload) {
   var teams = [];
 
   for (var i = 0; i < rows.length; i++) {
-    var team = toPublicTeam(rows[i]);
+    var team = toPublicTeam(rows[i], isManager);
     if (!team.team_id) continue;
     if (!includeInactive && !team.active) continue;
     teams.push(team);
@@ -869,19 +1003,29 @@ function handleListTeams(session, payload) {
 
 /**
  * `create_team` (3.4).
+ *
+ * `code` is required, not optional: it is what a settlement id is spelled from,
+ * so a team without one cannot hold a settlement at all. The counters start at 1
+ * and the owner corrects them on Admin → Teams for a team that has settled
+ * before — that is the only place the numbers already issued are known.
+ *
  * @param {Object} session auth context.
- * @param {Object} payload { name }
+ * @param {Object} payload { name, code }
  * @return {Object} { team }
  */
 function handleCreateTeam(session, payload) {
   requireManager(session);
 
-  var name = normalizeKey((payload || {}).name);
+  var body = payload || {};
+  var name = normalizeKey(body.name);
   if (!name) throw appError('validation_failed', 'invalid_team', { name: 'required' });
   if (name.length > 100) throw appError('validation_failed', 'invalid_team', { name: 'too_long' });
 
+  var code = requireTeamCode(body.code);
+
   var created = withScriptLock(function () {
     var ss = openConfigSpreadsheet();
+    ensureColumns(ss, 'Teams', TEAM_EXTRA_COLUMNS);
 
     // Re-read under the lock — this is both the duplicate check and the id
     // allocation, and both must see the same snapshot.
@@ -893,12 +1037,16 @@ function handleCreateTeam(session, payload) {
         throw appError('conflict', 'team_name_taken', { name: 'already_exists' });
       }
     }
+    assertTeamCodeFree(rows, code, '');
 
     var stamp = nowIso();
     var written = appendRow(ss, 'Teams', {
       team_id: nextId('T-', ids),
       name: name,
+      code: code,
       active: 'TRUE',
+      next_tracking_no: 1,
+      next_settlement_no: 1,
       created_at: stamp,
       updated_at: stamp,
       updated_by: session.user_id
@@ -908,15 +1056,23 @@ function handleCreateTeam(session, payload) {
     return written;
   });
 
-  return { team: toPublicTeam(created) };
+  return { team: toPublicTeam(created, true) };
 }
 
 /**
- * `update_team` (3.4) — rename and/or toggle `active`. There is no delete_team,
- * by design: entries already filed under a team must keep resolving its name.
+ * `update_team` (3.4) — rename, recode, set a counter, and/or toggle `active`.
+ * There is no delete_team, by design: entries already filed under a team must
+ * keep resolving its name.
+ *
+ * The counters are writable here because Admin → Teams is where the owner seeds
+ * them after deploy, from the highest number each team has already been issued.
+ * Setting one is a plain overwrite — the next allocation issues exactly what he
+ * typed — so it is also how he steps a sequence past a number issued outside the
+ * app. Nothing here validates against history: only he knows it.
  *
  * @param {Object} session auth context.
- * @param {Object} payload { team_id, name?, active? }
+ * @param {Object} payload { team_id, name?, code?, active?, next_tracking_no?,
+ *        next_settlement_no? }
  * @return {Object} { team, updated: [keys] }
  */
 function handleUpdateTeam(session, payload) {
@@ -949,13 +1105,43 @@ function handleUpdateTeam(session, payload) {
     if (name !== normalizeKey(current.name)) patch.name = name;
   }
 
+  if (hasField(body, 'code')) {
+    var code = requireTeamCode(body.code);
+    assertTeamCodeFree(rows, code, teamId);
+    if (code !== normalizeTeamCode(current.code)) patch.code = code;
+  }
+
+  for (var c = 0; c < TEAM_COUNTER_FIELDS.length; c++) {
+    var field = TEAM_COUNTER_FIELDS[c];
+    if (!hasField(body, field)) continue;
+
+    var raw = normalizeKey(body[field]);
+    if (!/^\d+$/.test(raw) || parseInt(raw, 10) < 1) {
+      var counterError = {};
+      counterError[field] = 'invalid_number';
+      throw appError('validation_failed', 'invalid_team', counterError);
+    }
+
+    var next = parseInt(raw, 10);
+    if (next !== teamCounterValue(current[field])) patch[field] = next;
+  }
+
   if (hasField(body, 'active')) {
     var active = normalizeBoolean(body.active);
-    if (active !== normalizeBoolean(current.active)) patch.active = active ? 'TRUE' : 'FALSE';
+    if (active !== normalizeBoolean(current.active)) {
+      // Codes are unique among ACTIVE teams, so bringing one back is the other
+      // moment the check has to run — its code was allowed to sit unused while
+      // it was off, and a live team may have taken it since.
+      if (active) {
+        var reviving = hasField(patch, 'code') ? patch.code : normalizeTeamCode(current.code);
+        if (reviving) assertTeamCodeFree(rows, reviving, teamId);
+      }
+      patch.active = active ? 'TRUE' : 'FALSE';
+    }
   }
 
   if (!Object.keys(patch).length) {
-    return { team: toPublicTeam(current), updated: [] };
+    return { team: toPublicTeam(current, true), updated: [] };
   }
 
   var applied = Object.keys(patch);
@@ -969,7 +1155,7 @@ function handleUpdateTeam(session, payload) {
     return written;
   });
 
-  return { team: toPublicTeam(result), updated: applied };
+  return { team: toPublicTeam(result, true), updated: applied };
 }
 
 /* ================================================================== *

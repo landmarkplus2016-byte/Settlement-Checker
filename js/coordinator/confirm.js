@@ -54,9 +54,17 @@ const CONFIRMABLE_STATUSES = ['draft', 'returned'];
 /**
  * Is one track ready to be confirmed?
  *
- * Mirrors what `confirm_track` will decide (3.5, 6.3): the period's Tracking#
- * must be set, and no FLAG may remain on the rows it would move. Warnings are
- * not consulted — an unknown site still confirms.
+ * Mirrors what `confirm_track` will decide (3.5, 6.3): the settlement must have
+ * a TEAM, and no FLAG may remain on the rows it would move. Warnings are not
+ * consulted — an unknown site still confirms.
+ *
+ * **The Tracking# is no longer a precondition — it is a result.** Confirm issues
+ * it from the team's counter (decision 6), so a track without one is the normal
+ * state of a track nobody has confirmed yet, and refusing on it meant a
+ * coordinator could not hand over finished work until finance had rung back with
+ * a number. What replaced it is the team, which is a thing he can actually fix:
+ * the counter belongs to the team, so a settlement without one has nothing to
+ * draw from. Only a legacy settlement can be in that state (decision 30).
  *
  * The rows it would move are the draft and returned rows of that period, across
  * both grids (CONFIRMABLE_STATUSES). Rows already confirmed or approved belong
@@ -69,7 +77,8 @@ const CONFIRMABLE_STATUSES = ['draft', 'returned'];
  *           flaggedCount: number, trackingNo: number|null}}
  */
 export function trackReadiness(page, period) {
-  const trackingNo = toNumber(page.settlement()[period + '_tracking_no']);
+  const settlement = page.settlement();
+  const trackingNo = toNumber(settlement[period + '_tracking_no']);
 
   let pendingCount = 0;
   let flaggedCount = 0;
@@ -89,7 +98,7 @@ export function trackReadiness(page, period) {
   });
 
   let reason = '';
-  if (trackingNo === null) reason = 'tracking';
+  if (!settlement.team_id) reason = 'team';
   else if (!pendingCount) reason = 'nothing';
   else if (flaggedCount) reason = 'flags';
 
@@ -215,6 +224,15 @@ export async function runConfirm(page, period) {
     }));
 
     /*
+     * The number this track will carry from now on, said out loud the once. It
+     * was issued by this very call (decision 6), so it is news — and the whole
+     * cutover check is "does the number that came back match the counter".
+     */
+    if (result.tracking_no_issued) {
+      showToast(t('confirm_tracking_issued', { tracking: result.tracking_no }), 'info', 6000);
+    }
+
+    /*
      * Rows with no period are routed to neither Tracking# (6.2), so the server
      * leaves them where they are and counts them. They are easy to overlook —
      * they are usually the rows whose site was missing from the lookup — so they
@@ -244,15 +262,16 @@ export async function runConfirm(page, period) {
 function refuse(page, period, readiness) {
   const periodLabel = t('period_' + period);
 
-  if (readiness.reason === 'tracking') {
+  /*
+   * Only a legacy settlement reaches this — one created before a settlement
+   * belonged to a team (decision 30). It cannot confirm because the Tracking# it
+   * would be issued comes out of a team's counter and it has no team.
+   */
+  if (readiness.reason === 'team') {
     openModal({
-      title: t('confirm_needs_tracking_title'),
+      title: t('confirm_needs_team_title'),
       cancelLabel: t('close'),
-      bodyHtml: `<p class="text-small text-secondary">${escapeHtml(t('confirm_needs_tracking', { period: periodLabel }))}</p>`,
-      onOpen: function () {
-        const input = document.getElementById('tracking-' + period);
-        if (input) input.focus();
-      }
+      bodyHtml: `<p class="text-small text-secondary">${escapeHtml(t('confirm_needs_team'))}</p>`
     });
     return;
   }
@@ -306,7 +325,9 @@ function askToConfirm(page, period, readiness) {
           <div class="confirm-track-line">
             <span class="badge badge-${period}">${escapeHtml(t('period_' + period))}</span>
             <span class="text-small">${escapeHtml(t('col_' + period + '_track'))}</span>
-            <span class="num text-bold">${escapeHtml(readiness.trackingNo)}</span>
+            ${readiness.trackingNo === null
+              ? `<span class="text-muted">${escapeHtml(t('tracking_will_be_issued'))}</span>`
+              : `<span class="num text-bold">#${escapeHtml(readiness.trackingNo)}</span>`}
           </div>
 
           <p class="text-small text-muted">${escapeHtml(t('confirm_dialog_note'))}</p>
@@ -380,11 +401,11 @@ function reportConfirmFailure(err, period) {
     return;
   }
 
-  if (message === 'tracking_no_required') {
+  if (message === 'settlement_team_required') {
     openModal({
-      title: t('confirm_needs_tracking_title'),
+      title: t('confirm_needs_team_title'),
       cancelLabel: t('close'),
-      bodyHtml: `<p class="text-small text-secondary">${escapeHtml(t('confirm_needs_tracking', { period: t('period_' + period) }))}</p>`
+      bodyHtml: `<p class="text-small text-secondary">${escapeHtml(t('confirm_needs_team'))}</p>`
     });
     return;
   }

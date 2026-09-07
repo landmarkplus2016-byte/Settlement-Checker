@@ -1,10 +1,9 @@
 /**
  * dashboard.js (coordinator) — "his settlements" (CLAUDE.md 5.1).
  *
- * One row per settlement — a month may hold several, one per team submitting
- * against it — each carrying an account and the TWO
- * independent tracking numbers, with an Old and a New status that move
- * separately (rules 9 and 10). Every row opens its grid at
+ * One row per settlement — a team may hold several open at once — each carrying
+ * an account and the TWO independent tracking numbers, with an Old and a New
+ * status that move separately (rules 9 and 10). Every row opens its grid at
  * `#/settlement/<id>` — this is the only way into the entry screen.
  *
  * The stat tiles are derived from the same `get_my_settlements` roll-up rather
@@ -25,11 +24,12 @@ import { clearDraft } from '../state.js';
 let settlements = [];
 
 /**
- * `Lists.months`, fetched the first time the New-settlement dialog opens and
- * kept for the life of the screen. The month must be one of these — the server
- * rejects anything else as `unknown_month` — so it is a select, never free text.
+ * The active teams, fetched the first time the New-settlement dialog opens and
+ * kept for the life of the screen. A settlement belongs to one of these and to
+ * nothing else — the server resolves its id and its Tracking#s from the team's
+ * counters — so it is a select, never free text.
  */
-let monthOptions = null;
+let teamOptions = null;
 
 /**
  * What the Account box starts on.
@@ -124,34 +124,32 @@ async function load() {
  * ------------------------------------------------------------------ */
 
 /**
- * The New-settlement dialog.
+ * The New-settlement dialog — two fields, Team and Account.
  *
- * A settlement is one coordinator's batch for a month (rule 9), and it is the
- * container every entry hangs off — so this is the only door into the grid. It
- * carries the account and the two tracking numbers, because those are
- * batch-level facts set once for the batch, not per row.
+ * A settlement is one coordinator's batch for one TEAM (rule 9), and it is the
+ * container every entry hangs off — so this is the only door into the grid.
  *
- * A month can hold as many settlements as the coordinator needs: several teams
- * submit against the same month, each with its own pair of Tracking#s, and one
- * settlement per month would force unrelated teams to share a number.
+ * There is no month, and no pair of tracking boxes. The month is gone because
+ * every entry carries its own date and a batch that runs from 27 August to
+ * 3 September is not an August settlement; the tracking boxes are gone because
+ * the numbers now issue themselves at Confirm, from the team's own counter
+ * (decision 6). Both used to be things a coordinator had to know before he could
+ * start typing, and neither told him anything he did not already know.
  *
- * Both tracking numbers are optional here. `confirm_track` refuses to move a
- * track whose number is unset (3.5), so a coordinator can start typing entries
- * on the day he opens the month and fill in the numbers when finance issues
- * them — the header on the settlement screen edits them later.
+ * A team can hold as many open settlements as the coordinator needs: each gets
+ * its own id from the team's sequence and its own pair of Tracking#s.
  */
 async function openNewSettlement() {
-  if (!monthOptions) {
+  if (!teamOptions) {
     try {
-      const data = await api.call('list_lists', { list_name: 'months' });
-      monthOptions = ((data && data.lists && data.lists.months) || [])
-        .map(function (option) { return option.value; });
+      const data = await api.call('list_teams', {});
+      teamOptions = ((data && data.teams) || []).filter(function (team) {
+        return team.active;
+      });
     } catch (err) {
-      monthOptions = [];
+      teamOptions = [];
     }
   }
-
-  const year = String(new Date().getFullYear());
 
   openModal({
     title: t('settlement_new'),
@@ -159,8 +157,8 @@ async function openNewSettlement() {
 
     bodyHtml: `
       <div class="field">
-        <label class="label" for="new-month">${escapeHtml(t('col_month'))}</label>
-        ${renderMonthControl()}
+        <label class="label" for="new-team">${escapeHtml(t('col_team'))}</label>
+        ${renderTeamControl()}
       </div>
 
       <div class="field">
@@ -169,28 +167,16 @@ async function openNewSettlement() {
                value="${escapeHtml(DEFAULT_ACCOUNT)}"
                placeholder="${escapeHtml(t('settlement_account_placeholder'))}">
       </div>
-
-      <div class="field">
-        <label class="label" for="new-old-tracking">${escapeHtml(t('settlement_old_tracking'))}</label>
-        <input class="input num" id="new-old-tracking" type="number" min="1" step="1"
-               placeholder="${escapeHtml(t('settlement_tracking_optional'))}">
-      </div>
-
-      <div class="field">
-        <label class="label" for="new-new-tracking">${escapeHtml(t('settlement_new_tracking'))}</label>
-        <input class="input num" id="new-new-tracking" type="number" min="1" step="1"
-               placeholder="${escapeHtml(t('settlement_tracking_optional'))}">
-      </div>
     `,
 
     onConfirm: async function (ctx) {
-      const month = ctx.value('#new-month');
+      const teamId = ctx.value('#new-team');
       const account = ctx.value('#new-account');
 
       // Checked here only to save a round trip; Coordinator.gs validates both
       // again and owns the answer.
-      if (!month) {
-        ctx.setError(t('settlement_month_required'));
+      if (!teamId) {
+        ctx.setError(t('settlement_team_required'));
         return false;
       }
       if (!account) {
@@ -199,11 +185,8 @@ async function openNewSettlement() {
       }
 
       const data = await api.call('create_settlement', {
-        month: month,
-        account: account,
-        fiscal_year: year,
-        old_tracking_no: ctx.value('#new-old-tracking'),
-        new_tracking_no: ctx.value('#new-new-tracking')
+        team_id: teamId,
+        account: account
       });
 
       const created = data && data.settlement;
@@ -211,37 +194,38 @@ async function openNewSettlement() {
 
       toastSuccess(t('settlement_created'));
 
-      // Straight into the grid — creating a month and then hunting for its row
-      // is a step with no purpose.
+      // Straight into the grid — creating a settlement and then hunting for its
+      // row is a step with no purpose.
       location.hash = '#/settlement/' + encodeURIComponent(created.settlement_id);
     }
   });
 }
 
 /**
- * The month field.
+ * The team field — a select over the ACTIVE teams, never free text.
  *
- * Normally a select over `Lists.months`, so a typed "Augst" cannot become a
- * second August. On a fresh install that list is empty, and the server accepts
- * any non-empty label precisely so the app is usable before an admin has been
- * near the Lists screen (isKnownMonthLabel in Coordinator.gs) — so we fall back
- * to a text box rather than a select with nothing in it.
+ * A settlement's id is spelled out of its team's code (`S-MS-01`) and its
+ * Tracking#s come out of that team's counter, so a team the app does not know is
+ * not a settlement it can create. When there are no active teams at all the box
+ * says so rather than offering an empty select: the answer is for a manager to
+ * add one on Admin → Teams, which is not something the coordinator can do here.
  *
  * @return {string} HTML
  */
-function renderMonthControl() {
-  if (!monthOptions.length) {
+function renderTeamControl() {
+  if (!teamOptions.length) {
     return `
-      <input class="input" id="new-month" type="text" maxlength="20"
-             placeholder="${escapeHtml(t('settlement_month_placeholder'))}">
-      <div class="field-hint">${escapeHtml(t('settlement_no_months'))}</div>`;
+      <select class="select" id="new-team" disabled>
+        <option value="">${escapeHtml(t('settlement_pick_team'))}</option>
+      </select>
+      <div class="field-hint">${escapeHtml(t('settlement_no_teams'))}</div>`;
   }
 
   return `
-    <select class="select" id="new-month">
-      <option value="">${escapeHtml(t('settlement_pick_month'))}</option>
-      ${monthOptions.map(function (month) {
-        return `<option value="${escapeHtml(month)}">${escapeHtml(month)}</option>`;
+    <select class="select" id="new-team">
+      <option value="">${escapeHtml(t('settlement_pick_team'))}</option>
+      ${teamOptions.map(function (team) {
+        return `<option value="${escapeHtml(team.team_id)}">${escapeHtml(team.name)}</option>`;
       }).join('')}
     </select>`;
 }
@@ -282,9 +266,10 @@ function entryCount(settlement) {
  * Confirm and run `delete_settlement`.
  *
  * The local draft mirror is dropped on success and not before. `sc_draft_*`
- * outlives a sign-out by design (4.4), so leaving it behind would let the grid
- * re-seed the very rows that were just deleted the next time a settlement of
- * that id existed — and buildSettlementId reuses a freed id.
+ * outlives a sign-out by design (4.4), and a stale one is a grid that re-seeds
+ * rows nobody asked for. Settlement ids now come from a counter that only moves
+ * forwards, so a deleted id can never come back and collide — but the draft is
+ * still dead weight on the device, and clearing it here is where it belongs.
  *
  * @param {string} settlementId
  */
@@ -341,7 +326,7 @@ function renderTable() {
         <thead>
           <tr>
             <th>${escapeHtml(t('col_settlement'))}</th>
-            <th>${escapeHtml(t('col_month'))}</th>
+            <th>${escapeHtml(t('col_team'))}</th>
             <th>${escapeHtml(t('col_account'))}</th>
             <th>${escapeHtml(t('period_old'))}</th>
             <th>${escapeHtml(t('period_new'))}</th>
@@ -371,7 +356,7 @@ function renderRow(settlement) {
       <td class="num text-bold">
         <a href="${href}">${escapeHtml(settlement.settlement_id)}</a>
       </td>
-      <td>${escapeHtml(settlement.month)} <span class="num text-muted">${escapeHtml(settlement.fiscal_year)}</span></td>
+      <td>${settlementLabel(settlement)}</td>
       <td class="num">${escapeHtml(settlement.account)}</td>
       ${trackCell(settlement.tracks.old, 'old')}
       ${trackCell(settlement.tracks.new, 'new')}
@@ -389,6 +374,28 @@ function renderRow(settlement) {
       </td>
     </tr>
   `;
+}
+
+/**
+ * What names a settlement in the list: its team.
+ *
+ * A settlement created before teams existed has no team and only a month, so it
+ * falls back to showing that — it is still the only thing that names it, and the
+ * coordinator has to be able to find it in order to set a team on it (which
+ * Confirm now requires).
+ *
+ * @param {Object} settlement
+ * @return {string} HTML
+ */
+function settlementLabel(settlement) {
+  if (settlement.team) return escapeHtml(settlement.team);
+
+  const month = escapeHtml(settlement.month);
+  const year = escapeHtml(settlement.fiscal_year);
+
+  return month
+    ? `<span class="text-muted">${month} <span class="num">${year}</span></span>`
+    : `<span class="text-muted">${escapeHtml(t('settlement_no_team'))}</span>`;
 }
 
 /**

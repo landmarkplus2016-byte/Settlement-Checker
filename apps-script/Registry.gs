@@ -189,7 +189,9 @@ function resolveCoordinatorSheetAsManager(session, coordinatorUserId) {
   var sheetId = normalizeKey(row.coordinator_sheet_id);
   if (!sheetId) throw appError('server_error', 'coordinator_sheet_not_configured');
 
-  return openById(sheetId);
+  var ss = openById(sheetId);
+  ensureCoordinatorSchema(ss);
+  return ss;
 }
 
 /**
@@ -253,7 +255,12 @@ function forEachCoordinator(fn) {
     }
 
     try {
-      fn(row, openById(sheetId));
+      var ss = openById(sheetId);
+      // A manager may be the first to reach a coordinator's sheet after a
+      // deploy, so the schema check belongs on this path too, not only on the
+      // coordinator's own.
+      ensureCoordinatorSchema(ss);
+      fn(row, ss);
       visited++;
     } catch (err) {
       errors.push({

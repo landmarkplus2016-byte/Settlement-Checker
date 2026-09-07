@@ -111,7 +111,7 @@ export const ar = {
   /* --- dashboards --- */
   dashboard_title: 'الرئيسية',
   signed_in_as: 'مسجّل الدخول باسم {name}',
-  coordinator_dashboard_subtitle: 'تسوياتك، مرتّبة حسب الشهر.',
+  coordinator_dashboard_subtitle: 'تسوياتك، مرتّبة حسب الفريق.',
   manager_dashboard_subtitle: 'جميع المنسقين في مكان واحد.',
 
   my_settlements: 'تسوياتي',
@@ -122,7 +122,7 @@ export const ar = {
   col_old_track: 'رقم التتبع (قديم)',
   col_new_track: 'رقم التتبع (جديد)',
   no_settlements_title: 'لا توجد تسويات بعد',
-  no_settlements_text: 'ابدأ بـ «تسوية جديدة» — يمكن للشهر الواحد أن يضم ما تحتاجه منها، لكل منها رقم تتبع قديم وآخر جديد. فتحها ينقلك إلى شبكة الإدخال.',
+  no_settlements_text: 'ابدأ بـ «تسوية جديدة» — اختر الفريق الذي تخصه. فتحها ينقلك إلى شبكة الإدخال، وأرقام التتبع تُصدر تلقائياً عند التأكيد.',
 
   settlement_new: 'تسوية جديدة',
   settlement_created: 'تم إنشاء التسوية.',
@@ -135,17 +135,17 @@ export const ar = {
   settlement_deleted: 'تم حذف {settlement} وبنودها.',
   err_msg_settlement_not_empty: 'تحتوي هذه التسوية على بنود لدى المدير أو مُصدَّرة بالفعل، فلا يمكن حذفها. أعد تحميل الصفحة لترى حالتها الآن.',
   err_msg_settlement_not_found: 'لم تعد هذه التسوية موجودة. أعد تحميل الصفحة.',
-  err_msg_tracking_no_taken: 'يوجد لديك تسوية أخرى تستخدم رقم التتبع نفسه. لكل دفعة رقمها الخاص، وإلا خرج ملفان للمالية بالرقم ذاته.',
-  err_msg_tracking_no_same_for_both: 'يجب أن يختلف رقم تتبع القديم عن الجديد — فهما مساران منفصلان.',
-  settlement_pick_month: 'اختر الشهر…',
-  settlement_month_placeholder: 'مثال: Aug',
-  settlement_no_months: 'لم تُضبط الشهور بعد، فاكتب التسمية التي تستخدمها — مثال: Aug.',
-  settlement_month_required: 'اختر الشهر الذي تغطيه هذه التسوية.',
+  err_msg_settlement_team_required: 'هذه التسوية بلا فريق. حدّد الفريق قبل التأكيد — فرقم التتبع يُصدر من عدّاد الفريق.',
+  err_msg_entries_already_submitted: 'لا يمكن تغيير الفريق بعد تأكيد الإدخالات. اطلب من المدير إعادتها أولاً.',
+  err_msg_team_code_taken: 'يوجد فريق نشط آخر يستخدم هذا الرمز.',
+  settlement_pick_team: 'اختر الفريق…',
+  settlement_no_teams: 'لم تُضف الفرق بعد. يضيفها المدير من الإدارة ← الفرق.',
+  settlement_team_required: 'اختر الفريق الذي تخصه هذه التسوية.',
+  settlement_no_team: 'بلا فريق',
   settlement_account_placeholder: 'مثال: VF',
   settlement_account_required: 'أدخل الحساب.',
   settlement_old_tracking: 'رقم التتبع (قديم)',
   settlement_new_tracking: 'رقم التتبع (جديد)',
-  settlement_tracking_optional: 'اختياري — يمكن إضافته لاحقاً',
 
   quick_actions: 'إجراءات سريعة',
   action_approvals_text: 'مراجعة واعتماد الإدخالات المؤكدة من جميع المنسقين.',
@@ -170,7 +170,12 @@ export const ar = {
   tracking_placeholder: 'غير محدد',
   tracking_saved: 'تم حفظ رقم التتبع.',
   tracking_invalid: 'يجب أن يكون رقم التتبع عدداً صحيحاً أكبر من صفر.',
-  tracking_locked_hint: 'تم تصدير هذا المسار بالفعل، لذا رقمه ثابت.',
+  tracking_fixed_hint: 'تم تصدير هذا المسار، لذا رقمه ثابت.',
+  tracking_on_confirm: 'يُصدر عند التأكيد',
+  tracking_change: 'تغيير',
+  tracking_change_title: 'تغيير رقم تتبع {period}',
+  tracking_change_body: 'صدر الرقم تلقائياً. لا تغيّره إلا إذا كانت المالية قد أعطت هذه الدفعة رقماً آخر — وعدّاد الفريق يتجاوز ما تكتبه، فلا يُصدر الرقم نفسه مرتين.',
+  tracking_will_be_issued: 'يُصدر عند التأكيد',
   track_entry_count: '{count} إدخالاً',
 
   /* --- saving and confirming (3.5, 6.1) --- */
@@ -182,10 +187,11 @@ export const ar = {
 
   confirm_working: 'جارٍ التأكيد…',
   confirm_success: 'تم تأكيد {count} إدخالاً على رقم التتبع {tracking}.',
+  confirm_tracking_issued: 'صدر لهذا المسار رقم التتبع {tracking}.',
   confirm_unrouted: '{count} إدخالاً بلا فترة، فبقيت مسودات. حدّد لها الفترة لتسويتها.',
 
-  confirm_needs_tracking_title: 'لا يوجد رقم تتبع لهذا المسار',
-  confirm_needs_tracking: 'حدّد رقم التتبع {period} قبل التأكيد — فهو الرقم الذي تُسوّى عليه هذه الإدخالات.',
+  confirm_needs_team_title: 'هذه التسوية بلا فريق',
+  confirm_needs_team: 'أُنشئت هذه التسوية قبل أن تصبح التسويات تابعة لفريق. حدّد فريقها قبل التأكيد — فرقم التتبع يُصدر من عدّاد ذلك الفريق.',
   confirm_blocked_title: 'بعض الإدخالات تحتاج تصحيحاً أولاً',
   confirm_has_flags: 'لا يمكن تأكيد المسار {period} بعد. إدخالات تحتاج تصحيحاً: {rows}.',
   confirm_has_flags_hint: 'هي الصفوف المعلَّمة بالأحمر في الجدول. صحّحها ثم أعد التأكيد — أما التنبيهات الكهرمانية فلا تمنع شيئاً.',
@@ -197,7 +203,7 @@ export const ar = {
 
   confirm_hint_ready: '{count} جاهزة',
   confirm_hint_flags: '{rows} تحتاج تصحيحاً',
-  confirm_hint_tracking: 'لا يوجد رقم تتبع',
+  confirm_hint_team: 'لم يُحدد فريق',
   confirm_hint_nothing: 'لا يوجد ما يُؤكَّد',
 
   /* Track roll-up, per period (6.1). */
@@ -216,7 +222,7 @@ export const ar = {
   entry_status_exported: 'مُصدَّر',
 
   /* --- the grid (6.6) --- */
-  col_day: 'اليوم',
+  col_date: 'التاريخ',
   col_project: 'المشروع',
   col_category: 'التصنيف',
   col_item: 'وصف البند',
@@ -230,6 +236,7 @@ export const ar = {
   col_city: 'المدينة',
   col_karta: 'الكارتة',
 
+  grid_date_placeholder: 'مثال: 11-9',
   grid_row_number: 'الصف',
   grid_add_row: 'إضافة صف',
   grid_delete_row: 'حذف الصف',
@@ -281,7 +288,7 @@ export const ar = {
   paste_nothing: 'لا يوجد ما يُضاف — الصق بعض الصفوف أولاً.',
   paste_added: 'تمت إضافة {count} صفاً.',
   paste_header_skipped: 'تم تخطي صف العناوين.',
-  paste_corrected: 'تمت مطابقة {count} خلية مع القائمة التي تنتمي إليها (مثال: AUG ← Aug).',
+  paste_corrected: 'تمت مطابقة {count} خلية مع القائمة التي تنتمي إليها (مثال: «POC-3 » ← «POC-3»).',
   paste_truncated: 'تم استبعاد {count} صفاً — الصقها في دفعة ثانية.',
 
   /* Validation codes — shared with apps-script/Validate.gs (6.3). */
@@ -290,33 +297,43 @@ export const ar = {
   valid_missing_project: 'لا يوجد مشروع',
   valid_missing_category: 'لا يوجد تصنيف',
   valid_missing_driver: 'لا يوجد سائق',
-  valid_missing_month: 'لا يوجد شهر',
-  valid_missing_day: 'لا يوجد يوم',
+  valid_missing_date: 'لا يوجد تاريخ',
   valid_missing_item_description: 'لا يوجد وصف',
   valid_missing_area: 'لا توجد منطقة',
   valid_missing_city: 'لا توجد مدينة',
   valid_missing_start_km: 'لا يوجد عداد قبل',
   valid_missing_end_km: 'لا يوجد عداد بعد',
   valid_missing_karta_amount: 'لا يوجد مبلغ كارتة',
-  valid_missing_team: 'لا يوجد فريق',
   valid_unknown_site: 'الموقع غير موجود في الجدول',
   valid_missing_job_code: 'لا يوجد كود عمل',
   valid_missing_period: 'لا توجد فترة — هذا الصف لا يُسوّى على أي رقم تتبع',
   valid_job_code_count_mismatch: 'عدد المواقع لا يطابق عدد أكواد العمل',
   valid_mixed_period: 'مواقع هذا الصف ليست كلها في الفترة نفسها — الصف يُسوّى على رقم تتبع واحد فقط، فقسّمه',
-  valid_unknown_list_value: 'ليست من خيارات هذا العمود — والصف الذي لا يطابق فريقه أي فريق لا يظهر في أي تصدير',
+  valid_unknown_list_value: 'ليست من خيارات هذا العمود',
   valid_km_gap: 'قراءة العداد لا تتصل بالقراءة السابقة',
+  valid_date_outside_span: 'هذا التاريخ خارج الشهر الذي تقع فيه بقية هذه التسوية',
 
   /* --- admin: teams (3.4) --- */
   teams_subtitle: 'الفرق التي تُسجَّل الإدخالات باسمها.',
   col_team: 'الفريق',
   team_add: 'إضافة فريق',
-  team_edit: 'إعادة تسمية الفريق',
+  team_edit: 'تعديل الفريق',
   team_name: 'اسم الفريق',
   team_name_placeholder: 'فريق أشرف',
   team_name_required: 'أدخل اسم الفريق.',
+
+  /* الرمز والعدّادان (القرار 1). */
+  col_team_code: 'الرمز',
+  team_code: 'رمز الفريق',
+  team_code_placeholder: 'مثال: MS',
+  team_code_hint: 'من حرفين إلى أربعة بالحروف اللاتينية أو الأرقام. يُكتب به معرّف تسويات هذا الفريق — S-MS-01 — ليبقى مقروءاً في اسم الملف.',
+  team_code_required: 'أدخل رمزاً من ٢ إلى ٤ حروف لاتينية أو أرقام (A–Z، 0–9).',
+  col_next_settlement: 'رقم التسوية التالي',
+  col_next_tracking: 'رقم التتبع التالي',
+  team_counters_hint: 'الأرقام التالية التي ستصدر لهذا الفريق. اضبطها مرة واحدة بعد النشر على أعلى رقم مستخدم بالفعل، ثم اتركها — يتولاها التطبيق بعد ذلك.',
+  team_counter_invalid: 'يجب أن يكون العدّاد رقماً صحيحاً لا يقل عن ١.',
   team_created: 'تمت إضافة الفريق.',
-  team_updated: 'تم تعديل اسم الفريق.',
+  team_updated: 'تم حفظ الفريق.',
   team_activated: 'تم تفعيل الفريق.',
   team_deactivated: 'تم إيقاف الفريق.',
   team_deactivate_title: 'إيقاف هذا الفريق؟',
@@ -465,7 +482,7 @@ export const ar = {
 
   filter_all_teams: 'كل الفرق',
   filter_all_coordinators: 'كل المنسّقين',
-  filter_all_months: 'كل الشهور',
+  filter_all_settlements: 'كل التسويات',
   filter_clear: 'مسح عوامل التصفية',
 
   period_none: 'بلا فترة',
@@ -517,7 +534,6 @@ export const ar = {
   export_subtitle: 'أنشئ ملفات المالية لفريق وشهر واحد — القديم والجديد. أما ملف «حسب الموقع» فيأتي بعد ذلك من دفعة مُصدَّرة في الجدول أدناه.',
 
   export_pick_team: 'اختر فريقاً…',
-  export_pick_month: 'اختر شهراً…',
   export_all_settlements: 'كل التسويات',
   export_report_type: 'نوع التقرير',
   export_report_normal: 'عادي',
@@ -526,7 +542,7 @@ export const ar = {
   export_exclude_exported_hint: 'عند التفعيل لا يُعرض أي بند سبق تصديره إلى المالية مرة أخرى. أوقفه فقط لإعادة بناء ملف فقدته المالية.',
   export_generate: 'إنشاء',
   export_generating: 'جارٍ الإنشاء…',
-  export_needs_team_month: 'اختر الفريق والشهر أولاً.',
+  export_needs_team: 'اختر الفريق أولاً.',
 
   export_start_title: 'لم يُنشأ شيء بعد',
   export_start_text: 'اختر فريقاً وشهراً ثم اضغط إنشاء. تحصل على ملف لكل فترة — القديم والجديد يُسوَّى كل منهما على حدة وله رقم تتبع خاص به.',
@@ -543,7 +559,7 @@ export const ar = {
   export_confirm: 'تأكيد التصدير',
 
   export_confirm_title: 'تعليم هذه البنود كمُصدَّرة؟',
-  export_confirm_text: 'سيُعلَّم {count} بنداً معتمداً في ملف {period} لفريق {team}، {month} كمُصدَّر.',
+  export_confirm_text: 'سيُعلَّم {count} بنداً معتمداً في ملف {period} لفريق {team} كمُصدَّر.',
   export_confirm_tracking: 'رقم التتبع {tracking} · تقرير {type}',
   export_confirm_not_downloaded: 'لم يُنزَّل هذا الملف بعد، لذا سيُنزَّل أولاً عند التأكيد ثم تُعلَّم البنود كمُصدَّرة.',
   export_confirm_note: 'لا يمكن التراجع. البند المُصدَّر مقفل: لا يُعدَّل ولا يُعاد اعتماده ولا يُصدَّر مرة ثانية.',

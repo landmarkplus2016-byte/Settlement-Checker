@@ -113,7 +113,7 @@ export const en = {
   /* --- dashboards --- */
   dashboard_title: 'Dashboard',
   signed_in_as: 'Signed in as {name}',
-  coordinator_dashboard_subtitle: 'Your settlements, by month.',
+  coordinator_dashboard_subtitle: 'Your settlements, by team.',
   manager_dashboard_subtitle: 'Every coordinator, consolidated.',
 
   my_settlements: 'My settlements',
@@ -124,7 +124,7 @@ export const en = {
   col_old_track: 'Old tracking #',
   col_new_track: 'New tracking #',
   no_settlements_title: 'No settlements yet',
-  no_settlements_text: 'Start with New settlement — a month can hold as many as you need, each with its own Old and New tracking number. Opening it takes you to the entry grid.',
+  no_settlements_text: 'Start with New settlement — pick the team it is for. Opening it takes you to the entry grid, and the tracking numbers issue themselves when you confirm.',
 
   settlement_new: 'New settlement',
   settlement_created: 'Settlement created.',
@@ -137,17 +137,17 @@ export const en = {
   settlement_deleted: '{settlement} and its entries were deleted.',
   err_msg_settlement_not_empty: 'This settlement has entries that are already with a manager or exported, so it cannot be deleted. Reload the page to see where they are now.',
   err_msg_settlement_not_found: 'That settlement no longer exists. Reload the page.',
-  err_msg_tracking_no_taken: 'Another of your settlements already uses that tracking number. Each batch needs its own, or two finance files go out stamped the same.',
-  err_msg_tracking_no_same_for_both: 'Old and New must have different tracking numbers — they are two separate tracks.',
-  settlement_pick_month: 'Pick a month…',
-  settlement_month_placeholder: 'e.g. Aug',
-  settlement_no_months: 'No months have been set up yet, so type the label you use — e.g. Aug.',
-  settlement_month_required: 'Choose the month this settlement covers.',
+  err_msg_settlement_team_required: 'This settlement has no team. Set one before confirming — the tracking number is issued from the team.',
+  err_msg_entries_already_submitted: 'The team cannot be changed once entries have been confirmed. Have a manager return them first.',
+  err_msg_team_code_taken: 'Another active team already uses that code.',
+  settlement_pick_team: 'Pick a team…',
+  settlement_no_teams: 'No teams have been set up yet. A manager adds them on Admin → Teams.',
+  settlement_team_required: 'Choose the team this settlement is for.',
+  settlement_no_team: 'No team',
   settlement_account_placeholder: 'e.g. VF',
   settlement_account_required: 'Enter the account.',
   settlement_old_tracking: 'Old tracking #',
   settlement_new_tracking: 'New tracking #',
-  settlement_tracking_optional: 'Optional — add it later',
 
   quick_actions: 'Quick actions',
   action_approvals_text: 'Review and approve confirmed entries from every coordinator.',
@@ -172,7 +172,12 @@ export const en = {
   tracking_placeholder: 'Not set',
   tracking_saved: 'Tracking number saved.',
   tracking_invalid: 'A tracking number must be a whole number above zero.',
-  tracking_locked_hint: 'This track has already been exported, so its number is fixed.',
+  tracking_fixed_hint: 'This track has been exported, so its number is fixed.',
+  tracking_on_confirm: 'Issued when you confirm',
+  tracking_change: 'Change',
+  tracking_change_title: 'Change the {period} tracking number',
+  tracking_change_body: 'The number was issued automatically. Change it only when finance has already given this batch a different one — the team\'s counter moves past whatever you type, so it is never handed out twice.',
+  tracking_will_be_issued: 'Issued on confirm',
   track_entry_count: '{count} entries',
 
   /* --- saving and confirming (3.5, 6.1) --- */
@@ -184,10 +189,11 @@ export const en = {
 
   confirm_working: 'Confirming…',
   confirm_success: '{count} entries confirmed against tracking # {tracking}.',
+  confirm_tracking_issued: 'This track was issued tracking # {tracking}.',
   confirm_unrouted: '{count} entries have no period, so they were left as drafts. Give them a period to settle them.',
 
-  confirm_needs_tracking_title: 'This track has no tracking number',
-  confirm_needs_tracking: 'Set the {period} tracking number before confirming — it is the number these entries settle against.',
+  confirm_needs_team_title: 'This settlement has no team',
+  confirm_needs_team: 'This settlement was created before settlements belonged to a team. Set its team before confirming — the tracking number is issued from that team\'s counter.',
   confirm_blocked_title: 'Some entries need fixing first',
   confirm_has_flags: 'The {period} track cannot be confirmed yet. Entries still to fix: {rows}.',
   confirm_has_flags_hint: 'They are the rows marked red in the grid. Fix them and confirm again — warnings in amber do not block anything.',
@@ -199,7 +205,7 @@ export const en = {
 
   confirm_hint_ready: '{count} ready',
   confirm_hint_flags: '{rows} need fixing',
-  confirm_hint_tracking: 'No tracking number',
+  confirm_hint_team: 'No team set',
   confirm_hint_nothing: 'Nothing to confirm',
 
   /* Track roll-up, per period (6.1). */
@@ -218,7 +224,7 @@ export const en = {
   entry_status_exported: 'Exported',
 
   /* --- the grid (6.6) --- */
-  col_day: 'Day',
+  col_date: 'Date',
   col_project: 'Project',
   col_category: 'Category',
   col_item: 'Item description',
@@ -232,6 +238,7 @@ export const en = {
   col_city: 'City',
   col_karta: 'Karta',
 
+  grid_date_placeholder: 'e.g. 11-9',
   grid_row_number: 'Row',
   grid_add_row: 'Add row',
   grid_delete_row: 'Delete row',
@@ -283,7 +290,7 @@ export const en = {
   paste_nothing: 'Nothing to add — paste some rows first.',
   paste_added: '{count} rows added.',
   paste_header_skipped: 'The header row was skipped.',
-  paste_corrected: '{count} cells were matched to the list they come from (for example AUG → Aug).',
+  paste_corrected: '{count} cells were matched to the list they come from (for example "POC-3 " → "POC-3").',
   paste_truncated: '{count} rows were left out — paste them in a second batch.',
 
   /* Validation codes — shared with apps-script/Validate.gs (6.3). */
@@ -292,33 +299,45 @@ export const en = {
   valid_missing_project: 'No project',
   valid_missing_category: 'No category',
   valid_missing_driver: 'No driver',
-  valid_missing_month: 'No month',
-  valid_missing_day: 'No day',
+  valid_missing_date: 'No date',
   valid_missing_item_description: 'No description',
   valid_missing_area: 'No area',
   valid_missing_city: 'No city',
   valid_missing_start_km: 'No start KM',
   valid_missing_end_km: 'No end KM',
   valid_missing_karta_amount: 'No karta amount',
-  valid_missing_team: 'No team',
   valid_unknown_site: 'Site not in the lookup',
   valid_missing_job_code: 'No Job Code',
   valid_missing_period: 'No period — this row settles against neither tracking number',
   valid_job_code_count_mismatch: 'Site and Job Code counts do not match',
   valid_mixed_period: 'The sites on this row are not all the same period — it can only settle against one tracking number, so split it',
-  valid_unknown_list_value: 'Not one of the options for this column — a row whose team matches no team appears in no export',
+  valid_unknown_list_value: 'Not one of the options for this column',
   valid_km_gap: 'KM does not follow on from the last reading',
+  valid_date_outside_span: 'This date is outside the month the rest of this settlement is in',
 
   /* --- admin: teams (3.4) --- */
   teams_subtitle: 'The named crews an entry can be filed under.',
   col_team: 'Team',
   team_add: 'Add team',
-  team_edit: 'Rename team',
+  team_edit: 'Edit team',
   team_name: 'Team name',
   team_name_placeholder: 'Team Ashraf',
   team_name_required: 'Enter a team name.',
+
+  /* The code and the two counters (decision 1). The code spells the settlement
+   * ids and the batch ids; the counters are what those ids and the tracking
+   * numbers are issued from. */
+  col_team_code: 'Code',
+  team_code: 'Team code',
+  team_code_placeholder: 'e.g. MS',
+  team_code_hint: 'Two to four Latin letters or digits. It spells this team\'s settlement ids — S-MS-01 — so it stays readable in a file name.',
+  team_code_required: 'Enter a code of 2–4 letters or digits (A–Z, 0–9).',
+  col_next_settlement: 'Next settlement #',
+  col_next_tracking: 'Next tracking #',
+  team_counters_hint: 'The next numbers this team will be issued. Set them once after deploy to the highest number already used, then leave them — the app moves them on by itself.',
+  team_counter_invalid: 'A counter must be a whole number of 1 or more.',
   team_created: 'Team added.',
-  team_updated: 'Team renamed.',
+  team_updated: 'Team saved.',
   team_activated: 'Team activated.',
   team_deactivated: 'Team deactivated.',
   team_deactivate_title: 'Deactivate this team?',
@@ -467,7 +486,7 @@ export const en = {
 
   filter_all_teams: 'All teams',
   filter_all_coordinators: 'All coordinators',
-  filter_all_months: 'All months',
+  filter_all_settlements: 'All settlements',
   filter_clear: 'Clear filters',
 
   period_none: 'No period',
@@ -521,7 +540,6 @@ export const en = {
   export_subtitle: 'Build the finance files for one team and month — old and new. The per-site file comes afterwards, from an exported batch below.',
 
   export_pick_team: 'Choose a team…',
-  export_pick_month: 'Choose a month…',
   export_all_settlements: 'All settlements',
   export_report_type: 'Report type',
   export_report_normal: 'Normal',
@@ -530,7 +548,7 @@ export const en = {
   export_exclude_exported_hint: 'On, an entry that has already gone to finance is never offered again. Turn it off only to rebuild a file finance has lost.',
   export_generate: 'Generate',
   export_generating: 'Generating…',
-  export_needs_team_month: 'Choose a team and a month first.',
+  export_needs_team: 'Choose a team first.',
 
   export_start_title: 'Nothing generated yet',
   export_start_text: 'Pick a team and a month, then Generate. You get one file per period — old and new are settled separately and carry their own tracking number.',
@@ -547,7 +565,7 @@ export const en = {
   export_confirm: 'Confirm export',
 
   export_confirm_title: 'Mark these entries exported?',
-  export_confirm_text: 'This marks the {count} approved entries in the {period} file for {team}, {month} as exported.',
+  export_confirm_text: 'This marks the {count} approved entries in the {period} file for {team} as exported.',
   export_confirm_tracking: 'Tracking # {tracking} · {type} report',
   export_confirm_not_downloaded: 'This file has not been downloaded yet, so confirming will download it first and then mark the entries.',
   export_confirm_note: 'There is no undo. An exported entry is locked: it cannot be edited, re-approved, or exported a second time.',

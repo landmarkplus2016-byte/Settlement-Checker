@@ -30,8 +30,7 @@
 var VALIDATION_FLAG_CODES = [
   'missing_site_id',
   'missing_amount',
-  'missing_month',
-  'missing_day',
+  'missing_date',
   'missing_project',
   'missing_category',
   'missing_item_description',
@@ -40,8 +39,7 @@ var VALIDATION_FLAG_CODES = [
   'missing_city',
   'missing_start_km',
   'missing_end_km',
-  'missing_karta_amount',
-  'missing_team'
+  'missing_karta_amount'
 ];
 
 /**
@@ -52,24 +50,28 @@ var VALIDATION_FLAG_CODES = [
  * `comment` is excluded by the rule. `job_code` and `period` are excluded
  * because they are filled FROM the Site->JC lookup (rule 14) and 6.3 says a site
  * the lookup has never heard of still confirms — they stay warnings.
+ *
+ * `date` is checked separately (see validateEntryRow), because a legacy row
+ * satisfies it through `month` + `day` and the settlement's year rather than
+ * through a cell of its own.
+ *
+ * `team` has left the list. It is no longer something a coordinator can type —
+ * the server stamps it from the settlement on every save — so the only way one
+ * can be blank is a legacy settlement that has no team yet, and `confirm_track`
+ * refuses that by name (`settlement_team_required`). Flagging the row as well
+ * would point at a column the grid does not even show.
  */
 var REQUIRED_ENTRY_FIELDS = {
   expense: [
-    ['month', 'missing_month'],
-    ['day', 'missing_day'],
     ['project', 'missing_project'],
     ['category', 'missing_category'],
-    ['item_description', 'missing_item_description'],
-    ['team', 'missing_team']
+    ['item_description', 'missing_item_description']
   ],
   fuel: [
-    ['month', 'missing_month'],
-    ['day', 'missing_day'],
     ['project', 'missing_project'],
     ['area', 'missing_area'],
     ['driver', 'missing_driver'],
-    ['city', 'missing_city'],
-    ['team', 'missing_team']
+    ['city', 'missing_city']
   ]
 };
 
@@ -115,12 +117,16 @@ var VALIDATION_WARNING_CODES = [
  * @param {Object} [options]
  * @param {Object} [options.site_jc_map] from getSiteJcMap(); read once by the
  *        caller when it is validating both kinds.
+ * @param {Object} [options.settlement] the parent Settlements row. Needed to read
+ *        a LEGACY row's date, which lives in `month` + `day` against the
+ *        settlement's `fiscal_year` (entryDateOf).
  * @return {{by_entry: Object, rows: Array<Object>, flag_count: number,
  *           warning_count: number, flagged_entry_ids: Array<string>}}
  */
 function validateEntries(kind, rows, options) {
   var opts = options || {};
   var siteMap = opts.site_jc_map || getSiteJcMap();
+  var settlement = opts.settlement || null;
   var isFuel = (kind === 'fuel');
 
   var report = {
@@ -138,6 +144,16 @@ function validateEntries(kind, rows, options) {
 
     var result = {
       entry_id: entryId,
+
+      /*
+       * Resolved once, here, and reused by every check below that needs a day —
+       * the required-date flag and the KM sequence. Both used to reach for
+       * `row.day` on its own, which is what put 1 September above 27 August in
+       * Islam Mousa's batch and had the odometer check comparing those same rows
+       * in the wrong order.
+       */
+      date: entryDateOf(list[i], settlement),
+
       flags: [],
       warnings: []
     };
@@ -150,6 +166,19 @@ function validateEntries(kind, rows, options) {
 
   // The one cross-row check (6.3).
   if (isFuel) applyKmContinuity(list, report);
+
+  /*
+   * An `exported` row is locked (rule 13): it cannot be edited, re-approved or
+   * re-exported, so a warning on it is advice about a thing nobody is allowed to
+   * do. It is cleared AFTER applyKmContinuity, not before, because an exported
+   * row is still part of the driver's odometer sequence — dropping it from the
+   * chain would invent a gap in the live row that follows it.
+   */
+  for (var e = 0; e < list.length; e++) {
+    if (normalizeKey(list[e].status).toLowerCase() === 'exported') {
+      report.rows[e].warnings = [];
+    }
+  }
 
   for (var r = 0; r < report.rows.length; r++) {
     var row = report.rows[r];
@@ -168,7 +197,8 @@ function validateEntries(kind, rows, options) {
  * @param {Object} row a raw entry row.
  * @param {Object} siteMap normalized site_id -> Array of candidate
  *        {job_code, task_date, period}, from getSiteJcMap().
- * @param {{flags: Array, warnings: Array}} result appended to in place.
+ * @param {{date: string, flags: Array, warnings: Array}} result appended to in
+ *        place; `date` is the day already resolved by validateEntries().
  */
 function validateEntryRow(kind, row, siteMap, result) {
   var isFuel = (kind === 'fuel');
@@ -177,6 +207,17 @@ function validateEntryRow(kind, row, siteMap, result) {
   var siteCell = normalizeKey(row.site_id);
   if (!siteCell) {
     result.flags.push({ code: 'missing_site_id', field: 'site_id' });
+  }
+
+  /*
+   * --- the day ---
+   * Judged on the RESOLVED date, so a legacy row that carries `month` + `day` and
+   * no `date` cell passes, and a row whose typed date could not be parsed fails
+   * even though the cell is not empty. The grid keeps an unparseable date red and
+   * refuses to confirm, which is where a coordinator meets this.
+   */
+  if (!result.date) {
+    result.flags.push({ code: 'missing_date', field: 'date' });
   }
 
   /* --- the money --- */
@@ -330,14 +371,22 @@ function validateSiteAgainstLookup(siteCell, row, siteMap, result) {
  * KM continuity (6.3): "within one driver, a row's start_km should equal the
  * previous row's end_km; a gap is an amber warning".
  *
- * Rows are grouped by driver and ordered by day, then by their order in the
+ * Rows are grouped by driver and ordered by DATE, then by their order in the
  * sheet — a driver's odometer is a single running sequence, and the periods and
  * the two Tracking#s have nothing to do with it. A row missing either reading is
  * skipped rather than guessed at, and it does not break the chain: the next row
  * is compared against the last reading actually recorded.
  *
+ * It used to order by `day` alone, which is only the same thing while a batch
+ * stays inside one month. A settlement running 27 August to 3 September had the
+ * September rows sorted first, so the check compared the 3rd against the 31st and
+ * reported gaps that were an artefact of the ordering. The resolved date is a
+ * total order across months and fixes it by construction. Rows with no readable
+ * date sort first, together, which is the least surprising place for them.
+ *
  * @param {Array<Object>} rows all fuel rows, in sheet order.
- * @param {Object} report from validateEntries(); its rows are appended to.
+ * @param {Object} report from validateEntries(); its rows carry the resolved
+ *        `date` and are appended to.
  */
 function applyKmContinuity(rows, report) {
   var byDriver = {};
@@ -347,7 +396,7 @@ function applyKmContinuity(rows, report) {
     if (!driver) continue;          // already flagged as missing_driver
 
     if (!byDriver[driver]) byDriver[driver] = [];
-    byDriver[driver].push({ index: i, row: rows[i] });
+    byDriver[driver].push({ index: i, row: rows[i], date: report.rows[i].date || '' });
   }
 
   var drivers = Object.keys(byDriver);
@@ -356,11 +405,9 @@ function applyKmContinuity(rows, report) {
     var group = byDriver[drivers[d]];
 
     group.sort(function (a, b) {
-      var dayA = toFiniteNumber(a.row.day);
-      var dayB = toFiniteNumber(b.row.day);
-      if (dayA === null) dayA = 0;
-      if (dayB === null) dayB = 0;
-      if (dayA !== dayB) return dayA - dayB;
+      // ISO dates sort correctly as strings, which is most of why they are stored
+      // that way.
+      if (a.date !== b.date) return (a.date < b.date) ? -1 : 1;
       return a.index - b.index;     // sheet order breaks a tie within a day
     });
 

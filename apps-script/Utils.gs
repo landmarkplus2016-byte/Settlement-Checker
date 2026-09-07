@@ -172,14 +172,107 @@ function parseTimestamp(v) {
   return isNaN(parsed.getTime()) ? null : parsed;
 }
 
+/**
+ * The day an entry is settling, as 'YYYY-MM-DD'.
+ *
+ * **Every reader of an entry's date goes through this**, and that is the whole
+ * point of it. An entry now carries one `date` cell. Every entry written before
+ * that carries `month` and `day` instead, and nothing but the SETTLEMENT knows
+ * which year those belong to — so the legacy answer needs both rows, and a reader
+ * that reached for `row.day` on its own would get 3 September sorted above
+ * 27 August, or pick a job code against the wrong year (§6.6.3).
+ *
+ * Old data is never rewritten (the plan's standing constraint), so both shapes
+ * stay readable for as long as the exported batches they belong to do.
+ *
+ * @param {Object} row an Expenses or Fuel row.
+ * @param {Object} [settlement] its Settlements row; only the legacy path needs it.
+ * @return {string} 'YYYY-MM-DD', or '' when the row carries no readable day.
+ */
+function entryDateOf(row, settlement) {
+  if (!row) return '';
+
+  var direct = normalizeIsoDate(row.date);
+  if (direct) return direct;
+
+  var day = toFiniteNumber(row.day);
+  if (day === null) return '';
+
+  day = Math.floor(day);
+  if (day < 1 || day > 31) return '';
+
+  var month = MONTH_NUMBERS[normalizeKey(row.month).toLowerCase().substring(0, 3)];
+  if (!month) return '';
+
+  /*
+   * The year comes from the settlement, which is why `fiscal_year` is kept
+   * (decision 33). It is also the reason a legacy December settlement holding
+   * January days reads those days as the wrong year — a defect the `date` column
+   * fixes by construction, and one nothing can retroactively repair here without
+   * guessing.
+   */
+  var year = parseInt(normalizeKey(settlement && settlement.fiscal_year), 10);
+  if (!isFinite(year) || year < 1900) return '';
+
+  return year + '-' + padTwo(month) + '-' + padTwo(day);
+}
+
+/** The three-letter month labels, in `Lists.months` spelling. */
+var MONTH_LABELS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+                    'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+/**
+ * The month label of an ISO date — 'Aug' for '2026-08-27'.
+ *
+ * Only the ExportLog still wants one (decision 25). The finance file prints a
+ * date per row and no month anywhere, and a settlement has none at all; this is
+ * for the log's own column, which a manager scans to answer "did August's file
+ * already go?".
+ *
+ * @param {string} iso 'YYYY-MM-DD'.
+ * @return {string} '' when the date is unreadable.
+ */
+function monthLabelOf(iso) {
+  var match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(normalizeKey(iso));
+  if (!match) return '';
+
+  var month = parseInt(match[2], 10);
+  if (!(month >= 1 && month <= 12)) return '';
+
+  return MONTH_LABELS[month - 1];
+}
+
+/**
+ * The four-digit year of an ISO date.
+ * @param {string} iso 'YYYY-MM-DD'.
+ * @return {string} '' when the date is unreadable.
+ */
+function yearOf(iso) {
+  var match = /^(\d{4})-\d{2}-\d{2}$/.exec(normalizeKey(iso));
+  return match ? match[1] : '';
+}
+
 /* ------------------------------------------------------------------ *
  * Concurrency
  * ------------------------------------------------------------------ */
 
+/* How many withScriptLock() frames this execution is inside. See below. */
+var __lockDepth = 0;
+
 /**
  * Run `fn` while holding the script lock, so two requests cannot interleave a
  * read-then-write. Used for anything that allocates an id or claims rows —
- * login's single-session swap now, export_commit's atomic claim later.
+ * login's single-session swap, export_commit's atomic claim, and the team
+ * counters that issue settlement ids and tracking numbers.
+ *
+ * **Re-entrant within one execution.** A handler that already holds the lock may
+ * call a helper that takes it again — confirm_track allocates a tracking number
+ * from inside its own locked block — and the inner call must not try to re-take
+ * a lock this execution is already holding, nor release it on the way out and
+ * leave the outer block running unprotected. The depth counter makes the inner
+ * frame a no-op; the outer one owns the lock for the whole span. It is a plain
+ * global because Apps Script gives every request a fresh global scope, so the
+ * count can never leak between requests.
  *
  * @param {function():*} fn
  * @param {number=} timeoutMs how long to wait for the lock (default 20000).
@@ -187,13 +280,24 @@ function parseTimestamp(v) {
  * @throws {Object} appError('conflict','busy') when the lock cannot be taken.
  */
 function withScriptLock(fn, timeoutMs) {
+  if (__lockDepth > 0) {
+    __lockDepth++;
+    try {
+      return fn();
+    } finally {
+      __lockDepth--;
+    }
+  }
+
   var lock = LockService.getScriptLock();
   if (!lock.tryLock(timeoutMs || 20000)) {
     throw appError('conflict', 'busy');
   }
+  __lockDepth++;
   try {
     return fn();
   } finally {
+    __lockDepth--;
     lock.releaseLock();
   }
 }

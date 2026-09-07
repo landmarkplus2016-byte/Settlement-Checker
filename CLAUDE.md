@@ -29,6 +29,8 @@ This is not a digitised copy of the spreadsheet. It is a rebuild of the *workflo
 | Manager review | Opens the file, edits, re-sends | Approves or returns each entry in the app, stamped with who decided |
 | Old vs new sites | A "New" label typed in the header | Driven by the Site→JC lookup's `period`; routes each row to its own Tracking# |
 | Two tracking numbers | Managed by hand | One settlement holds an **old** and a **new** Tracking# that move independently |
+| Issuing a tracking number | Chased from finance, typed in before work could be handed over | Issued by Confirm, from the team's own running counter. A manual override exists and moves the counter past itself |
+| What a batch is | A month | A **team**. Every entry carries its own date, so a batch that runs 27 Aug – 3 Sep is just a batch |
 | Finance export | Manual copy/filter/save | App extracts per team + period, mirrors the template, and stamps rows so nothing settles twice |
 | Per-site cost split | Done by hand, if at all | A per-site export explodes multi-site lines and divides the amount automatically |
 | Double-settlement | Caught (or missed) by eye | Server-side dedup: an exported row can never be pulled into a second file |
@@ -86,7 +88,8 @@ Everything downstream depends on these. Never break one without confirming with 
 
 ### The settlement lifecycle (the heart of the app)
 
-9. **A settlement is one coordinator's batch within a month.** It carries an `account` (default **VF**, prefilled and editable) and **two** tracking numbers: `old_tracking_no` and `new_tracking_no`. **A month is not unique** — several teams settle against the same month and each batch gets its own pair of Tracking#s, so a coordinator may open as many settlements in a month as he needs. Ids stay readable by suffixing: `S-2026-08`, then `S-2026-08-2`.
+9. **A settlement is one coordinator's batch for one team.** It carries a `team_id` **and** the team's name, an `account` (default **VF**, prefilled and editable), and **two** tracking numbers: `old_tracking_no` and `new_tracking_no`. **There is no month** — every entry carries its own date, and a batch that runs from 27 August to 3 September is not an August settlement. A coordinator may open as many settlements for a team as he needs; each takes the next number from that team's `next_settlement_no` on the config sheet, so the id is unique across every coordinator and never reused: `S-MS-01`, then `S-MS-02`.
+    - The id keeps the code it was born with. Changing a settlement's team (allowed only while every row is `draft`/`returned`) does not renumber it — a primary key is never renamed, and a number out of the new team's sequence would be either a duplicate or a hole in it. `team_id` is what answers "whose is this".
 10. **Old and new are two parallel tracks.** Each entry belongs to a `period` (`old` or `new`); that period routes it to the matching Tracking# and lets it move through the lifecycle independently. Confirming, approving, and exporting old never waits on new, and vice-versa.
 11. **The status machine is `draft → confirmed → approved → exported`, with `returned` as a side branch.** Only these transitions exist:
     - Coordinator **confirms** a track → its `draft` rows become `confirmed`.
@@ -96,12 +99,13 @@ Everything downstream depends on these. Never break one without confirming with 
 12. **Editing an `approved` entry reverts it to `confirmed` and clears the approval.** A coordinator can edit after confirming; the moment he changes an already-approved row, it drops back to `confirmed` and must be re-approved. This is what stops an amount changing after sign-off.
 13. **An `exported` entry is locked.** No edits, no re-approval, no second export. This is the dedup guarantee.
 14. **`period` comes from the Site→JC lookup, not free typing — and the lookup's period comes from the task date.** When a Site ID is entered, its `job_code` and `period` auto-fill. A coordinator may override either on a row, but the default is always the lookup's answer.
-    - A site can hold **several job codes** (one per task raised against it). The grid fills in the one whose `task_date` is the latest **on or before** the day being settled, and offers the rest in the Job Code cell. Fallbacks: every task later than the entry → the earliest; no usable day yet → the newest.
+    - A site can hold **several job codes** (one per task raised against it). The grid fills in the one whose `task_date` is the latest **on or before** the day being settled — **the row's own `date`**, never the settlement's year — and offers the rest in the Job Code cell. Fallbacks: every task later than the entry → the earliest; no usable day yet → the newest.
     - In the lookup itself, `period` is **derived from `task_date`** (year ≥ `fiscal_new_from_year` → `new`; no readable date → `new`), server-side. The uploaded file's own Old/New column is never read — one authority for the old/new split, and it is the date.
 
 ### Export
 
-15. **Export is per team + month + period, and pulls only `approved` and not-yet-`exported` rows.** Nothing that has been exported is ever offered again unless the manager explicitly asks to re-include. It can be **narrowed to one settlement** (`<user_id>::<settlement_id>`) — necessary since rule 9, because a team's month may span two batches under two Tracking#s. Unnarrowed is the default and means the whole team-month.
+15. **Export is per team + period, and pulls only `approved` and not-yet-`exported` rows.** Nothing that has been exported is ever offered again unless the manager explicitly asks to re-include. It can be **narrowed to one settlement** (`<user_id>::<settlement_id>`) — necessary since rule 9, because a team may hold two open batches under two Tracking#s. Unnarrowed is the default and means every settlement of that team and period.
+    - **A row's `team` is stamped by the server, from the settlement.** It is not a grid cell and a client cannot send one. The export and the approvals screen both match team by value, so a mistyped team used to produce a row that appeared in no finance file and on no approvals screen; a value the client cannot send is a value it cannot misspell.
 16. **Committing an export is server-side and atomic.** The server re-selects the same predicate and stamps the rows `exported` in one pass (claim-then-build), so two managers exporting the same team at once cannot double-settle a row.
 17. **Every export mirrors the template** — the header block (Name / Account / Total), the big Old/New marker, and the Arabic footer (المدير المسؤل / مدير الحسابات / إعتماد) with the period's Tracking# and the date.
 18. **The per-site export divides money, never KM.** A multi-site line (`site_id` joined by `/`) explodes into one row per site; `amount`, `fuel_amount`, and `karta_amount` are split; `start_km` / `end_km` are copied unchanged. See Section 6.4 for the exact rounding.
@@ -186,14 +190,19 @@ One spreadsheet, shared, owned by the developer. Tabs:
 | `created_at` / `expires_at` | ISO datetime | |
 | `device_id` | text | From the client, informational |
 
-**`Teams`** — the fixed, add-to / deactivate-able list of named crews.
+**`Teams`** — the fixed, add-to / deactivate-able list of named crews, **and the two counters every settlement id and Tracking# is issued from.**
 
 | Column | Type | Purpose |
 |---|---|---|
 | `team_id` | text | Primary key (e.g. `T-003`) |
-| `name` | text | Display name (e.g. "Team Ashraf") |
-| `active` | boolean | Inactive teams stay off new entries; old entries keep their team |
+| `name` | text | Display name — the crew leader's name, in Arabic |
+| `code` | text | 2–4 chars, `A–Z0–9`, unique among **active** teams. Latin so an id stays LTR in a file name and a cell (8.1). Spells `S-MS-01` and `EXP-MS-01-NEW-02` |
+| `next_tracking_no` | integer | The next Tracking# this team will be issued. One running sequence spanning old and new, in confirm order |
+| `next_settlement_no` | integer | The next settlement number this team will be issued |
+| `active` | boolean | Inactive teams stay off new settlements; old ones keep their team |
 | `created_at` / `updated_at` / `updated_by` | | Server-set |
+
+The three added columns are **created on first read** (`ensureColumns`, in `getTeamsRegistry`) rather than added by hand. Both counters are read-return-increment under the script lock, through the one shared `allocateTeamNumber(teamId, field)`; blank or unreadable reads as 1. They are **editable on Admin → Teams**, which is the only place they can be seeded — the app cannot know what numbers finance has already issued, so the owner types each team's highest used number once after deploy. Two teams may legitimately hold the same Tracking#; the sequence is per team.
 
 **`SiteJC`** — the shared Site ID → Job Code lookup, with task date and period. This is what folds "JC Finder" into entry.
 
@@ -211,7 +220,7 @@ One spreadsheet, shared, owned by the developer. Tabs:
 
 | Column | Type | Purpose |
 |---|---|---|
-| `list_name` | text | `projects` \| `categories` \| `areas` \| `drivers` \| `months` |
+| `list_name` | text | `projects` \| `categories` \| `areas` \| `drivers` \| `months`. The grid reads the first four; `months` is left in place but nothing consumes it since an entry carries a date |
 | `value` | text | The option |
 | `active` | boolean | |
 | `sort_order` | integer | |
@@ -220,13 +229,13 @@ One spreadsheet, shared, owned by the developer. Tabs:
 
 | Column | Type | Purpose |
 |---|---|---|
-| `batch_id` | text | Primary key (e.g. `EXP-2026-AUG-NEW-01`) |
+| `batch_id` | text | Primary key: `EXP-<team code>-<settlement no>-<track>-<nn>`, e.g. `EXP-MA-01-NEW-02` — the team, the settlement, the track, and which file this is for that track |
 | `team` | text | |
 | `period` | text | `old` \| `new` |
-| `month` | text | |
-| `fiscal_year` | text | |
+| `month` | text | **Derived from the earliest row's date**, internal only. Kept because it is what a manager scans the log by ("did August's file go?") even though nothing else in the app has a month |
+| `fiscal_year` | text | Derived the same way |
 | `tracking_no` | integer | The period's Tracking# |
-| `settlement_id` | text | `<user_id>::<settlement_id>` when the batch was narrowed to one settlement; blank for a whole team-month |
+| `settlement_id` | text | `<user_id>::<settlement_id>` when the batch was narrowed to one settlement; blank for an unnarrowed one |
 | `report_type` | text | `normal` \| `persite` |
 | `row_count` | integer | |
 | `exported_by` | user_id | Server-set from session |
@@ -236,17 +245,21 @@ One spreadsheet, shared, owned by the developer. Tabs:
 
 Named e.g. `Settlement — Mahmoud Shaarawy`, owned by the developer, ID stored in that coordinator's `Users.coordinator_sheet_id`. Tabs:
 
-**`Settlements`** — one row per settlement batch. A month may hold several rows (rule 9); `settlement_id` is the only unique key.
+**`Settlements`** — one row per settlement batch. A team may hold several open at once (rule 9); `settlement_id` is unique across every coordinator's sheet.
 
 | Column | Type | Purpose |
 |---|---|---|
-| `settlement_id` | text | Primary key (e.g. `S-2026-08`; a later batch in the same month is `S-2026-08-2`) |
-| `month` | text | |
-| `fiscal_year` | text | |
+| `settlement_id` | text | Primary key (e.g. `S-MS-01`), from the team's `next_settlement_no`. Never reused |
+| `team_id` | text | FK into the config sheet's `Teams`. The id drives the counters, so a rename cannot orphan a settlement |
+| `team` | text | The team's name, stored too — it is what the finance file prints and what the export and approvals filters match on |
 | `account` | text | e.g. `VF` — batch-level, set once |
-| `old_tracking_no` | integer | The Old track's Tracking# |
-| `new_tracking_no` | integer | The New track's Tracking# |
+| `old_tracking_no` | integer | The Old track's Tracking#. Blank until `confirm_track` issues one |
+| `new_tracking_no` | integer | The New track's Tracking#. Same |
+| `fiscal_year` | text | Server-set at creation, never shown and never sent. Its only job is resolving a **legacy** entry's `month` + `day` into a real date (`entryDateOf`) |
+| `month` | text | **Legacy only.** Written by nothing; kept so a settlement created before teams existed still has something to name itself by |
 | `created_at` / `updated_at` / `updated_by` | | Server-set |
+
+`team_id` and `team` are created on first touch (`ensureCoordinatorSchema`), on the coordinator's own path and on both manager paths into a coordinator sheet.
 
 **`Expenses`** — one row per expense line.
 
@@ -254,7 +267,8 @@ Named e.g. `Settlement — Mahmoud Shaarawy`, owned by the developer, ID stored 
 |---|---|---|
 | `entry_id` | text | Primary key (e.g. `E-000123`) |
 | `settlement_id` | text | FK |
-| `month` / `day` | text / int | |
+| `date` | text | ISO `YYYY-MM-DD` — the day being settled. **Appended as a new last column**, since readers map by header and appending cannot shift stored data |
+| `month` / `day` | text / int | **Legacy only.** Never written. Read through `entryDateOf(row, settlement)`, which falls back to these against the settlement's `fiscal_year` |
 | `project` | text | From `Lists.projects` |
 | `site_id` | text | One site, or several joined by `/` |
 | `job_code` | text | Auto-filled from `SiteJC`; matching order for multi-site |
@@ -263,7 +277,7 @@ Named e.g. `Settlement — Mahmoud Shaarawy`, owned by the developer, ID stored 
 | `item_description` | text | Free text (often Arabic) |
 | `amount` | number | EGP |
 | `comment` | text | |
-| `team` | text | From `Teams` (active) |
+| `team` | text | **Server-stamped from the settlement** on every save (rule 15). Not a grid cell; a client cannot send one |
 | `status` | text | `draft` \| `confirmed` \| `approved` \| `returned` \| `exported` |
 | `approved_by` / `approved_at` | | Server-set on approve; cleared on revert |
 | `return_note` | text | Set on return; the coordinator sees it |
@@ -271,7 +285,7 @@ Named e.g. `Settlement — Mahmoud Shaarawy`, owned by the developer, ID stored 
 | `export_batch_id` / `exported_at` | | Server-set on commit |
 | `created_at` / `updated_at` / `updated_by` | | Server-set |
 
-**`Fuel`** — one row per fuel line. Same envelope columns (`entry_id`, `settlement_id`, `month`, `day`, `project`, `site_id`, `job_code`, `period`, `team`, `status`, `approved_*`, `return_note`, `exported`, `export_batch_id`, `exported_at`, audit) plus the fuel-specific fields:
+**`Fuel`** — one row per fuel line. Same envelope columns (`entry_id`, `settlement_id`, `date`, `project`, `site_id`, `job_code`, `period`, `team`, `status`, `approved_*`, `return_note`, `exported`, `export_batch_id`, `exported_at`, audit — plus the legacy `month` / `day`) plus the fuel-specific fields:
 
 | Column | Type | Purpose |
 |---|---|---|
@@ -284,7 +298,7 @@ Named e.g. `Settlement — Mahmoud Shaarawy`, owned by the developer, ID stored 
 
 ## 2.3 Data-type conventions
 
-- Dates are ISO `YYYY-MM-DD` strings. `day` is a plain integer 1–31; `month` is a three-letter label matching `Lists.months`.
+- Dates are ISO `YYYY-MM-DD` strings, stored and compared as such — ISO sorts correctly as text, which is most of why it is the stored form. The legacy pair is a plain integer `day` 1–31 and a three-letter `month` label.
 - Booleans are the strings `TRUE`/`FALSE` in Sheets; `normalizeBoolean` coerces on read.
 - Money is a plain number in EGP, no currency symbol stored. The symbol is a display concern.
 - IDs are prefixed (`U-`, `T-`, `S-`, `E-`, `F-`, `EXP-`) and zero-padded where numeric.
@@ -303,7 +317,7 @@ The Apps Script keeps a per-request cache of: the config map, the `Users` regist
 
 **Request shape**
 ```json
-{ "action": "confirm_track", "token": "<uuid>", "payload": { "settlement_id": "S-2026-08", "period": "new" } }
+{ "action": "confirm_track", "token": "<uuid>", "payload": { "settlement_id": "S-MS-01", "period": "new" } }
 ```
 
 **Response envelope**
@@ -329,7 +343,7 @@ The Apps Script keeps a per-request cache of: the config map, the `Users` regist
 ## 3.4 Admin — manager-only (registry, teams, lookup, lists) (11)
 
 - **`list_users`** / **`create_user`** / **`update_user`** / **`reset_user_password`** / **`deactivate_user`** — manage the Users tab (which *is* the registry). `create_user`/`update_user` set `coordinator_sheet_id` for coordinators. Cannot deactivate the last active manager.
-- **`list_teams`** / **`create_team`** / **`update_team`** — add or toggle `active`. Never hard-delete.
+- **`list_teams`** / **`create_team`** / **`update_team`** — add, edit, or toggle `active`. Never hard-delete. `create_team` requires a `code` (2–4 chars `A–Z0–9`, unique among active teams) and starts both counters at 1; `update_team` edits the name, the code and both counters. The code is re-checked for uniqueness on a **reactivation** too, since one left idle may have been taken meanwhile. `list_teams` returns `code` to any signed-in user and the two counters to managers only.
 - **`list_site_jc`** / **`upsert_site_jc`** / **`bulk_import_site_jc`** / **`delete_site_jc`** — the lookup, keyed on `site_id + job_code`. `bulk_import_site_jc` takes rows parsed from an uploaded Excel (client parses with xlsx-js-style, splits the file's combined `Site ID-JC` cell on its last hyphen, sends JSON) and **replaces** the tab by default (`mode: 'merge'` for a partial file): the source is a dated full export, so a pair that has left the file leaves the lookup. `period` is derived server-side from `task_date` and is never accepted from the import. `delete_site_jc` takes an optional `job_code` — without one it removes every task on the site.
 - **`list_lists`** / **`update_lists`** — dropdown reference data.
 
@@ -337,29 +351,29 @@ The Apps Script keeps a per-request cache of: the config map, the `Users` regist
 
 Every one resolves the target spreadsheet from the session, and rejects if `role !== 'coordinator'`.
 
-- **`get_my_settlements`** — the caller's Settlements with a derived status roll-up per track (old/new).
-- **`create_settlement`** — `{month, account, old_tracking_no, new_tracking_no}`.
-- **`update_settlement`** — edit month/account/tracking numbers (only while the relevant track has no `exported` rows).
-- **Tracking#s are unique within one coordinator's sheet**, enforced by `findTrackingClash` on both `create_settlement` and `update_settlement`, inside the script lock. No two of his settlements may share a number, and one settlement's Old and New may not share one either — they route to different Tracking#s (6.2), so the same number on both is the same mistake. Rule 9 gives each batch its own pair and the export's settlement selector (7.1) exists so each goes out separately; two settlements on one number means two finance files stamped identically, and by the time that shows up the track is exported and the number can no longer be changed. Entry is the only cheap moment to catch it. Scope is deliberately **one coordinator**: whether two coordinators may hold the same number is a question about how finance issues them, and checking it would mean sweeping every coordinator's spreadsheet on every settlement write.
-- **`delete_settlement`** — `{settlement_id}` → removes the settlement **and every entry in it**, but only while all of those entries are `draft` or `returned` (DELETABLE_STATUSES). One `confirmed`, `approved` or `exported` row refuses the whole call, naming the statuses and their counts. This is rule 9.3 applied to the container instead of the row: a settlement nobody outside the coordinator has seen is his to bin, and doing it row by row through `delete_entries` already worked — this just spares him thirty clicks and the empty shell at the end. It is all-or-nothing precisely because the settlement is the only thing carrying `old_tracking_no` / `new_tracking_no`: the Tracking# is resolved from it at read and export time and never stored on the entry (6.2), so deleting it out from under an exported row would leave an `ExportLog` batch pointing at a number that exists nowhere. That also keeps id reuse safe — `buildSettlementId` reclaims a freed id, and a resurrected `S-2026-08` would collide with an old log row's `<user_id>::<settlement_id>`. Statuses are re-read **inside the script lock**, so a manager approving a row mid-click cannot lose that approval.
+- **`get_my_settlements`** — the caller's Settlements with a derived status roll-up per track (old/new). Sorted by `created_at`, newest first: `S-MS-01` is a per-team sequence and no longer runs in date order.
+- **`create_settlement`** — `{team_id, account}`. Two fields. The team must be active and have a code; the id comes from `allocateTeamNumber(team_id, 'next_settlement_no')`; `fiscal_year` is set server-side; both tracking numbers start blank.
+- **`update_settlement`** — edit `team_id` / `account` / tracking numbers. Account and tracking are gated on the relevant track having no `exported` rows; the **team** is stricter, requiring every row to be `draft` or `returned` — it is stamped onto every entry and is what the export and approvals filters match on, so moving a settlement a manager has already seen would move rows out from under a filter he is looking at. There is no `month`; a client that still sends one is ignored, not refused.
+- **Tracking#s issue themselves, from the team's counter.** `findTrackingClash` — which swept one coordinator's own settlements for a duplicate — is retired: the counter lives on the shared config sheet, so two coordinators settling for the same team draw from one sequence, which is something a per-sheet check could never do. A hand-typed override through `update_settlement` **bumps the counter past itself** (`bumpTeamCounterPast`, forwards only) so the sequence can never reissue it.
+- **`delete_settlement`** — `{settlement_id}` → removes the settlement **and every entry in it**, but only while all of those entries are `draft` or `returned` (DELETABLE_STATUSES). One `confirmed`, `approved` or `exported` row refuses the whole call, naming the statuses and their counts. This is rule 9.3 applied to the container instead of the row: a settlement nobody outside the coordinator has seen is his to bin, and doing it row by row through `delete_entries` already worked — this just spares him thirty clicks and the empty shell at the end. It is all-or-nothing precisely because the settlement is the only thing carrying `old_tracking_no` / `new_tracking_no`: the Tracking# is resolved from it at read and export time and never stored on the entry (6.2), so deleting it out from under an exported row would leave an `ExportLog` batch pointing at a number that exists nowhere. Ids are no longer part of that argument: a settlement id came off the month, so deleting one freed it and the next August settlement was handed the same `S-2026-08`, colliding with an old log row. It now comes off the team's counter, which only moves forwards — a deleted `S-MS-04` is a gap, and nothing can ever be filed under that name again. Statuses are re-read **inside the script lock**, so a manager approving a row mid-click cannot lose that approval.
 - **`list_entries`** — `{settlement_id, kind}` → rows for the grid.
-- **`save_entries`** — bulk upsert of `draft` rows to the caller's sheet (this is the grid's Save). Rejects any row whose current stored status is `exported`. **If a row being saved is currently `approved` and its values changed, the server reverts it to `confirmed` and clears `approved_by/at`** (rule 12). It also settles the six list cells onto the list's own spelling (6.6.4) before storing them.
+- **`save_entries`** — bulk upsert of `draft` rows to the caller's sheet (this is the grid's Save). Rejects any row whose current stored status is `exported`. **If a row being saved is currently `approved` and its values changed, the server reverts it to `confirmed` and clears `approved_by/at`** (rule 12) — compared on the *resolved* date, so an untouched legacy row is not called changed. It settles the four list cells onto the list's own spelling (6.6.4), writes `date` as ISO, and **stamps `team` from the settlement** on create and on every update. The team stamp sits outside the change comparison, so restamping cannot revert an approval on its own.
 - **`delete_entry`** / **`delete_entries`** — remove `draft` **or `returned`** rows (the only hard-delete in the app). `returned` is deletable because 6.1 already puts such a row back in the coordinator's hands — editing it makes it a `draft` — so refusing the delete only forced a meaningless edit first. It is also how a confirmed duplicate finally leaves: the manager returns it (which takes it out of the `approved` pool export draws from), and the coordinator deletes it. `delete_entries` takes a list and is what the grid's bulk delete calls; unlike `save_entries` it is **not** all-or-nothing — it deletes every deletable row it was given and returns the rest as `refused: [{entry_id, status}]`, so one already-confirmed row cannot block the clearing of a bad paste. The client puts the refused rows back where they were.
-- **`confirm_track`** — `{settlement_id, period}` → sets that settlement's `draft` rows of that period to `confirmed`. Requires the matching tracking number to be set.
+- **`confirm_track`** — `{settlement_id, period}` → sets that settlement's `draft` rows of that period to `confirmed`, **and issues that track's Tracking#**. It requires the settlement to have a **team**, not a number: the gate inverted, because a number the coordinator had to chase finance for before he could hand over finished work was the wrong thing to block on, and the team is something he can fix. A number is allocated only when the track has none *and* at least one row is actually moving — a refused or empty confirm must not burn one, since a gap in the sequence is a question somebody has to answer. A top-up confirm reuses the number the track already has. The settlement is re-read **inside the lock** so two racing confirms cannot both allocate. Returns `tracking_no` and `tracking_no_issued`.
 
 ## 3.6 Manager — consolidated across coordinators (4)
 
-- **`list_pending`** — `{team?, coordinator?, period?, month?}` → loops the registry, opens each coordinator sheet, returns `confirmed` / `approved` / `returned` entries with the coordinator name and resolved Tracking# attached. Paged.
+- **`list_pending`** — `{team?, coordinator?, period?, settlement_id?}` → loops the registry, opens each coordinator sheet, returns `confirmed` / `approved` / `returned` entries with the coordinator name and resolved Tracking# attached. Paged. The month filter is gone with the month; `settlement_id` takes its place. It is deliberately **not** called `settlement` — `Export.gs`'s own filter carries a `settlement` holding a `<user_id>::<settlement_id>` batch key, and both filters are read by the same `entryMatchesFilter`.
 - **`approve_entry`** — `{coordinator_user_id, kind, entry_id}` → `approved`, stamps `approved_by/at`. (Manager may target any coordinator; the server resolves that coordinator's sheet from the registry — the one place a manager action reaches another user's sheet, gated by `role==='manager'`.)
 - **`return_entry`** — `{coordinator_user_id, kind, entry_id, note}` → `returned`, stores `return_note`.
 - **`approve_batch`** — optional convenience: approve all `confirmed` rows matching a filter in one call.
 
 ## 3.7 Export — manager-only (2)
 
-- **`export_query`** — `{team, month, period, settlement?, exclude_exported}` → the `approved` rows for that team+month+period across all coordinators (excluding `exported` unless told otherwise), plus the resolved Tracking# and the coordinator name for the header. It also returns `settlements`: every batch that team-month-period holds, **tallied before the `settlement` narrowing is applied**, so the screen's settlement selector still lists the siblings of the one already chosen. The client renders Normal or Per-site and builds the `.xlsx` with xlsx-js-style. The **per-site explosion is computed client-side** for display and the file (Section 6.4), because it is a pure transform of returned rows.
-- **`export_commit`** — `{team, month, period, settlement?, report_type}` → **re-selects the same predicate server-side**, stamps those rows `exported` + `export_batch_id` + `exported_at`, writes an `ExportLog` row, returns `{batch_id, row_count}`. This is the atomic claim (rule 16). The client only downloads the file it already built; the commit is what makes the rows disappear from future queries.
-- **`export_batch_rows`** — `{batch_id}` → the entries stamped with that `export_batch_id`, plus the batch's own log row. Read-only; writes nothing and can claim nothing. This is what the **per-site** file is built from (7.1), and it selects on the batch id rather than on the team-month-period predicate so the per-site breakdown divides exactly the lines the finance file carried — a predicate re-run later can return a different set (a row approved since, a second batch on the same team-month under rule 9).
-- **One file carries exactly one Tracking#.** `export_commit` refuses a claim whose rows resolve to more than one (`tracking_no_conflict`), alongside the existing refusal for a missing one. `exportTemplate.js` joins the distinct list into the footer of **both** sheets, so a batch spanning two settlements would send finance a file stamped "30, 31" — and the rows are locked the moment they are claimed (rule 13), so it cannot be undone. The preview shows the conflict and `commitBlockedReason` disables Confirm; the commit is the gate. The way out is the settlement selector (7.1).
+- **`export_query`** — `{team, period, settlement?, exclude_exported}` → the `approved` rows for that team+period across all coordinators (excluding `exported` unless told otherwise), plus the resolved Tracking# and the coordinator name for the header. The header also carries `first_date` / `last_date` — the span the rows actually cover — and the `month` / `fiscal_year` the log takes from the earliest of them. It returns `settlements`: every batch that team and period hold, **tallied before the `settlement` narrowing is applied**, so the screen's settlement selector still lists the siblings of the one already chosen. The client renders the file and builds the `.xlsx` with xlsx-js-style. The **per-site explosion is computed client-side** for display and the file (Section 6.4), because it is a pure transform of returned rows.
+- **`export_commit`** — `{team, period, settlement?, report_type}` → **re-selects the same predicate server-side**, stamps those rows `exported` + `export_batch_id` + `exported_at`, writes an `ExportLog` row, returns `{batch_id, row_count}`. This is the atomic claim (rule 16). The client only downloads the file it already built; the commit is what makes the rows disappear from future queries.
+- **`export_batch_rows`** — `{batch_id}` → the entries stamped with that `export_batch_id`, plus the batch's own log row. Read-only; writes nothing and can claim nothing. This is what the **per-site** file is built from (7.1), and it selects on the batch id rather than on the team-period predicate so the per-site breakdown divides exactly the lines the finance file carried — a predicate re-run later can return a different set (a row approved since, a second batch for the same team under rule 9).
+- **One file carries exactly one Tracking#.** `export_commit` refuses a claim whose rows resolve to more than one (`tracking_no_conflict`), alongside the existing refusal for a missing one. `exportTemplate.js` joins the distinct list into the footer of **both** sheets, so a batch spanning two settlements would send finance a file stamped "30, 31" — and the rows are locked the moment they are claimed (rule 13), so it cannot be undone. The preview shows the conflict and `commitBlockedReason` disables Confirm; the commit is the gate. The way out is the settlement selector (7.1). In practice a batch cannot span two settlements at all now: each has its own number out of a monotonic per-team counter.
   - This counts the numbers the **claimed rows** resolve to, never "both kinds must agree". A settlement with expenses and **no fuel at all** contributes one number and passes, as does a fuel-only one. Nothing in the export requires a settlement to hold both kinds.
 
 ## 3.8 Cross-cutting rules
@@ -410,7 +424,7 @@ The role comes from the session and is never chosen in the UI. `renderSidebar()`
 
 > The coordinator had a slim white top bar until 2026-08-28, on the reasoning that two screens do not need a nav rail. The project owner asked for one shell so the app reads as one product. `js/components/topbar.js` is gone; `roleLabel()` and `initial()` moved into `sidebar.js`.
 
-**Getting into the grid:** the coordinator dashboard's **New settlement** button (`create_settlement`) is the only way a settlement comes into being, and a settlement row is the only way into `#/settlement/<id>`. Without that button a coordinator with no settlements has no route to the entry grid at all.
+**Getting into the grid:** the coordinator dashboard's **New settlement** button (`create_settlement`) is the only way a settlement comes into being, and a settlement row is the only way into `#/settlement/<id>`. Without that button a coordinator with no settlements has no route to the entry grid at all. The dialog is two fields, **Team · Account** — no month, and no tracking boxes, because the numbers issue themselves at Confirm. The dashboard groups by team and sorts by `created_at`.
 
 ## 5.2 Routing
 
@@ -419,7 +433,7 @@ Hash routes, handled in `js/router.js`:
 | Route | Role | Screen |
 |---|---|---|
 | `#/dashboard` | both | role dashboard |
-| `#/settlement/<id>` | coordinator | the grid |
+| `#/settlement/<id>` | coordinator | the grid — titled with the settlement's **team**, subtitled `S-MA-01 · Account: VF` |
 | `#/approvals` | manager | consolidated review |
 | `#/export` | manager | export builder |
 | `#/admin/teams` `#/admin/sitejc` `#/admin/people` `#/admin/lists` | manager | admin tabs |
@@ -444,7 +458,7 @@ draft ───────────────► confirmed ─────
   └────────────────────────┴─────────────────────┘  ──► returned ──► (coordinator edits) ──► draft
 ```
 
-- **Old and new run this machine independently.** A `confirm_track` names a period; it only moves that period's rows.
+- **Old and new run this machine independently.** A `confirm_track` names a period; it only moves that period's rows — and issues that period's Tracking# (3.5).
 - **Revert on edit of approved (rule 12):** `save_entries` compares each incoming row to stored; if an `approved` row's meaningful fields changed, it becomes `confirmed` and the approval is cleared.
 - **Exported is terminal.** `save_entries`, `confirm_track`, `approve_entry`, and `return_entry` all reject an `exported` row.
 
@@ -458,11 +472,15 @@ Computed live in the grid and re-checked in `save_entries` / `confirm_track`:
 
 - **Missing Site ID** → row flagged, blocks confirm.
 - **Zero / empty amount** (`amount` for expense, `fuel_amount` for fuel) → row flagged, blocks confirm.
-- **Missing required field** → flagged. **Every cell must be filled except `comment`**, which is the only optional one. Common to both kinds: `month`, `day`, `project`, `team`. Expense adds `category` and `item_description`; fuel adds `area`, `driver`, `city`, `start_km`, `end_km` and `karta_amount`.
+- **Missing or unreadable `date`** → flagged. Judged on the *resolved* date, so a legacy row satisfies it through `month` + `day`, and a typed date that did not parse fails even though the cell is not empty.
+- **Missing required field** → flagged. **Every cell must be filled except `comment`**, which is the only optional one. Common to both kinds: `project`. Expense adds `category` and `item_description`; fuel adds `area`, `driver`, `city`, `start_km`, `end_km` and `karta_amount`.
+  - `team` is **not** on the list. It is no longer something a coordinator can type — the server stamps it from the settlement — so the only way one can be blank is a legacy settlement with no team, which `confirm_track` refuses by name (`settlement_team_required`). Flagging the row as well would point at a column the grid does not show.
   - The three fuel numbers (`start_km`, `end_km`, `karta_amount`) must be **filled but may be zero** — a trip with no karta spend and an odometer genuinely reading 0 are both real facts. This is the one place the amount rule above does not apply.
   - `job_code` and `period` are **not** required, and stay amber. Both are filled from the Site→JC lookup (rule 14), so flagging them would make a coordinator unable to settle a real expense because an admin has not imported the site yet — a wall he cannot climb himself. The bullet below is what governs them.
   - The list lives twice, deliberately: `REQUIRED_TEXT_FIELDS` / `REQUIRED_NUMBER_FIELDS` in `js/utils/validate.js` and `REQUIRED_ENTRY_FIELDS` / `REQUIRED_ENTRY_NUMBERS` in `apps-script/Validate.gs`. They are the same rule and move together.
-- **Fuel KM continuity** → within one driver, a row's `start_km` should equal the previous row's `end_km`; a gap is an amber warning (does not block, but is surfaced).
+- **Fuel KM continuity** → within one driver, a row's `start_km` should equal the previous row's `end_km`; a gap is an amber warning (does not block, but is surfaced). Ordered by **date**, then by position. Ordering by `day` alone was only the same thing inside one month: a settlement running 27–31 August into 1–3 September had the September rows sorted first and reported gaps that were an artefact of that.
+- **A date outside the batch's month** (`date_outside_span`) → amber, blocks nothing. Compared against the *dominant* month of the grid's own rows, since a settlement has no month of its own. It is legitimately common — a batch genuinely runs into the next month — and what it catches is the typo: `11-9-25` for `11-9-26`.
+- **Warnings are suppressed on `exported` rows**, on both sides. A locked row cannot be edited, so advice about it is advice about something nobody may do. Cleared *after* the KM pass, never before — an exported row is still part of the driver's odometer sequence, and dropping it from the chain would invent a gap in the live row after it.
 - **Unknown site in lookup** → if a Site ID (or a segment of a multi-site cell) is absent from `SiteJC`, warn and leave `job_code`/`period` for the coordinator to set. Confirm is allowed; the warning stands.
 - **Site with several job codes** → not an error. The date-matched code is filled in, the cell shows how many alternatives exist, and the coordinator can pick another. Once he does, autofill stops replacing it.
 - **Multi-site row whose sites straddle old and new** (`mixed_period`) → amber warning. The row settles against one Tracking# (6.2), so half of it would be filed under the wrong one; the fix is to **split the line** (6.6.7), which is the coordinator's call. The period cell shows a chip per site in that site's own colour, so the disagreement is visible without opening the lookup, and offers the split button beside them. Client-only: it reads the date-resolved candidate the grid picked, which the server does not compute — and being a warning it enforces nothing.
@@ -487,23 +505,40 @@ This lives in `js/utils/explode.js` and is used only by the export builder. The 
 The coordinator's grid is the one local-first surface:
 
 - Cell edits update an in-memory row model and are mirrored to `localStorage` under `sc_draft_<settlement_id>_<kind>` on every change, so a refresh or crash never loses typing.
+- A draft carries a **`schema` version** and is migrated on read (`migrateDraft` in `state.js`). It is the one thing in the app that survives a deploy on the user's own machine — everything else lives in a Sheet the server owns — so a coordinator half-way through a grid when a new version ships opens it again with rows in the old shape. v1 → v2 turns `month` + `day` into `date`, taking the year from the draft's own `saved_at`.
 - **Save draft** (`save_entries`) pushes the draft rows to the coordinator's sheet. **Confirm** pushes then confirms.
 - We do **not** write to Sheets on every keystroke — Apps Script round-trips are ~1–2 s and would make the grid lag. The localStorage mirror is the safety net between saves.
 - On load, the grid seeds from the server rows, then overlays any newer localStorage draft.
 
-## 6.6 The eight grid behaviours ("easy as Excel")
+## 6.6 The nine grid behaviours ("easy as Excel")
 
-1. **Paste from Excel** — a paste of tab-separated rows appends multiple rows; `job_code`/`period` auto-fill per row.
-2. **Carry-down** — a new row inherits `team`, `project`, `month`, `day`, and `period` from the row above.
-3. **Site → JC + period autofill** — entering a Site ID fills `job_code` and `period` from `SiteJC`; multi-site cells look up each segment and join the codes in order, flagging any unknown segment. Where a site has several job codes, the one matching the entry's day wins and the Job Code cell offers the rest (each labelled with its task date) — so `month` and `day` re-run the pick, and a hand-chosen code is never overwritten.
-4. **Inline dropdowns, and the list is the authority on spelling** — month / project / category / area / driver / team as in-cell selects. A new row's month defaults to the settlement's own and stays editable; the options come from `Lists`/`Teams`, so a typed "Augst" cannot reach a sheet the export filters on.
-   - A select stops a coordinator *typing* a wrong value, but it is not the only way one arrives: a **paste from Excel** writes whatever the workbook held, and `AUG` where the list says `Aug` is the ordinary case. So every list cell is matched against its list **ignoring case, surrounding space and doubled spaces**, and where it matches, the **list's spelling wins** — on paste, on commit, on load, and again server-side in `save_entries`. The server is the one that makes it a rule rather than a UI courtesy.
+> The date cell is **9**, at the end, though it is the newest. The numbers here are cited from code comments all over the app — 6.6.3, 6.6.4, 6.6.7 — and renumbering them to slot it in where it reads best would have quietly broken every one of those references.
+
+1. **Paste from Excel** — a paste of tab-separated rows appends multiple rows; `job_code`/`period` auto-fill per row. A pasted date is read by `parseSheetDate` first (a real Excel Date, a serial, ISO, or a named month — all unambiguous) and only then by `parseTypedDate`.
+2. **Carry-down** — a new row inherits `project`, `date`, and `period` from the row above. `team` is not carried because it is not a cell; `month`/`day` are one `date`.
+3. **Site → JC + period autofill** — entering a Site ID fills `job_code` and `period` from `SiteJC`; multi-site cells look up each segment and join the codes in order, flagging any unknown segment. Where a site has several job codes, the one matching the entry's **own date** wins and the Job Code cell offers the rest (each labelled with its task date) — so editing the date re-runs the pick, and a hand-chosen code is never overwritten. It used to resolve against the settlement's `fiscal_year`, which meant a December settlement holding January days picked against the wrong year and could flip both the job code and the old/new period.
+4. **Inline dropdowns, and the list is the authority on spelling** — project / category / area / driver as in-cell selects. The options come from `Lists`, so a typed value cannot reach a sheet the export reads.
+   - A select stops a coordinator *typing* a wrong value, but it is not the only way one arrives: a **paste from Excel** writes whatever the workbook held. So every list cell is matched against its list **ignoring case, surrounding space and doubled spaces**, and where it matches, the **list's spelling wins** — on paste, on commit, on load, and again server-side in `save_entries`. The server is the one that makes it a rule rather than a UI courtesy.
    - Matching is deliberately **not fuzzy**. Case and whitespace, nothing else. `POC-3` and `POC3` stay two different things; guessing which was meant is how a wrong value reaches a finance file.
-   - A value that matches **nothing** is stored exactly as typed — never blanked, never guessed — and warned as `unknown_list_value` (amber, blocks nothing). It matters most on `team`: the export and approvals filters match team by value, so a row whose team matches no team appears in **no** file and on **no** approvals screen. That absence is what the warning exists to make visible.
+   - A value that matches **nothing** is stored exactly as typed — never blanked, never guessed — and warned as `unknown_list_value` (amber, blocks nothing). This used to matter most on `team`, where a mismatch produced a row in no finance file and on no approvals screen; that failure is gone, because `team` is no longer a cell the client can write.
 5. **Keyboard nav** — Tab across, Enter moves to the same column in the next row (adding a row at the end).
 6. **The period cell is chips, not a dropdown** — one chip per site, in the Site ID cell's order. The chip's **colour** is what the lookup says that site is (amber old, blue new, grey `?` for a site it does not know); the chip's **ring** is what the *row* does, since the row settles against exactly one Tracking# (6.2). So `0004/0025` reads `Old New` with the ring on the one it is filed under. Clicking a chip files the row under that period, clicking the ringed chip flips it — this is where rule 14's override lives now that there is no select. A row whose period matches no site (an override) grows a dashed chip carrying it, so the ring is never invisible.
 7. **Split a mixed line by period** — a row whose sites straddle old and new cannot be settled as it stands: one row carries one period, and half the money would go out under the wrong Tracking#. The period cell offers a split button that breaks it into **two rows in the same settlement** — old sites on one, new sites on the other — pairing site *i* with job code *i* (6.4), and **dividing the money evenly by site count** with the same integer-cent rounding as the per-site export, so the halves re-sum to the original exactly. KM is copied, never divided (rule 18). The first half stays on the original row so an already-saved entry keeps its `entry_id`; the other half is a new `draft`. The division is a *default* — both rows are ordinary editable drafts and a toast says so, because only the coordinator knows the real breakdown. Lives in `js/coordinator/gridSplit.js` as a pure plan; grid.js applies it.
 8. **Select rows and delete them together** — a tick box in the row-number gutter, and one in the header that takes the whole grid at once. A "Delete *n* selected" button appears in the toolbar carrying the count, and confirms before acting. Deleting one row through its own ✕ runs the same path with a list of one, so both behave identically — including what happens when the server says no. Only `draft` and `returned` rows can actually be deleted (rule 9.3): an `exported` row has no tick box at all (rule 13), and a row sitting with a manager is refused **by name** and put back at the index it was taken from, rather than the whole batch failing.
+9. **The date cell is day-first and rewrites itself on blur** — `11-Aug-26`. That rewrite is the mechanism, not a nicety: `11-9` is read as 11 September and the coordinator *sees* it as `11-Sep-26` before he moves on, so a misreading cannot sit unnoticed in a cell that still says what he typed.
+
+   | typed | result |
+   |---|---|
+   | `11` | 11 of the **row above's** month and year; today's if there is no row above |
+   | `11-9` `11/9` `11.9` | 11 Sep, year taken the same way |
+   | `11-9-26` `11-9-2026` | 11 Sep 2026 |
+   | `11-sep` `11-SEP-26` `11-sep-2026` | 11 Sep 2026 |
+   | `2026-09-11` | ISO — four digits first means year first |
+   | anything else | stays as typed, red, blocks confirm |
+
+   Do not make the matching fuzzier than this. `07/12/2025` is December to the person who wrote it and July to a US-locale reader, and a guess puts money under the wrong day. An unparsed value is kept on the row as `__date_typed` and shown back — blanking it would take away the thing the coordinator has to look at to see what went wrong.
+
+   Parsing happens on **commit, not per keystroke**: `11-9-26` passes through `11`, `11-`, `11-9` and `11-9-2` on the way, and re-parsing each would flicker the row between three different days and a red flag before the date was finished. `parseTypedDate()` in `js/utils/dates.js`; the row above supplies whatever was not typed.
 
 ---
 
@@ -511,18 +546,20 @@ The coordinator's grid is the one local-first surface:
 
 ## 7.1 The four possible files
 
-Per team + month, each period can produce two report types, so up to four files: **normal-old**, **normal-new**, **persite-old**, **persite-new**. Each is a separate `.xlsx` with its own period's Tracking# and its own dedup — a row can never appear across two of them.
+Per team + settlement, each period can produce two report types, so up to four files: **normal-old**, **normal-new**, **persite-old**, **persite-new**. Each is a separate `.xlsx` with its own period's Tracking# and its own dedup — a row can never appear across two of them. They are named `<team> — S-MA-01 — NEW — #4.xlsx`, with ` — Per Site` appended for the per-site one so it cannot overwrite the Normal file in the downloads folder.
 
 **The two report types are consecutive, not alternatives.** The export screen's Generate always builds the **Normal** file; it is the one that is reviewed and committed. The **per-site** file is built afterwards, from a batch in the export log — one button per exported batch — and is the last step of a settlement, taken once the finance file has been issued. It is built from `export_batch_rows` (3.7), so it divides exactly the rows that went out, and it claims nothing: those rows are already `exported` and locked (rule 13). There is no report-type selector on the filter bar; offering the choice up front put it before the review and made the two files look like alternatives.
 
-Where a team's month spans several settlements (rule 9), the export screen's **settlement selector** narrows the four to one batch at a time, so each batch goes out under its own Tracking# instead of one file carrying both. The dedup is unchanged: the commit claims only what its own predicate selects, so the batches cannot overlap.
+Where a team holds several open settlements (rule 9), the export screen's **settlement selector** narrows the four to one batch at a time, so each batch goes out under its own Tracking# instead of one file carrying both. It is the primary control now that the month filter is gone — the filter bar is **team → settlement → period**. The dedup is unchanged: the commit claims only what its own predicate selects, so the batches cannot overlap.
 
 ## 7.2 The finance file's layout (mirrors the workbook)
 
 The Normal file reproduces the two entry layouts:
 
-- **Expenses Tracking** sheet: header block (Name, Account, Total) + the big **Old/New** marker; columns Month, Day, Project, Site ID, Job Code, Category, Item Description, Amount, Comment; the Arabic approval footer with **Tracking#** and date.
-- **Fuel Tracking** sheet: header (Fuel total, marker); columns Month, Day, Project, Site ID, Job Code, Start KM, End KM, Fuel, Area, Driver, City, Karta; same footer.
+- **Expenses Tracking** sheet: header block (Name, Account, Total, Team) + the big **Old/New** marker; columns Date, Project, Site ID, Job Code, Category, Item Description, Amount, Comment; the Arabic approval footer with **Tracking#** and date.
+- **Fuel Tracking** sheet: header (Fuel total, Karta total, marker); columns Date, Project, Site ID, Job Code, Start KM, End KM, Fuel, Area, Driver, City, Karta; same footer.
+
+**There is no Month in the header block.** This section always specified Name / Account / Total plus the marker; a Month cell had been added in code beyond that, and it became a lie the moment a batch could run from 27 August to 3 September. The one **Date** column (`05-Aug-26`, written as **text** — an Excel date cell is re-rendered by whichever locale opens the file) replaces Month + Day and says what each line is actually for. Rows are sorted by coordinator, then by that date, then by entry id, so two runs of the same query produce byte-identical files.
 Built client-side with xlsx-js-style from the `export_query` rows. `js/manager/exportTemplate.js` owns the header/footer construction **and the file's formatting** — fills, fonts, borders, row heights and the `#,##0.00` money format, with every colour read from `css/tokens.css` at export time so rule 23 holds inside the .xlsx too. `js/utils/xlsx.js` owns the library calls and paints the styles onto the cells.
 
 ## 7.4 The per-site file is a flat register, not the template divided
@@ -536,7 +573,7 @@ Four things about that table are not guessable from the column names:
 - **`Category` is the KIND of cost**, and one of exactly three words: `Expenses`, `Fuel`, `Karta`. The coordinator's own category cell (Transportation, Accommodation, …) moves down to **`Sub Category`**, filled on expense rows and empty on the other two, which have no such cell.
 - **A fuel line becomes two rows per site** — one carrying its fuel share, one its karta share — because the table has a single `Cost/Site` column and a fuel line holds two amounts (2.2). A karta of zero or blank produces **no** Karta row: a 0.00 row would be counted as a claim that was never made.
 - **`Item Description` and `Comment` are blank on fuel and karta rows.** The fuel layout has no such cells, and filling them with the driver or the area would put a name in a column finance reads as a description of a purchase.
-- **`Name` is the team**, `Coordinator` is the person who filed the line, and **`Date`** is `dd-mmm-yy` (`05-Aug-26`), written as text: the day, the month label and the year reach the export from three separate cells (2.2), and a text date cannot be re-read as `08/05/26` by whichever locale opens the file. `formatShortDate()` in `js/utils/dates.js` builds it from `entryDate()`.
+- **`Name` is the team**, `Coordinator` is the person who filed the line, and **`Date`** is `dd-mmm-yy` (`05-Aug-26`), written as text so it cannot be re-read as `08/05/26` by whichever locale opens the file. `formatShortDate()` in `js/utils/dates.js` builds it from `entryDateOf()`, which reads whichever shape the row is in — its own `date` cell, or a legacy row's `month` + `day` against the settlement's `fiscal_year`. That fallback is what keeps the already-exported batches regenerating.
 
 Everything reaching the table has already been through `explodeRows()` (6.4), so `Cost/Site` is that site's share and the rows re-sum to what the coordinator typed. KM appears nowhere in this file at all, which is one way of keeping rule 18.
 
@@ -668,7 +705,8 @@ settlement-checker/
     i18n/  en.js  ar.js  i18n.js
     utils/
       hash.js                    # SHA-256
-      dates.js  money.js  dom.js
+      dates.js                   # entryDateOf (the one date reader), parseTypedDate
+      money.js  dom.js
       lists.js                   # match a cell to its reference list (6.6.4)
       validate.js                # grid validation (Section 6.3)
       explode.js                 # per-site split (Section 6.4)
@@ -695,15 +733,15 @@ settlement-checker/
       teams.js  siteJc.js  users.js  lists.js
   apps-script/
     Main.gs                      # doGet/doPost dispatcher
-    Utils.gs
-    Sheets.gs                    # low-level row helpers
+    Utils.gs                     # entryDateOf, re-entrant withScriptLock
+    Sheets.gs                    # low-level row helpers, ensureColumns
     Config.gs
     Auth.gs                      # login/logout/validateSession
     Registry.gs                  # resolveCoordinatorSheet(session), loop-all-coordinators
-    Coordinator.gs               # the 7 coordinator actions
+    Coordinator.gs               # the 9 coordinator actions, ensureCoordinatorSchema
     Manager.gs                   # list_pending / approve / return
     Export.gs                    # export_query / export_commit + dedup
-    Admin.gs                     # users/teams/sitejc/lists
+    Admin.gs                     # users/teams/sitejc/lists, allocateTeamNumber
     Validate.gs                  # server mirror of grid validation
 ```
 
@@ -734,6 +772,11 @@ settlement-checker/
 - Never store the session token in `localStorage`. Memory only. (Draft grid data in `localStorage` is fine; the token is not.)
 - Never hard-delete anything except a `draft` or `returned` entry via `delete_entry` / `delete_entries`, or a settlement **all** of whose entries are `draft`/`returned` via `delete_settlement`. A `confirmed` or `approved` row is with a manager and is returned, never deleted; an `exported` one is locked. `delete_settlement` is all-or-nothing and never deletes "what it can" — a settlement is what resolves the Tracking# (6.2), so it must never disappear from under a row that has been exported.
 - Never store a Tracking# on an entry. Resolve it from the settlement by `period` (Section 6.2).
+- Never read an entry's date any way but `entryDateOf(row, settlement)`. Reaching for `row.day` sorts 3 September above 27 August and resolves a job code against the wrong year.
+- Never let a client send an entry's `team`. The server stamps it from the settlement (rule 15).
+- Never issue a Tracking# or a settlement number anywhere but `allocateTeamNumber`, and never move a counter backwards. A hand-typed number bumps it forwards; nothing else touches it.
+- Never rewrite old data. A legacy row keeps its `month`, `day` and `team` and is read through the fallbacks.
+- Never insert a column into a Sheets tab. `ensureColumns` appends, because every reader maps by header and appending cannot shift a stored cell.
 - Never let old and new share a lifecycle step. `confirm_track`, approval, and export each act on one period.
 - Never keep an `approved` stamp on a row whose values changed. `save_entries` reverts it to `confirmed` (rule 12).
 - Never edit, re-approve, or re-export an `exported` row. It is locked (rule 13).

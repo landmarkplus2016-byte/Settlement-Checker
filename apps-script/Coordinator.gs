@@ -49,13 +49,13 @@ var MAX_SAVE_ROWS = 2000;
  */
 var ENTRY_FIELDS = {
   expense: [
-    'month', 'day', 'project', 'site_id', 'job_code', 'period',
-    'category', 'item_description', 'amount', 'comment', 'team'
+    'date', 'project', 'site_id', 'job_code', 'period',
+    'category', 'item_description', 'amount', 'comment'
   ],
   fuel: [
-    'month', 'day', 'project', 'site_id', 'job_code', 'period',
+    'date', 'project', 'site_id', 'job_code', 'period',
     'start_km', 'end_km', 'fuel_amount', 'area', 'driver', 'city',
-    'karta_amount', 'team'
+    'karta_amount'
   ]
 };
 
@@ -65,31 +65,66 @@ var ENTRY_NUMBER_FIELDS = {
   fuel: ['start_km', 'end_km', 'fuel_amount', 'karta_amount']
 };
 
-/** English month labels, for building a settlement id (2.2: `S-2026-08`). */
+/**
+ * English month labels to month numbers.
+ *
+ * The only thing this is still for is reading a LEGACY entry, which stored its
+ * day as `month` + `day` against the settlement's `fiscal_year` rather than as
+ * one date. Old data is never rewritten, so the mapping stays — see
+ * entryDateOf().
+ */
 var MONTH_NUMBERS = {
   jan: 1, feb: 2, mar: 3, apr: 4, may: 5, jun: 6,
   jul: 7, aug: 8, sep: 9, oct: 10, nov: 11, dec: 12
 };
 
 /**
+ * The columns a coordinator spreadsheet grew when the settlement moved from a
+ * month to a team, created on first use rather than by hand (ensureColumns).
+ *
+ * A settlement stores the team's id AND its name. The id is what drives the
+ * counters and can never be retyped; the name is what the finance file prints
+ * and what the export and approvals screens match on. Storing only the name is
+ * how a rename orphans a settlement, and storing only the id would make every
+ * reader of a coordinator sheet go back to the config spreadsheet for a word.
+ */
+var SETTLEMENT_EXTRA_COLUMNS = ['team_id', 'team'];
+
+/**
+ * The column both entry tabs grew when `month` + `day` became one `date`.
+ *
+ * Appended, never inserted (ensureColumns): every reader maps by header, so the
+ * position is irrelevant and adding it at the end cannot shift a single stored
+ * cell. `month` and `day` are left exactly where they are, holding what they
+ * always held — entryDateOf() reads whichever shape a row is in.
+ */
+var ENTRY_EXTRA_COLUMNS = ['date'];
+
+/**
  * The entry fields that must come from a reference list, and which list
  * (CLAUDE.md 2.1, 6.6.4).
  *
- * `team` is the one that costs money to get wrong. The export and the approvals
- * list both match team BY VALUE (Manager.gs `entryMatchesFilter`), so a row filed
- * under a team that does not match the Teams tab is a row that appears in no
- * finance file and on no approvals screen — an absence, which is the hardest kind
- * of error to notice. The rest are a readability problem: a month cell that says
- * `AUG` where the list says `Aug` prints as `AUG` in the workbook the file mirrors
- * (7.2), beside twenty rows that say `Aug`.
+ * `team` used to be here and was the one that cost money to get wrong: the export
+ * and the approvals list both match team BY VALUE (Manager.gs
+ * `entryMatchesFilter`), so a row filed under a team that did not match the Teams
+ * tab appeared in no finance file and on no approvals screen — an absence, the
+ * hardest kind of error to notice. It is gone from this list because it is gone
+ * from the client: the settlement belongs to a team, and `save_entries` stamps
+ * that team onto every row it writes. A value the client cannot send is a value
+ * it cannot misspell, which is a stronger guarantee than canonicalising one.
+ *
+ * `month` is gone for the same shape of reason — an entry carries a date now, not
+ * a month label to be matched against a list.
+ *
+ * What is left is a readability problem: a project cell that says `POC-3 ` prints
+ * with its stray space in the workbook the file mirrors (7.2), beside twenty rows
+ * that do not.
  */
 var ENTRY_LIST_FIELDS = {
-  month: 'months',
   project: 'projects',
   category: 'categories',
   area: 'areas',
-  driver: 'drivers',
-  team: 'teams'
+  driver: 'drivers'
 };
 
 /* ================================================================== *
@@ -107,7 +142,30 @@ var ENTRY_LIST_FIELDS = {
 function coordinatorContext(session, payload) {
   requireCoordinator(session);
   assertNoSheetTargeting(session, payload || {});
-  return resolveCoordinatorSheet(session);
+
+  var ss = resolveCoordinatorSheet(session);
+  ensureCoordinatorSchema(ss);
+  return ss;
+}
+
+/**
+ * Make sure one coordinator spreadsheet carries the columns this version writes.
+ *
+ * The owner is the only person with sheet access (rule 3), and there is one
+ * spreadsheet per coordinator — asking him to add the same columns by hand to
+ * each of them is how half of them end up done. Appending is safe (ensureColumns)
+ * and the headers are cached for the request, so this costs one row-1 read per
+ * tab the first time a request touches it and nothing after that.
+ *
+ * Managers reach these tabs too, through Registry's loop over every coordinator,
+ * so anything that opens a coordinator sheet calls this — not just this file.
+ *
+ * @param {GoogleAppsScript.Spreadsheet.Spreadsheet} ss a coordinator spreadsheet.
+ */
+function ensureCoordinatorSchema(ss) {
+  ensureColumns(ss, 'Settlements', SETTLEMENT_EXTRA_COLUMNS);
+  ensureColumns(ss, 'Expenses', ENTRY_EXTRA_COLUMNS);
+  ensureColumns(ss, 'Fuel', ENTRY_EXTRA_COLUMNS);
 }
 
 /**
@@ -209,10 +267,18 @@ function handleGetMySettlements(session, payload) {
     out.push(toPublicSettlement(row, buckets[id]));
   }
 
-  // Newest first: the month a coordinator is working on is almost always the
-  // last one created.
+  /*
+   * Newest first, by when it was CREATED — not by id. `S-2026-08` sorted in date
+   * order because the id was the date; `S-MS-01` is a per-team sequence, so
+   * sorting on it would interleave thirteen teams' counters and put team AS's
+   * first-ever settlement above team MS's twentieth.
+   *
+   * Legacy ids fall back to the id when a row predates `created_at`.
+   */
   out.sort(function (a, b) {
-    return (a.settlement_id < b.settlement_id) ? 1 : ((a.settlement_id > b.settlement_id) ? -1 : 0);
+    var left = a.created_at || a.settlement_id;
+    var right = b.created_at || b.settlement_id;
+    return (left < right) ? 1 : ((left > right) ? -1 : 0);
   });
 
   return { settlements: out };
@@ -274,8 +340,18 @@ function toPublicSettlement(row, bucket) {
 
   return {
     settlement_id: normalizeKey(row.settlement_id),
+    team_id: normalizeKey(row.team_id),
+    team: normalizeKey(row.team),
+
+    /*
+     * Legacy only, both of them. A settlement created before the team rewrite
+     * carries a month and nothing else to name it by, and its entries carry no
+     * date — `fiscal_year` is how those are read back as real days
+     * (entryDateOf). Neither is an input any more; nothing writes them.
+     */
     month: normalizeKey(row.month),
     fiscal_year: normalizeKey(row.fiscal_year),
+
     account: normalizeKey(row.account),
     old_tracking_no: toFiniteNumber(row.old_tracking_no),
     new_tracking_no: toFiniteNumber(row.new_tracking_no),
@@ -337,20 +413,24 @@ function toPublicTrack(period, settlement, track) {
  * ================================================================== */
 
 /**
- * `create_settlement` — one coordinator's batch for a month (rule 9).
+ * `create_settlement` — one coordinator's batch for one team (rule 9).
  *
- * A month is NOT unique. Several teams settle against the same month and each
- * batch carries its own pair of Tracking#s, so refusing a second August would
- * force unrelated teams onto one number. The ids stay readable by suffixing:
- * `S-2026-08`, then `S-2026-08-2` (buildSettlementId).
+ * Two fields: team and account. There is no month, because there is nothing left
+ * for one to do — an entry carries its own date, so a batch that runs from
+ * 27 August to 3 September is just a batch, not an August settlement holding
+ * September rows. The id says the team and the sequence instead: `S-MS-01`.
  *
- * The two Tracking#s are optional here. A coordinator often starts recording
- * before finance has issued the numbers, and `confirm_track` is the point at
- * which the matching one becomes required — that is the gate, not this.
+ * That sequence comes from the TEAM's counter on the shared config spreadsheet,
+ * not from this coordinator's own tab, so an id is unique across every
+ * coordinator and can be read back as "the first settlement Mahmoud's team ever
+ * filed". It is never reused; delete_settlement frees a row, not a number.
+ *
+ * The two Tracking#s are not set here at all. They are issued by `confirm_track`
+ * from the team's other counter (decision 6) — a number handed out at creation
+ * would be burnt by every settlement someone started and abandoned.
  *
  * @param {Object} session auth context.
- * @param {Object} payload { month, account, old_tracking_no?, new_tracking_no?,
- *                           fiscal_year? }
+ * @param {Object} payload { team_id, account }
  * @return {Object} { settlement }
  */
 function handleCreateSettlement(session, payload) {
@@ -359,49 +439,62 @@ function handleCreateSettlement(session, payload) {
 
   var fieldErrors = {};
 
-  var month = normalizeKey(body.month);
-  if (!month) fieldErrors.month = 'required';
-  else if (month.length > 20) fieldErrors.month = 'too_long';
-  else if (!isKnownMonthLabel(month)) fieldErrors.month = 'unknown_month';
+  var team = null;
+  var teamId = normalizeKey(body.team_id);
+  if (!teamId) {
+    fieldErrors.team_id = 'required';
+  } else {
+    team = findActiveTeam(teamId);
+    if (!team) fieldErrors.team_id = 'unknown_team';
+    else if (!normalizeTeamCode(team.code)) fieldErrors.team_id = 'team_has_no_code';
+  }
 
   var account = normalizeKey(body.account);
   if (!account) fieldErrors.account = 'required';
   else if (account.length > 40) fieldErrors.account = 'too_long';
 
-  var fiscalYear = normalizeKey(body.fiscal_year) || String(new Date().getFullYear());
-  if (!/^\d{4}$/.test(fiscalYear)) fieldErrors.fiscal_year = 'must_be_a_year';
-
-  var oldTracking = readOptionalTracking(body.old_tracking_no, fieldErrors, 'old_tracking_no');
-  var newTracking = readOptionalTracking(body.new_tracking_no, fieldErrors, 'new_tracking_no');
-
   if (Object.keys(fieldErrors).length) {
     throw appError('validation_failed', 'invalid_settlement', fieldErrors);
   }
 
+  /*
+   * Kept and set server-side, never shown and never sent (decision 33). It is
+   * what lets a LEGACY row — one that stored month + day and no date — still be
+   * read as a real day (entryDateOf), which is what keeps the per-site files of
+   * already-exported batches regenerating unchanged.
+   */
+  var fiscalYear = String(new Date().getFullYear());
+
   var created = withScriptLock(function () {
-    // Re-read under the lock: the id allocation has to see every id already in
-    // the tab, or two quick clicks both land on S-2026-08.
+    var code = normalizeTeamCode(team.code);
+
+    // Re-read under the lock. The counter cannot collide, but a sheet that was
+    // restored from a copy might already hold the id it hands out, and appending
+    // a second row under one settlement_id would break every reader.
+    var taken = {};
     var rows = readAllRows(ss, 'Settlements');
-    var ids = [];
+    for (var i = 0; i < rows.length; i++) taken[normalizeKey(rows[i].settlement_id)] = true;
 
-    for (var i = 0; i < rows.length; i++) {
-      ids.push(normalizeKey(rows[i].settlement_id));
+    var settlementId = '';
+    for (var attempt = 0; attempt < 20; attempt++) {
+      settlementId = 'S-' + code + '-' + padSettlementNo(
+        allocateTeamNumber(team.team_id, 'next_settlement_no')
+      );
+      if (!taken[settlementId]) break;
+      settlementId = '';
     }
-
-    // Same read, same lock: a Tracking# already spoken for by another of this
-    // coordinator's settlements is refused before the row exists.
-    var clash = findTrackingClash(rows, '', oldTracking, newTracking);
-    if (clash) throw appError('validation_failed', clash.message, clash.field_errors);
+    if (!settlementId) throw appError('conflict', 'settlement_id_unavailable');
 
     var stamp = nowIso();
 
     return appendRow(ss, 'Settlements', {
-      settlement_id: buildSettlementId(fiscalYear, month, ids),
-      month: month,
+      settlement_id: settlementId,
+      team_id: normalizeKey(team.team_id),
+      team: normalizeKey(team.name),
       fiscal_year: fiscalYear,
       account: account,
-      old_tracking_no: oldTracking === null ? '' : oldTracking,
-      new_tracking_no: newTracking === null ? '' : newTracking,
+      old_tracking_no: '',
+      new_tracking_no: '',
       created_at: stamp,
       updated_at: stamp,
       updated_by: session.user_id
@@ -412,17 +505,64 @@ function handleCreateSettlement(session, payload) {
 }
 
 /**
+ * One ACTIVE team by id, from the shared registry.
+ *
+ * Active only, and on purpose: a deactivated team is one that has stopped
+ * settling, so it must not be pickable for a new batch. Settlements already
+ * filed under it keep working — they carry the name, and every reader of a
+ * settlement reads that, not this.
+ *
+ * @param {string} teamId
+ * @return {Object|null} the raw Teams row.
+ */
+function findActiveTeam(teamId) {
+  var target = normalizeKey(teamId);
+  if (!target) return null;
+
+  var rows = getTeamsRegistry();
+  for (var i = 0; i < rows.length; i++) {
+    if (normalizeKey(rows[i].team_id) !== target) continue;
+    return normalizeBoolean(rows[i].active) ? rows[i] : null;
+  }
+  return null;
+}
+
+/**
+ * A settlement's sequence number as it appears in its id: two digits until a
+ * team passes ninety-nine, then as many as it needs. Zero-padding keeps `S-MS-01`
+ * through `S-MS-09` the same width as the rest, which is the whole reason a
+ * sorted list of them reads in order.
+ *
+ * @param {number} n
+ * @return {string}
+ */
+function padSettlementNo(n) {
+  var s = String(n);
+  return (s.length < 2) ? ('0' + s) : s;
+}
+
+/**
  * `update_settlement` — "only while the relevant track has no `exported` rows"
  * (3.5).
  *
  * The check is per track, and that is the point. Changing `old_tracking_no`
  * after the old track has been settled would silently re-label money that
  * finance has already received; the new track, meanwhile, may still be wide
- * open. Month and account sit above both tracks, so changing either needs both
- * to be unexported.
+ * open. Account sits above both tracks, so changing it needs both to be
+ * unexported.
+ *
+ * The TEAM is stricter still: every row of the settlement must be `draft` or
+ * `returned` (decision 3). A team is not a label on a settlement — `save_entries`
+ * stamps it onto every entry, and it is what the export and the approvals screen
+ * match on. Moving a settlement that a manager has already seen would move rows
+ * out from under a filter he is looking at.
+ *
+ * There is no `month`. A settlement has none, and an entry carries its own date.
+ * A client that still sends one is ignored, not refused: an old tab left open is
+ * not worth an error.
  *
  * @param {Object} session auth context.
- * @param {Object} payload { settlement_id, month?, account?,
+ * @param {Object} payload { settlement_id, team_id?, account?,
  *                           old_tracking_no?, new_tracking_no? }
  * @return {Object} { settlement, updated: [keys] }
  */
@@ -438,13 +578,35 @@ function handleUpdateSettlement(session, payload) {
   var fieldErrors = {};
   var patch = {};
 
-  if (hasField(body, 'month')) {
-    var month = normalizeKey(body.month);
-    if (!month) fieldErrors.month = 'required';
-    else if (!isKnownMonthLabel(month)) fieldErrors.month = 'unknown_month';
-    else if (month !== normalizeKey(settlement.month)) {
-      if (exported['old'] || exported['new']) fieldErrors.month = 'track_already_exported';
-      else patch.month = month;
+  if (hasField(body, 'team_id')) {
+    var nextTeamId = normalizeKey(body.team_id);
+
+    if (!nextTeamId) {
+      fieldErrors.team_id = 'required';
+    } else if (nextTeamId !== normalizeKey(settlement.team_id)) {
+      var nextTeam = findActiveTeam(nextTeamId);
+
+      if (!nextTeam) {
+        fieldErrors.team_id = 'unknown_team';
+      } else if (!normalizeTeamCode(nextTeam.code)) {
+        fieldErrors.team_id = 'team_has_no_code';
+      } else {
+        var held = countUndeletableEntries(ss, settlementId);
+        if (held.total) {
+          fieldErrors.team_id = 'entries_already_submitted';
+        } else {
+          /*
+           * The id keeps the code it was born with — `S-MS-01` moved to team YM
+           * is still `S-MS-01`. A primary key is never renamed (2, design
+           * principle 2), and the id was allocated out of MS's sequence: give it
+           * a YM number now and that number is either a duplicate of a real YM
+           * settlement or a hole in YM's run. The team_id column is the answer to
+           * "whose is this", not the id.
+           */
+          patch.team_id = normalizeKey(nextTeam.team_id);
+          patch.team = normalizeKey(nextTeam.name);
+        }
+      }
     }
   }
 
@@ -473,28 +635,33 @@ function handleUpdateSettlement(session, payload) {
   patch.updated_at = nowIso();
   patch.updated_by = session.user_id;
 
+  var teamId = normalizeKey(settlement.team_id);
+
   var written = withScriptLock(function () {
-    /*
-     * Checked inside the lock, against the pair this write would LEAVE BEHIND:
-     * a patch that touches only one track still has to agree with the other
-     * track's stored number, and another settlement may have taken the number
-     * since the reads above.
-     */
-    var finalOld = hasField(patch, 'old_tracking_no')
-      ? toFiniteNumber(patch.old_tracking_no)
-      : toFiniteNumber(settlement.old_tracking_no);
-
-    var finalNew = hasField(patch, 'new_tracking_no')
-      ? toFiniteNumber(patch.new_tracking_no)
-      : toFiniteNumber(settlement.new_tracking_no);
-
-    var clash = findTrackingClash(
-      readAllRows(ss, 'Settlements'), settlementId, finalOld, finalNew
-    );
-    if (clash) throw appError('validation_failed', clash.message, clash.field_errors);
-
     var result = updateRowByKey(ss, 'Settlements', 'settlement_id', settlementId, patch);
     if (!result) throw appError('not_found', 'settlement_not_found');
+
+    /*
+     * A hand-typed Tracking# has to move the team's counter past itself, or the
+     * next confirm issues the number that was just claimed. Done after the write
+     * and inside the same lock, so a refused write cannot advance the sequence.
+     *
+     * Note what is NOT here any more: findTrackingClash, which used to sweep this
+     * coordinator's other settlements looking for the same number. It could only
+     * ever see one coordinator's sheet, and the counter it has been replaced by
+     * is shared across all of them — so the case it was built for is now the case
+     * that cannot arise.
+     */
+    if (teamId) {
+      ['old', 'new'].forEach(function (period) {
+        var key = period + '_tracking_no';
+        if (!hasField(patch, key)) return;
+
+        var value = toFiniteNumber(patch[key]);
+        if (value !== null) bumpTeamCounterPast(teamId, 'next_tracking_no', value);
+      });
+    }
+
     return result;
   });
 
@@ -503,6 +670,11 @@ function handleUpdateSettlement(session, payload) {
 
 /**
  * Stage one track's Tracking# change, refusing it once that track has settled.
+ *
+ * This is the manual override of decision 9: the numbers issue themselves at
+ * confirm, and this is the way back out when finance has already spoken for a
+ * number. Clearing one is still allowed — the next confirm then issues a fresh
+ * one — but only while the track is unexported, same as changing it.
  *
  * @param {Object} body the payload.
  * @param {Object} settlement the stored row.
@@ -527,6 +699,65 @@ function applyTrackingChange(body, settlement, exported, patch, fieldErrors, per
   }
 
   patch[key] = (next === null) ? '' : next;
+}
+
+/**
+ * Move a team counter on so it will never issue `value` or anything below it.
+ *
+ * Only ever forwards. A number typed by hand that is BELOW the counter means the
+ * sequence has already run past it — reissuing from there would hand the same
+ * number out twice, which is the one thing the counter exists to prevent.
+ *
+ * @param {string} teamId
+ * @param {string} field one of TEAM_COUNTER_FIELDS.
+ * @param {number} value the number just claimed by hand.
+ */
+function bumpTeamCounterPast(teamId, field, value) {
+  var rows = getTeamsRegistry();
+
+  for (var i = 0; i < rows.length; i++) {
+    if (normalizeKey(rows[i].team_id) !== normalizeKey(teamId)) continue;
+    if (teamCounterValue(rows[i][field]) > value) return;
+
+    var patch = {};
+    patch[field] = value + 1;
+    updateRowAt(openConfigSpreadsheet(), 'Teams', rows[i]._row, patch);
+    invalidateTeamsRegistry();
+    return;
+  }
+}
+
+/**
+ * How many of a settlement's entries are out of the coordinator's hands, by
+ * status — anything not `draft` or `returned` (DELETABLE_STATUSES).
+ *
+ * The same question delete_settlement asks about the whole container, asked here
+ * about changing its team. Both are "has anyone else seen this yet".
+ *
+ * @param {GoogleAppsScript.Spreadsheet.Spreadsheet} ss
+ * @param {string} settlementId
+ * @return {{total: number, by_status: Object}}
+ */
+function countUndeletableEntries(ss, settlementId) {
+  var target = normalizeKey(settlementId);
+  var byStatus = {};
+  var total = 0;
+
+  ['Expenses', 'Fuel'].forEach(function (tab) {
+    var rows = readAllRows(ss, tab);
+
+    for (var i = 0; i < rows.length; i++) {
+      if (normalizeKey(rows[i].settlement_id) !== target) continue;
+
+      var status = normalizeKey(rows[i].status).toLowerCase() || 'draft';
+      if (isDeletableStatus(status)) continue;
+
+      byStatus[status] = (byStatus[status] || 0) + 1;
+      total++;
+    }
+  });
+
+  return { total: total, by_status: byStatus };
 }
 
 /**
@@ -573,140 +804,6 @@ function readOptionalTracking(value, fieldErrors, key) {
   return number;
 }
 
-/**
- * Is this pair of Tracking#s free?
- *
- * A Tracking# is typed by hand, and until this check existed nothing stopped a
- * coordinator giving two of his settlements the same one — usually by retyping
- * last month's number. The damage shows up at the far end, where it can no
- * longer be fixed: rule 9 gives each batch its own pair, and the export screen's
- * settlement selector (7.1) exists so each batch goes out under its own number.
- * Two settlements sharing a number means two finance files stamped identically,
- * and by the time anyone notices, the track is exported and `update_settlement`
- * refuses to renumber it (3.5). Entry is the only cheap moment to catch it.
- *
- * Scope is ONE coordinator's own sheet, which is the whole of what he can see
- * and the whole of what this can check without sweeping every coordinator's
- * spreadsheet on every keystroke of a tracking box. Whether two coordinators may
- * share a number is a question about how finance issues them, and is deliberately
- * not answered here.
- *
- * Both halves of the pair are checked against BOTH columns of every other
- * settlement, and against each other: old and new route to different Tracking#s
- * (6.2), so one number on both tracks of one settlement is the same mistake.
- *
- * @param {Array<Object>} rows every Settlements row of the caller's sheet.
- * @param {string} settlementId the row being written; '' when creating. Its own
- *        current numbers are not a clash with itself.
- * @param {number|null} oldNo the pair's FINAL old number.
- * @param {number|null} newNo the pair's FINAL new number.
- * @return {Object|null} { message, field_errors }, or null when the pair is free.
- */
-function findTrackingClash(rows, settlementId, oldNo, newNo) {
-  if (oldNo !== null && newNo !== null && oldNo === newNo) {
-    return {
-      message: 'tracking_no_same_for_both',
-      field_errors: { new_tracking_no: 'same_as_old_tracking_no' }
-    };
-  }
-
-  var owner = {};
-  var mine = normalizeKey(settlementId);
-
-  for (var i = 0; i < rows.length; i++) {
-    var id = normalizeKey(rows[i].settlement_id);
-    if (id && id === mine) continue;
-
-    var pair = [rows[i].old_tracking_no, rows[i].new_tracking_no];
-
-    for (var p = 0; p < pair.length; p++) {
-      var n = toFiniteNumber(pair[p]);
-      // First writer keeps the name: the oldest settlement holding a number is
-      // the more useful one to point at.
-      if (n !== null && !owner[n]) owner[n] = id;
-    }
-  }
-
-  var errors = {};
-  if (oldNo !== null && owner[oldNo]) errors.old_tracking_no = owner[oldNo];
-  if (newNo !== null && owner[newNo]) errors.new_tracking_no = owner[newNo];
-
-  if (!Object.keys(errors).length) return null;
-  return { message: 'tracking_no_taken', field_errors: errors };
-}
-
-/**
- * Is this a month the app knows?
- *
- * Checked against the configured `Lists.months` when that list has been filled
- * in, so a typed "Augst" cannot quietly become a second August settlement. While
- * the list is still empty — a fresh install — any non-empty label is accepted,
- * because refusing everything would make the app unusable before an admin has
- * been anywhere near the Lists screen.
- *
- * @param {string} month
- * @return {boolean}
- */
-function isKnownMonthLabel(month) {
-  var rows = getListsRows();
-  var known = [];
-
-  for (var i = 0; i < rows.length; i++) {
-    if (normalizeKey(rows[i].list_name).toLowerCase() !== 'months') continue;
-    if (!normalizeBoolean(rows[i].active)) continue;
-
-    var value = normalizeKey(rows[i].value);
-    if (value) known.push(value.toLowerCase());
-  }
-
-  if (!known.length) return true;
-  return known.indexOf(normalizeKey(month).toLowerCase()) !== -1;
-}
-
-/**
- * A settlement's id (2.2: `S-2026-08`).
- *
- * Derived from the year and month rather than a counter, so the id says what the
- * settlement IS and two coordinators' August rows carry the same recognisable
- * shape. A month label the app cannot map to a number — a renamed or Arabic list
- * — falls back to a slug, and then to a plain sequence, so an id is always
- * produced.
- *
- * A month holds as many settlements as the coordinator opens, so the `-2`, `-3`
- * suffix below is the normal path and not a rare collision: the second August
- * batch is `S-2026-08-2`.
- *
- * @param {string} fiscalYear four digits.
- * @param {string} month the label.
- * @param {Array<string>} existingIds for the sequence fallback and collisions.
- * @return {string}
- */
-function buildSettlementId(fiscalYear, month, existingIds) {
-  var key = normalizeKey(month).toLowerCase().substring(0, 3);
-  var number = MONTH_NUMBERS[key];
-
-  var suffix;
-  if (number) {
-    suffix = (number < 10 ? '0' : '') + number;
-  } else {
-    suffix = normalizeKey(month).toUpperCase().replace(/[^A-Z0-9]/g, '').substring(0, 8);
-  }
-
-  if (!suffix) return nextId('S-', existingIds);
-
-  var candidate = 'S-' + fiscalYear + '-' + suffix;
-
-  // The first batch of the month gets the clean id; every later one is
-  // suffixed, so a second August can never overwrite the first.
-  if (existingIds.indexOf(candidate) === -1) return candidate;
-
-  for (var n = 2; n < 100; n++) {
-    if (existingIds.indexOf(candidate + '-' + n) === -1) return candidate + '-' + n;
-  }
-
-  return nextId('S-', existingIds);
-}
-
 /* ================================================================== *
  * list_entries (3.5)
  * ================================================================== */
@@ -732,7 +829,7 @@ function handleListEntries(session, payload) {
 
   // Validated on the way out so the grid paints its flags on load, not only
   // after the first save.
-  var report = validateEntries(kind, rows);
+  var report = validateEntries(kind, rows, { settlement: settlement });
 
   var entries = rows.map(function (row) {
     return toPublicEntry(kind, row, settlement, report);
@@ -771,6 +868,10 @@ function toPublicEntry(kind, row, settlement, report) {
     period: period,
     tracking_no: period ? resolveTracking(settlement, period) : null,
 
+    // Server-owned since the settlement gained a team: stamped by save_entries,
+    // read-only here, and not in ENTRY_FIELDS, so a client cannot send one.
+    team: normalizeKey(row.team),
+
     status: normalizeKey(row.status).toLowerCase() || 'draft',
     approved_by: normalizeKey(row.approved_by),
     approved_at: toStampString(row.approved_at),
@@ -789,9 +890,22 @@ function toPublicEntry(kind, row, settlement, report) {
   for (var i = 0; i < fields.length; i++) {
     var key = fields[i];
     if (key === 'period') continue;             // already resolved above
+    if (key === 'date') continue;               // resolved below, legacy and all
     out[key] = normalizeKey(row[key]);
   }
 
+  /*
+   * Always the RESOLVED date, so a legacy row reaches the grid as a real day
+   * rather than as a blank cell the coordinator would have to retype. It is what
+   * he edits and what save_entries writes back into `date`, which is how a row
+   * quietly stops being legacy the first time it is touched — without anything
+   * having rewritten old data on its own.
+   */
+  out.date = entryDateOf(row, settlement);
+
+  // Legacy columns, read-only and untouched. Kept in the response only so a
+  // screen can say where a date came from; nothing writes them.
+  out.month = normalizeKey(row.month);
   out.day = toFiniteNumber(row.day);
 
   var numbers = ENTRY_NUMBER_FIELDS[kind];
@@ -927,6 +1041,20 @@ function handleSaveEntries(session, payload) {
     var stamp = nowIso();
     var actor = session.user_id;
 
+    /*
+     * The team is stamped from the SETTLEMENT, never taken from the row. It used
+     * to be a column in the grid, matched against the Teams list on the way in,
+     * and a value that matched nothing produced a row that appeared in no finance
+     * file and on no approvals screen — because both filter on team by value.
+     * A settlement belongs to one team (decision 1), so every row in it does too,
+     * and the client has no say in the matter.
+     *
+     * Blank only for a legacy settlement created before teams existed. Those keep
+     * whatever their rows already say until the coordinator sets a team on the
+     * settlement, which confirm_track makes him do (decision 30).
+     */
+    var teamName = normalizeKey(settlement.team);
+
     var created = [];
     var updated = [];
     var reverted = [];
@@ -948,6 +1076,7 @@ function handleSaveEntries(session, payload) {
           updated_by: actor
         };
         copyInto(line, step.values);
+        if (teamName) line.team = teamName;
 
         block.append(line);
         created.push(newId);
@@ -958,7 +1087,17 @@ function handleSaveEntries(session, payload) {
       patch.updated_at = stamp;
       patch.updated_by = actor;
 
-      var changed = hasMeaningfulChange(kind, step.stored, step.values);
+      /*
+       * Restamped on every save, not only on create, so a row written before its
+       * settlement had a team — or before this rule existed — is corrected the
+       * next time it is touched. It is set outside `step.values`, so it is not
+       * part of hasMeaningfulChange() and cannot revert an approval on its own
+       * (rule 12): the team the manager approved is the settlement's team, and
+       * that cannot change while a row is approved.
+       */
+      if (teamName) patch.team = teamName;
+
+      var changed = hasMeaningfulChange(kind, step.stored, step.values, settlement);
 
       if (changed && step.status === 'approved') {
         /*
@@ -1016,7 +1155,7 @@ function emptySaveResult(ss, kind, settlement, settlementId) {
     return normalizeKey(row.settlement_id) === settlementId;
   });
 
-  var report = validateEntries(kind, rows);
+  var report = validateEntries(kind, rows, { settlement: settlement });
 
   return {
     settlement_id: settlementId,
@@ -1053,6 +1192,18 @@ function readEntryFields(kind, raw) {
     if (key === 'period') {
       // Stored lowercase or blank; the grid may send either case.
       out.period = normalizePeriod(raw.period);
+      continue;
+    }
+
+    if (key === 'date') {
+      /*
+       * Stored as ISO 'YYYY-MM-DD' (2.3), whatever shape it arrived in. The grid
+       * shows `11-Aug-26` and parses what the coordinator types day-first, but
+       * the cell that reaches the sheet is unambiguous — a stored `11-08-26`
+       * would be read back as 11 August by one reader and 8 November by the next.
+       * An unparseable value is stored blank, which validation then flags.
+       */
+      out.date = normalizeIsoDate(raw.date);
       continue;
     }
 
@@ -1119,9 +1270,10 @@ function canonicalEntryListValue(field, value) {
  * @param {string} kind
  * @param {Object} stored the row as it is on the sheet.
  * @param {Object} values the incoming writable fields.
+ * @param {Object} settlement the parent row, for resolving a legacy date.
  * @return {boolean}
  */
-function hasMeaningfulChange(kind, stored, values) {
+function hasMeaningfulChange(kind, stored, values, settlement) {
   var keys = Object.keys(values);
 
   for (var i = 0; i < keys.length; i++) {
@@ -1129,6 +1281,19 @@ function hasMeaningfulChange(kind, stored, values) {
 
     if (key === 'period') {
       if (normalizePeriod(stored.period) !== values.period) return true;
+      continue;
+    }
+
+    if (key === 'date') {
+      /*
+       * Compared as RESOLVED dates, not as cells. Sheets may hand back a Date
+       * object where the grid sends a string, and a legacy row's `date` cell is
+       * empty while the day it means — from `month` + `day` — is perfectly real.
+       * Comparing the raw cells would call every untouched legacy row changed and
+       * revert its approval the first time the grid was saved (rule 12), which is
+       * the one thing rule 12 must not do to a row nobody edited.
+       */
+      if (entryDateOf(stored, settlement) !== normalizeIsoDate(values.date)) return true;
       continue;
     }
 
@@ -1430,9 +1595,13 @@ function deleteSheetRows(sheet, rowNumbers) {
  * resolved from it at read and export time rather than stored on the entry
  * (rule 6.2). Take the settlement away from under an exported row and the
  * ExportLog batch points at a number that no longer exists anywhere — an audit
- * hole nothing can repair. Refusing wholesale is also what keeps id reuse safe:
- * buildSettlementId() reclaims a freed id, and `S-2026-08` coming back to life
- * would collide with an old log row's `<user_id>::<settlement_id>`.
+ * hole nothing can repair.
+ *
+ * Ids are no longer part of that argument. A settlement id came off the month, so
+ * deleting one freed it and the next August settlement was handed the same
+ * `S-2026-08` — which would have collided with an old log row. It now comes off
+ * the team's counter, which only ever moves forwards, so a deleted `S-MS-04` is
+ * simply a gap and nothing can ever be filed under that name again.
  *
  * The refusal names the statuses and their counts, so the coordinator is told
  * "3 confirmed, 2 approved" rather than just "no".
@@ -1522,18 +1691,33 @@ function handleDeleteSettlement(session, payload) {
  * fuel of the new period travel together to the new Tracking#, and the old
  * period is not touched (rule 10).
  *
+ * **This is where a Tracking# comes from** (decision 6). It used to be the gate:
+ * the coordinator had to have typed the number before he could confirm, which
+ * meant chasing finance for it before he could hand over work he had finished.
+ * The gate is inverted — confirming is what ISSUES the number, from the team's
+ * `next_tracking_no` counter, and only when the track does not already have one.
+ * A top-up confirm on a track that has already been handed over reuses the number
+ * it went out under, because it is the same batch.
+ *
  * Two things must be true first:
- *   - The matching Tracking# is set (3.5). Confirming rows that resolve to no
- *     number would hand the manager a batch nobody can settle.
+ *   - The settlement has a TEAM. The counter is the team's, so a legacy
+ *     settlement created before teams existed has nothing to draw from and must
+ *     be given one first (decision 30).
  *   - No FLAG remains on the rows being confirmed (6.3). Warnings do not block:
- *     an unknown site is the lookup's gap, not a reason to hold up a month.
+ *     an unknown site is the lookup's gap, not a reason to hold up a batch.
+ *
+ * Nothing is allocated until both of those hold AND there is at least one row to
+ * move. A confirm that is refused, or that finds nothing to confirm, must not
+ * burn a number — the sequence is what finance reads, and a gap in it is a
+ * question somebody has to answer.
  *
  * Rows of that period with no period value at all cannot be routed and are left
  * where they are — reported as `unrouted` rather than dropped in silence.
  *
  * @param {Object} session auth context.
  * @param {Object} payload { settlement_id, period }
- * @return {Object} { confirmed, by_kind, tracking_no, unrouted, warning_count }
+ * @return {Object} { confirmed, by_kind, tracking_no, tracking_no_issued,
+ *                    unrouted, warning_count }
  */
 function handleConfirmTrack(session, payload) {
   var ss = coordinatorContext(session, payload);
@@ -1547,10 +1731,10 @@ function handleConfirmTrack(session, payload) {
     throw appError('validation_failed', 'invalid_period', { period: 'must_be_old_or_new' });
   }
 
-  var trackingNo = resolveTracking(settlement, period);
-  if (trackingNo === null) {
-    throw appError('validation_failed', 'tracking_no_required', {
-      tracking_no: 'set_' + period + '_tracking_no_first'
+  var teamId = normalizeKey(settlement.team_id);
+  if (!teamId) {
+    throw appError('validation_failed', 'settlement_team_required', {
+      team_id: 'set_the_team_first'
     });
   }
 
@@ -1580,7 +1764,10 @@ function handleConfirmTrack(session, payload) {
        * being confirmed, because KM continuity is a sequence: slicing it to one
        * period first would report gaps that only exist in the slice.
        */
-      var report = validateEntries(kind, mine, { site_jc_map: siteMap });
+      var report = validateEntries(kind, mine, {
+        site_jc_map: siteMap,
+        settlement: settlement
+      });
 
       var take = [];
 
@@ -1626,6 +1813,30 @@ function handleConfirmTrack(session, payload) {
       throw appError('validation_failed', 'confirm_blocked_by_flags', blocking);
     }
 
+    /* --- the Tracking# --- */
+    var moving = candidates.expense.length + candidates.fuel.length;
+
+    /*
+     * Re-read the settlement inside the lock. `settlement` was read before it,
+     * and two confirms racing on the same track must not both see "no number"
+     * and each allocate one.
+     */
+    var current = readRowByKey(ss, 'Settlements', 'settlement_id', settlementId);
+    if (!current) throw appError('not_found', 'settlement_not_found');
+
+    var trackingKey = period + '_tracking_no';
+    var trackingNo = resolveTracking(current, period);
+    var issued = false;
+
+    if (trackingNo === null && moving) {
+      trackingNo = allocateTeamNumber(teamId, 'next_tracking_no');
+      issued = true;
+
+      var trackingPatch = { updated_at: nowIso(), updated_by: session.user_id };
+      trackingPatch[trackingKey] = trackingNo;
+      updateRowAt(ss, 'Settlements', current._row, trackingPatch);
+    }
+
     /* --- pass 2: stamp --- */
     var stamp = nowIso();
 
@@ -1649,14 +1860,17 @@ function handleConfirmTrack(session, payload) {
     return {
       by_kind: confirmedByKind,
       unrouted: unrouted,
-      warning_count: warningCount
+      warning_count: warningCount,
+      tracking_no: trackingNo,
+      tracking_no_issued: issued
     };
   });
 
   return {
     settlement_id: settlementId,
     period: period,
-    tracking_no: trackingNo,
+    tracking_no: outcome.tracking_no,
+    tracking_no_issued: outcome.tracking_no_issued,
     confirmed: outcome.by_kind.expense + outcome.by_kind.fuel,
     by_kind: outcome.by_kind,
     unrouted: outcome.unrouted,

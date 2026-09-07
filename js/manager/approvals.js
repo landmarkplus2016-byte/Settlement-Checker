@@ -33,7 +33,7 @@
 import { api } from '../api.js';
 import { t, errorMessage, getLang } from '../i18n/i18n.js';
 import { escapeHtml, qs } from '../utils/dom.js';
-import { formatDateTime } from '../utils/dates.js';
+import { formatDateTime, formatShortDate, entryDateOf } from '../utils/dates.js';
 import { formatMoney, formatMoneyOrBlank } from '../utils/money.js';
 import { openModal } from '../components/modal.js';
 import { toastSuccess, toastError } from '../components/toast.js';
@@ -67,12 +67,22 @@ let total = 0;
 let sweep = { errors: [], skipped: [] };
 
 /** The live filter — the four fields of 3.6. */
-let filter = { team: '', coordinator: '', period: '', month: '' };
+let filter = { team: '', coordinator: '', period: '', settlement_id: '' };
 
 /** Reference data for the filter selects, loaded once per visit. */
 let teams = [];
 let coordinators = [];
-let months = [];
+
+/**
+ * The settlement ids currently on screen, for the settlement filter.
+ *
+ * Built from the ENTRIES rather than fetched: there is no action that lists every
+ * coordinator's settlements, and the ones worth filtering by are exactly the ones
+ * with rows waiting — which is what this list already holds. It replaces the
+ * month filter, which had nothing left to match on once a settlement stopped
+ * having a month.
+ */
+let settlementIds = [];
 
 /**
  * user_id -> the Users row, so `approved_by` (which the server stores as an id)
@@ -137,7 +147,7 @@ export function bindApprovalsEvents() {
   totalPages = 0;
   total = 0;
   sweep = { errors: [], skipped: [] };
-  filter = { team: '', coordinator: '', period: '', month: '' };
+  filter = { team: '', coordinator: '', period: '', settlement_id: '' };
   teams = [];
   coordinators = [];
   months = [];
@@ -199,10 +209,9 @@ export function bindApprovalsEvents() {
  * `approved_by` falls back to showing the raw user id.
  */
 async function loadReference() {
-  const [teamData, userData, listData] = await Promise.all([
+  const [teamData, userData] = await Promise.all([
     api.call('list_teams', { include_inactive: true }).catch(nullOnError),
-    api.call('list_users', { include_inactive: true }).catch(nullOnError),
-    api.call('list_lists', { list_name: 'months' }).catch(nullOnError)
+    api.call('list_users', { include_inactive: true }).catch(nullOnError)
   ]);
 
   // Inactive teams are included: entries already filed under a team keep it
@@ -218,10 +227,26 @@ async function loadReference() {
     if (user.role === 'coordinator') coordinators.push(user);
   });
 
-  months = ((listData && listData.lists && listData.lists.months) || [])
-    .map(function (option) { return option.value; });
-
   repaintFilters();
+}
+
+/**
+ * Refresh the settlement filter's options from the page just loaded.
+ *
+ * A settlement already CHOSEN is kept in the list even when the page it filtered
+ * to is empty — dropping it would take the option out of the select the manager
+ * is looking at and leave him unable to clear it by choosing something else.
+ */
+function collectSettlementIds() {
+  const found = filter.settlement_id ? [filter.settlement_id] : [];
+
+  entries.forEach(function (entry) {
+    const id = String(entry.settlement_id || '').trim();
+    if (id && found.indexOf(id) === -1) found.push(id);
+  });
+
+  found.sort();
+  settlementIds = found;
 }
 
 /** @param {*} err @return {null} */
@@ -249,7 +274,7 @@ async function load() {
       team: filter.team,
       coordinator: filter.coordinator,
       period: filter.period,
-      month: filter.month,
+      settlement_id: filter.settlement_id,
       page: page,
       page_size: PAGE_SIZE
     });
@@ -263,6 +288,8 @@ async function load() {
       errors: (data && data.errors) || [],
       skipped: (data && data.skipped) || []
     };
+
+    collectSettlementIds();
 
     busy = false;
     paint();
@@ -296,7 +323,7 @@ function goToPage(next) {
 
 /** Reset every filter and reload. */
 function clearFilters() {
-  filter = { team: '', coordinator: '', period: '', month: '' };
+  filter = { team: '', coordinator: '', period: '', settlement_id: '' };
   page = 1;
   repaintFilters();
   load();
@@ -412,7 +439,7 @@ function canApproveAll() {
 
 /** @return {boolean} true when at least one filter field is set. */
 function hasFilter() {
-  return !!(filter.team || filter.coordinator || filter.period || filter.month);
+  return !!(filter.team || filter.coordinator || filter.period || filter.settlement_id);
 }
 
 /**
@@ -441,8 +468,8 @@ function renderFilters() {
       return { value: user.user_id, label: personName(user) };
     }))}
 
-    ${renderSelect('month', t('filter_all_months'), months.map(function (month) {
-      return { value: month, label: month };
+    ${renderSelect('settlement_id', t('filter_all_settlements'), settlementIds.map(function (id) {
+      return { value: id, label: id };
     }))}
 
     ${renderSelect('period', t('period_all'), [
@@ -908,7 +935,7 @@ function filterSummary() {
   if (filter.coordinator) {
     parts.push(t('col_coordinator') + ': ' + (personName(people[filter.coordinator]) || filter.coordinator));
   }
-  if (filter.month) parts.push(t('col_month') + ': ' + filter.month);
+  if (filter.settlement_id) parts.push(t('col_settlement') + ': ' + filter.settlement_id);
   if (filter.period) parts.push(t('col_period') + ': ' + t('period_' + filter.period));
 
   return parts.join('  ·  ');
@@ -933,17 +960,17 @@ function personName(person) {
 }
 
 /**
- * The entry's own date label — the month and day the coordinator typed, not the
- * settlement's month. They are usually the same and occasionally not, and the
- * one on the row is the one being settled.
+ * The entry's own date label — `05-Aug-26`.
+ *
+ * The row's `date` cell, which the server has already resolved through
+ * `entryDateOf` on its way out (Coordinator.gs), so a LEGACY row that stored a
+ * month and a day arrives here as a real day too. It falls back to the settlement
+ * only when even that could not be read, which means an orphaned row.
  *
  * @param {Object} entry
  * @return {string}
  */
 function entryDate(entry) {
-  const month = entry.month || entry.settlement.month || '';
-  const day = (entry.day === null || entry.day === undefined) ? '' : String(entry.day);
-
-  if (month && day) return month + ' ' + day;
-  return month || day || '—';
+  const iso = entryDateOf(entry, entry.settlement || null);
+  return formatShortDate(iso, entry.settlement ? (entry.settlement.month || '—') : '—');
 }

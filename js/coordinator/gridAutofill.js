@@ -35,7 +35,7 @@
  */
 
 import { api } from '../api.js';
-import { entryDate } from '../utils/dates.js';
+import { entryDateOf } from '../utils/dates.js';
 import { splitMulti, text as asText, period as asPeriod } from '../utils/validate.js';
 
 /**
@@ -281,16 +281,22 @@ export function hasMixedPeriods(segmentPeriods) {
 /**
  * The day a grid row is settling, as `YYYY-MM-DD`.
  *
- * The row carries a month label and a day number; the year comes from the
- * settlement (2.2). All three are needed, and a half-typed row simply has no
- * date — which pickCandidate() handles rather than guessing at.
+ * The row's own `date` cell, which is the whole answer for anything typed since
+ * entries carried one. A LEGACY row has a month label and a day number instead
+ * and takes its year from the settlement — which is also the bug this replaced:
+ * a December settlement holding January days resolved those rows against the
+ * settlement's year, and the wrong year can flip which job code a site's tasks
+ * match and therefore which Tracking# the row settles against (6.6.3).
+ *
+ * A half-typed row simply has no date, which pickCandidate() handles rather than
+ * guessing at.
  *
  * @param {Object} row
- * @param {*} fiscalYear
+ * @param {*} fiscalYear the settlement's year; legacy rows only.
  * @return {string}
  */
 export function rowEntryDate(row, fiscalYear) {
-  return entryDate(fiscalYear, row && row.month, row && row.day);
+  return entryDateOf(row, { fiscal_year: fiscalYear });
 }
 
 /**
@@ -384,15 +390,15 @@ export function onJobCodeCommit(row, value) {
  * site id the coordinator has not finished typing.
  *
  * Four fields matter here, not one. The Site ID resolves the row; the Job Code
- * and the period record that he answered for himself; and `month` / `day` move
- * the date the job code is chosen BY, so they re-resolve it — which is what
- * makes "site first, day after" (the order people actually type in) land on the
- * same job code as the other way round.
+ * and the period record that he answered for himself; and `date` moves the day
+ * the job code is chosen BY, so it re-resolves the row — which is what makes
+ * "site first, day after" (the order people actually type in) land on the same
+ * job code as the other way round.
  *
  * @param {Object} options
  * @param {Function} options.getMap returns the current map (may be null).
  * @param {Function} [options.getFiscalYear] the settlement's fiscal year, for
- *        turning the row's month + day into a date.
+ *        resolving a LEGACY row's month + day into a date.
  * @param {Function} [options.onResolved] called as (row, result) after a site
  *        cell resolves — the page uses it to say what happened.
  * @return {Function} (row, field, value, controller)
@@ -432,6 +438,6 @@ export function makeAutofillHook(options = {}) {
 
     // A date change re-picks the job code, quietly — the coordinator is editing
     // a day, and a toast about sites he has already entered would be noise.
-    if (field === 'month' || field === 'day') resolve(row, controller, false);
+    if (field === 'date') resolve(row, controller, false);
   };
 }

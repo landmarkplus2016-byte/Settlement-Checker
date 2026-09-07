@@ -24,6 +24,7 @@ import { openModal } from '../components/modal.js';
 import { text as asText, period as asPeriod } from '../utils/validate.js';
 import { gridColumns, makeRow, canonicalizeRowLists } from './grid.js';
 import { autofillRow, rowEntryDate } from './gridAutofill.js';
+import { parseSheetDate, parseTypedDate } from '../utils/dates.js';
 
 /** Refuse a paste larger than this — it is a convenience, not an importer. */
 const MAX_PASTE_ROWS = 500;
@@ -125,6 +126,35 @@ export function looksLikeHeader(kind, cells) {
 }
 
 /**
+ * A pasted date cell.
+ *
+ * Two readers, in order, and the order is the point:
+ *
+ *   1. `parseSheetDate` — an Excel cell that came across as a real Date, a
+ *      serial, an ISO string or a named month. These are unambiguous, and a paste
+ *      out of a workbook is where they come from.
+ *   2. `parseTypedDate` — the day-first rules, for text a person typed into the
+ *      workbook by hand. This is where `11-9` becomes 11 September, taking its
+ *      year from the row above exactly as it would in the grid.
+ *
+ * `07/12/2025` is read by neither, on purpose: it is December to the person who
+ * wrote it and July to a US-locale reader, and a paste is precisely where nobody
+ * is watching closely enough to catch the wrong guess. It lands unparsed, red,
+ * and visible.
+ *
+ * @param {Object} row mutated in place.
+ * @param {*} cell the raw pasted value.
+ * @param {Object|null} previous the row above, for the year a bare day needs.
+ */
+function applyPastedDate(row, cell, previous) {
+  const iso = parseSheetDate(cell)
+    || parseTypedDate(cell, (previous && previous.date) || '');
+
+  row.date = iso;
+  row.__date_typed = iso ? '' : asText(cell);
+}
+
+/**
  * Turn a matrix into grid rows.
  *
  * Columns map POSITIONALLY, in the order 2.2 lists them — the same order the
@@ -147,13 +177,13 @@ export function looksLikeHeader(kind, cells) {
  * @param {Object} options
  * @param {Object|null} [options.previous] the row above, for carry-down.
  * @param {Object|null} [options.siteJcMap] for per-row autofill.
- * @param {*} [options.fiscalYear] the settlement's year, so each row's month and
- *        day become the date its job code is chosen by.
- * @param {Object} [options.defaults] the settlement's month and anything else a
- *        row falls back to when neither the paste nor the row above supplied it.
+ * @param {*} [options.fiscalYear] the settlement's year, for resolving a LEGACY
+ *        row's month + day into the date its job code is chosen by.
+ * @param {Object} [options.defaults] anything a row falls back to when neither
+ *        the paste nor the row above supplied it.
  * @param {Object|null} [options.reference] the dropdown option lists, so a cell
- *        the workbook spells `AUG` lands as the list's own `Aug` (6.6.4). This is
- *        the route the mis-cased value actually arrives by.
+ *        the workbook spells `POC-3 ` lands as the list's own `POC-3` (6.6.4).
+ *        This is the route a mis-spelled value actually arrives by.
  * @return {{rows: Array<Object>, skippedHeader: boolean, unknownSites: Array<string>,
  *           corrected: number}}
  */
@@ -181,15 +211,25 @@ export function rowsFromMatrix(kind, matrix, options = {}) {
       const value = asText(line[index]);
       if (value === '') return;                 // keep the carried-down value
 
-      row[column.key] = (column.key === 'period') ? asPeriod(value) : value;
+      if (column.key === 'period') {
+        row.period = asPeriod(value);
+        return;
+      }
+
+      if (column.key === 'date') {
+        applyPastedDate(row, line[index], previous);
+        return;
+      }
+
+      row[column.key] = value;
     });
 
     /*
-     * A month the workbook wrote as `AUG` is the list's `Aug` written by someone
-     * in a hurry, and keeping the two apart is what put a value the grid's month
-     * select could not show onto thirteen rows. Corrected here, at the point the
-     * value enters, so the row is right in the model, in the localStorage mirror
-     * and on the sheet — not just wherever it happens to be looked at.
+     * A value the workbook wrote with a stray space or the wrong case is the
+     * list's own answer written in a hurry, and keeping the two apart is what put
+     * a value the grid's select could not show onto thirteen rows. Corrected here,
+     * at the point the value enters, so the row is right in the model, in the
+     * localStorage mirror and on the sheet — not just wherever it is looked at.
      */
     corrected += canonicalizeRowLists(kind, row, options.reference || null).length;
 
@@ -237,10 +277,10 @@ export function rowsFromMatrix(kind, matrix, options = {}) {
  * @param {Function} options.getKind
  * @param {Function} options.getRows current model rows, for carry-down.
  * @param {Function} options.getSiteJcMap
- * @param {Function} [options.getDefaults] the row defaults (the settlement's
- *        month), for a paste with no month column of its own.
+ * @param {Function} [options.getDefaults] the row defaults, for a paste that
+ *        does not carry every column.
  * @param {Function} [options.getReference] the dropdown option lists, so a
- *        mis-cased month or team lands as the list spells it (6.6.4).
+ *        mis-spelled project or driver lands as the list spells it (6.6.4).
  * @param {Function} options.onRows called with the parse result.
  * @return {Function} a detach function.
  */

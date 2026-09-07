@@ -14,6 +14,12 @@
  * entries already filed under a team must keep resolving its name, so the row
  * has to stay. Inactive teams still show here — that is the only way to turn one
  * back on.
+ *
+ * A team now carries three things beyond its name: a Latin `code`, which spells
+ * its settlement ids (`S-MS-01`) and its batch ids (`EXP-MS-01-NEW-02`), and the
+ * two counters those ids and the tracking numbers are issued from. This screen is
+ * the only place the counters can be set, and setting them is the one manual step
+ * of the cutover.
  */
 
 import { api } from '../api.js';
@@ -130,6 +136,9 @@ function renderBody() {
         <thead>
           <tr>
             <th>${escapeHtml(t('col_team'))}</th>
+            <th>${escapeHtml(t('col_team_code'))}</th>
+            <th>${escapeHtml(t('col_next_settlement'))}</th>
+            <th>${escapeHtml(t('col_next_tracking'))}</th>
             <th>${escapeHtml(t('status'))}</th>
             <th class="col-actions"><span class="sr-only">${escapeHtml(t('actions'))}</span></th>
           </tr>
@@ -153,6 +162,9 @@ function renderRow(team) {
   return `
     <tr>
       <td class="text-bold">${escapeHtml(team.name)}</td>
+      <td class="num">${escapeHtml(team.code || '—')}</td>
+      <td class="num">${escapeHtml(team.next_settlement_no)}</td>
+      <td class="num">${escapeHtml(team.next_tracking_no)}</td>
       <td>${renderActiveBadge(team.active)}</td>
       <td class="col-actions">
         <div class="cell-actions">
@@ -175,7 +187,18 @@ function renderRow(team) {
  * ------------------------------------------------------------------ */
 
 /**
- * Add or rename a team. One dialog for both: the only field is the name.
+ * Add or edit a team — name, code, and the two counters.
+ *
+ * The COUNTERS are the reason this screen matters more than it used to. A
+ * settlement id and a Tracking# are both issued from them (decision 6), and the
+ * app cannot know what numbers a team has already been given by hand — so after
+ * the deploy the owner types each team's highest issued number here, once, and
+ * then never touches them again.
+ *
+ * They are only offered when editing. A brand-new team starts both at 1, which
+ * is the right answer for a team that has never settled and would be a strange
+ * thing to ask about at the moment of creating one.
+ *
  * @param {Object|null} team null to create.
  */
 function openTeamDialog(team) {
@@ -191,6 +214,29 @@ function openTeamDialog(team) {
                placeholder="${escapeHtml(t('team_name_placeholder'))}"
                value="${escapeHtml(editing ? team.name : '')}">
       </div>
+
+      <div class="field">
+        <label class="label" for="team-code">${escapeHtml(t('team_code'))}</label>
+        <input class="input num" id="team-code" type="text" maxlength="4"
+               placeholder="${escapeHtml(t('team_code_placeholder'))}"
+               value="${escapeHtml(editing ? (team.code || '') : '')}">
+        <div class="field-hint">${escapeHtml(t('team_code_hint'))}</div>
+      </div>
+
+      ${editing ? `
+        <div class="field">
+          <label class="label" for="team-next-settlement">${escapeHtml(t('col_next_settlement'))}</label>
+          <input class="input num" id="team-next-settlement" type="text" inputmode="numeric"
+                 value="${escapeHtml(team.next_settlement_no)}">
+        </div>
+
+        <div class="field">
+          <label class="label" for="team-next-tracking">${escapeHtml(t('col_next_tracking'))}</label>
+          <input class="input num" id="team-next-tracking" type="text" inputmode="numeric"
+                 value="${escapeHtml(team.next_tracking_no)}">
+          <div class="field-hint">${escapeHtml(t('team_counters_hint'))}</div>
+        </div>
+      ` : ''}
     `,
 
     onConfirm: async function (ctx) {
@@ -200,20 +246,49 @@ function openTeamDialog(team) {
         return false;
       }
 
-      // Nothing changed — close without a pointless round trip.
-      if (editing && name === team.name) return;
-
-      if (editing) {
-        await api.call('update_team', { team_id: team.team_id, name: name });
-        toastSuccess(t('team_updated'));
-      } else {
-        await api.call('create_team', { name: name });
-        toastSuccess(t('team_created'));
+      const code = ctx.value('#team-code').trim().toUpperCase();
+      if (!/^[A-Z0-9]{2,4}$/.test(code)) {
+        ctx.setError(t('team_code_required'));
+        return false;
       }
 
+      if (!editing) {
+        await api.call('create_team', { name: name, code: code });
+        toastSuccess(t('team_created'));
+        load();
+        return;
+      }
+
+      const settlementNo = ctx.value('#team-next-settlement').trim();
+      const trackingNo = ctx.value('#team-next-tracking').trim();
+
+      if (!isCounter(settlementNo) || !isCounter(trackingNo)) {
+        ctx.setError(t('team_counter_invalid'));
+        return false;
+      }
+
+      const patch = { team_id: team.team_id };
+      if (name !== team.name) patch.name = name;
+      if (code !== (team.code || '')) patch.code = code;
+      if (Number(settlementNo) !== team.next_settlement_no) patch.next_settlement_no = Number(settlementNo);
+      if (Number(trackingNo) !== team.next_tracking_no) patch.next_tracking_no = Number(trackingNo);
+
+      // Nothing changed — close without a pointless round trip.
+      if (Object.keys(patch).length === 1) return;
+
+      await api.call('update_team', patch);
+      toastSuccess(t('team_updated'));
       load();
     }
   });
+}
+
+/**
+ * @param {string} value
+ * @return {boolean} a whole number of 1 or more, which is what a counter is.
+ */
+function isCounter(value) {
+  return /^\d+$/.test(value) && Number(value) >= 1;
 }
 
 /**

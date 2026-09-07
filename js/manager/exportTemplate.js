@@ -29,7 +29,7 @@
  * captions — is chrome and goes through t() in export.js, as usual.
  */
 
-import { formatDate } from '../utils/dates.js';
+import { formatDate, formatShortDate } from '../utils/dates.js';
 import { sumField } from '../utils/explode.js';
 import { toNumber } from '../utils/validate.js';
 
@@ -43,13 +43,20 @@ export const SHEET_TITLES = {
   fuel: 'Fuel Tracking'
 };
 
-/** The header block's labels (7.2). */
+/**
+ * The header block's labels (7.2).
+ *
+ * There is no Month. 7.2 specifies Name / Account / Total plus the Old/New
+ * marker, and a Month cell had been added to it in code beyond that — which was
+ * harmless while a settlement WAS a month and became a lie the moment one could
+ * run from 27 August to 3 September. Every row now carries its own date, which is
+ * the honest place for one.
+ */
 const META_LABELS = {
   name: 'Coordinator Name',
   account: 'Account',
   total: 'Total',
-  team: 'Team',
-  month: 'Month'
+  team: 'Team'
 };
 
 /** The approval footer, exactly as the workbook carries it (7.2). */
@@ -73,12 +80,20 @@ const BLANK = '';
  *               beside it, but rendered left-to-right in the preview: 8.1 keeps
  *               Site IDs and Job Codes LTR in Arabic, and a multi-site cell like
  *               `377/442` would otherwise reorder to `442/377` on an RTL page.
+ *   - `date`  — a day, written as TEXT in `05-Aug-26` form. Text and not an Excel
+ *               date on purpose, the same reasoning as the per-site file (7.4):
+ *               a real date cell is re-rendered by whichever locale opens the
+ *               file, and `08/05/26` reaching finance as the eighth of May is a
+ *               mistake nobody would catch.
  *   - `text`  — everything else.
+ *
+ * `Month` and `Day` used to be two columns. They are one `Date` — the same
+ * information, in one cell, and unambiguous across a batch that runs into the
+ * next month.
  */
 const COLUMNS = {
   expenses: [
-    { key: 'month', label: 'Month', type: 'text', width: 10 },
-    { key: 'day', label: 'Day', type: 'num', width: 6 },
+    { key: 'date', label: 'Date', type: 'date', width: 12 },
     { key: 'project', label: 'Project', type: 'text', width: 12 },
     { key: 'site_id', label: 'Site ID', type: 'id', width: 14 },
     { key: 'job_code', label: 'Job Code', type: 'id', width: 14 },
@@ -91,8 +106,7 @@ const COLUMNS = {
   ],
 
   fuel: [
-    { key: 'month', label: 'Month', type: 'text', width: 10 },
-    { key: 'day', label: 'Day', type: 'num', width: 6 },
+    { key: 'date', label: 'Date', type: 'date', width: 12 },
     { key: 'project', label: 'Project', type: 'text', width: 12 },
     { key: 'site_id', label: 'Site ID', type: 'id', width: 14 },
     { key: 'job_code', label: 'Job Code', type: 'id', width: 14 },
@@ -128,7 +142,6 @@ const SHEET_KINDS = [
  * @param {Object} options.query the `export_query` response for this period.
  * @param {string} options.period 'old' | 'new'.
  * @param {string} options.team the team's display name.
- * @param {string} options.month the month label.
  * @return {Object} the document model — see the fields below.
  */
 export function buildExportDocument(options) {
@@ -140,8 +153,9 @@ export function buildExportDocument(options) {
 
   const trackingNo = joinValues(header.tracking_numbers);
   const account = joinValues(header.accounts);
-  const fiscalYear = joinValues(header.fiscal_years);
-  const monthLabel = joinValues(header.months) || String(opts.month || '');
+
+  const allRows = (query.expenses || []).concat(query.fuel || []);
+  const settlementId = distinctSettlementId(allRows);
 
   const coordinators = (header.coordinators || []).map(function (person) {
     return person.display_name || person.user_id || '';
@@ -154,7 +168,6 @@ export function buildExportDocument(options) {
       rows: (query[spec.source] || []).map(passThrough),
       period: period,
       team: String(opts.team || ''),
-      month: monthLabel,
       account: account,
       coordinators: coordinators,
       trackingNo: trackingNo
@@ -167,8 +180,16 @@ export function buildExportDocument(options) {
     period: period,
     report_type: 'normal',
     team: String(opts.team || ''),
-    month: monthLabel,
-    fiscal_year: fiscalYear,
+    settlement_id: settlementId,
+
+    /*
+     * The span the rows actually cover, from the server's own header. Not printed
+     * in the file — the Date column says it per line — but the export screen shows
+     * it, which is how a manager notices a batch that has strayed a month.
+     */
+    first_date: header.first_date || '',
+    last_date: header.last_date || '',
+
     account: account,
     tracking_no: trackingNo,
     coordinators: coordinators,
@@ -183,12 +204,34 @@ export function buildExportDocument(options) {
 
     file_name: buildFileName({
       team: opts.team,
+      settlementId: settlementId,
       period: period,
-      trackingNo: trackingNo,
-      month: monthLabel,
-      fiscalYear: fiscalYear
+      trackingNo: trackingNo
     })
   };
+}
+
+/**
+ * The one settlement a batch's rows belong to, for the file name.
+ *
+ * Normally exactly one: the commit refuses a batch resolving to more than one
+ * Tracking# (3.7), and each settlement has its own. Where a preview does span
+ * several — which is what that refusal is there to catch — this returns '' rather
+ * than picking one, so the file name says nothing instead of saying something
+ * false.
+ *
+ * @param {Array<Object>} rows
+ * @return {string}
+ */
+function distinctSettlementId(rows) {
+  const seen = [];
+
+  (rows || []).forEach(function (row) {
+    const id = String(row.settlement_id || '').trim();
+    if (id && seen.indexOf(id) === -1) seen.push(id);
+  });
+
+  return (seen.length === 1) ? seen[0] : '';
 }
 
 /**
@@ -267,10 +310,13 @@ function buildSheet(spec) {
 /**
  * The header block's label/value pairs.
  *
- * Coordinator Name, Account and Total are the three 7.2 names; Team and Month
- * are added because an export is per team and month (7.1) and a finance file
- * that does not say which team it is for cannot be filed by the person
- * receiving it.
+ * Coordinator Name, Account and Total are the three 7.2 names; Team is added
+ * because an export is per team (7.1) and a finance file that does not say which
+ * team it is for cannot be filed by the person receiving it.
+ *
+ * Month is NOT here (decision 21). It had been added beyond what 7.2 documents,
+ * and a settlement no longer has one — the Date column says what each line is
+ * for, which is the only month claim the file can honestly make.
  *
  * `Total` is every money column of the sheet added together — on the fuel sheet
  * that is Fuel PLUS Karta, because both are money the coordinator spent and a
@@ -306,8 +352,7 @@ function buildMeta(spec, columns, totals, moneyKeys) {
     { label: META_LABELS.account, value: spec.account, type: 'text' },
     { label: META_LABELS.total, value: headline, type: 'money' }
   ].concat(breakdown, [
-    { label: META_LABELS.team, value: spec.team, type: 'text' },
-    { label: META_LABELS.month, value: spec.month, type: 'text' }
+    { label: META_LABELS.team, value: spec.team, type: 'text' }
   ]);
 }
 
@@ -357,6 +402,15 @@ function cellValue(row, column) {
     return (number === null) ? BLANK : number;
   }
 
+  /*
+   * `05-Aug-26`, written as text. The row's date arrives as ISO — resolved by the
+   * server through entryDateOf, so a legacy row reaches here as a real day too —
+   * and it goes into the file as a string for the reason 7.4 gives: an Excel date
+   * cell is re-rendered by whichever locale opens the file, and `08/05/26` is
+   * both the fifth of August and the eighth of May depending on who is reading.
+   */
+  if (column.type === 'date') return formatShortDate(raw, BLANK);
+
   return (raw === null || raw === undefined) ? BLANK : String(raw);
 }
 
@@ -379,9 +433,8 @@ function cellValue(row, column) {
  *     │ TOTAL FUEL       │ 11,880.00                │          │  (fuel sheet
  *     │ TOTAL KARTA      │ 600.00                   │          │   only)
  *     │ TEAM             │ Team Ashraf              │          │
- *     │ MONTH            │ Aug                      │          │
  *     ├──────────┴──────────────────────────────────┴──────────┤
- *     │ Month │ Day │ Project │ … │ Amount                     │  columns
+ *     │ Date │ Project │ Site ID │ … │ Amount                  │  columns
  *     │ …data rows…                                            │
  *     │                                    Total │ 12,480.00   │  totals
  *     ├────────────────────────────────────────────────────────┤
@@ -781,12 +834,20 @@ export function documentToSheets(doc) {
  * ================================================================== */
 
 /**
- * The download's name, e.g. `TeamAshraf_NEW_T26_Aug2026.xlsx`.
+ * The download's name — `محمود الشعراوى — S-MA-01 — NEW — #4.xlsx` (decision 23).
  *
- * It names the team, the period, the Tracking# and the month, because a finance
- * inbox holds four files per team per month (7.1) and they have to be told apart
- * without opening them. The per-site report gets its own suffix so it cannot
- * overwrite the Normal one in the browser's downloads folder.
+ * Four things, in the order somebody looking at a folder needs them: whose it is,
+ * which batch, which track, and which number finance will see on it. A finance
+ * inbox holds four files per team per settlement (7.1) and they have to be told
+ * apart without opening them.
+ *
+ * It used to be `TeamAshraf_NEW_T26_Aug2026.xlsx`, squashed to letters and digits
+ * — which meant an Arabic team name came out as an empty segment and the file was
+ * called `Export_NEW_…`. The team names ARE Arabic, so the name keeps them and
+ * strips only what a filesystem cannot take.
+ *
+ * The per-site report gets its own suffix so it cannot overwrite the Normal one
+ * in the browser's downloads folder.
  *
  * It lives here rather than in utils/xlsx.js: that file is a SheetJS wrapper and
  * knows nothing about teams or tracking numbers, and naming the file is part of
@@ -798,28 +859,33 @@ export function documentToSheets(doc) {
 export function buildFileName(parts) {
   const segments = [
     safeSegment(parts.team) || 'Export',
+    safeSegment(parts.settlementId),
     String(parts.period || '').toUpperCase(),
-    parts.trackingNo ? 'T' + safeSegment(parts.trackingNo) : '',
-    safeSegment(String(parts.month || '') + String(parts.fiscalYear || '')),
-    parts.isPerSite ? 'PerSite' : ''
+    parts.trackingNo ? '#' + safeSegment(parts.trackingNo) : '',
+    parts.isPerSite ? 'Per Site' : ''
   ];
 
-  return segments.filter(Boolean).join('_') + '.xlsx';
+  return segments.filter(Boolean).join(' — ') + '.xlsx';
 }
 
 /**
- * One file-name segment: letters and digits only.
+ * One file-name segment, with everything a filesystem refuses taken out.
  *
- * A batch that spans two settlements comes back with its numbers joined by `/`
- * (Export.gs), which is a path separator — this is what stops that reaching the
- * filesystem.
+ * Deliberately NOT reduced to letters and digits: the team names are Arabic and
+ * the settlement ids carry hyphens, and stripping either leaves a name that says
+ * nothing. What has to go is the reserved set — a batch spanning two settlements
+ * comes back with its Tracking#s joined by `/` (Export.gs), which is a path
+ * separator, and that is the case this exists for.
  *
  * @param {*} value
  * @return {string}
  */
 function safeSegment(value) {
   return String(value === null || value === undefined ? '' : value)
-    .replace(/[^A-Za-z0-9]+/g, '');
+    // eslint-disable-next-line no-control-regex
+    .replace(/[\\\/:*?"<>|\u0000-\u001F]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
 }
 
 /**

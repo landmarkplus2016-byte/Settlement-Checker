@@ -2,12 +2,17 @@
  * settlement.js — one settlement batch, and the grid that fills it
  * (CLAUDE.md 5.1, 6.5).
  *
- * The header is the settlement itself: its month and account, and the TWO
+ * The header is the settlement itself: its team and account, and the TWO
  * tracking numbers. Those two are the reason this screen is shaped the way it
  * is. Old and new are parallel tracks (rule 10) that confirm, get approved and
- * export independently, so everything here comes in pairs — two tracking inputs,
+ * export independently, so everything here comes in pairs — two Tracking# boxes,
  * two roll-up badges, two Confirm buttons — and nothing anywhere implies that
  * finishing one has anything to do with the other.
+ *
+ * The Tracking# boxes are READ-ONLY. A number is issued by Confirm, out of the
+ * team's counter (decision 6), so the header reports one rather than asking for
+ * one — with a Change link for the exception where finance has already issued a
+ * different number.
  *
  * Below that sits one grid at a time, Expenses or Fuel, hosted in `#grid-host`
  * and owned by grid.js. Both kinds are loaded up front so switching tab is
@@ -180,10 +185,12 @@ async function loadReference() {
   state.siteJcMap = await loadSiteJcMap();
 
   try {
-    const [teams, lists] = await Promise.all([
-      api.call('list_teams', { include_inactive: false }),
-      api.call('list_lists', { include_inactive: false })
-    ]);
+    /*
+     * Four lists, not six. `months` went with the month column, and `teams` went
+     * with the team column — the settlement owns the team now and the server
+     * stamps it onto every row, so there is nothing here for the grid to offer.
+     */
+    const lists = await api.call('list_lists', { include_inactive: false });
 
     const groups = (lists && lists.lists) || {};
     const activeValues = function (name) {
@@ -193,17 +200,10 @@ async function loadReference() {
     };
 
     state.reference = {
-      teams: (teams.teams || [])
-        .filter(function (team) { return team.active; })
-        .map(function (team) { return team.name; }),
       projects: activeValues('projects'),
       categories: activeValues('categories'),
       areas: activeValues('areas'),
-      drivers: activeValues('drivers'),
-
-      // The month cell is a dropdown for the same reason create_settlement's is:
-      // a typed "Augst" is a month nothing matches, and the export filters on it.
-      months: activeValues('months')
+      drivers: activeValues('drivers')
     };
     state.referenceAvailable = true;
 
@@ -333,7 +333,6 @@ function paint() {
   if (!body) return;
 
   body.innerHTML = renderBody();
-  bindHeaderEvents();
   mountGrid();
   paintConfirmHints();
 }
@@ -393,20 +392,25 @@ function renderBody() {
 /**
  * The settlement header.
  *
- * The two tracking numbers are editable here because this is where a coordinator
- * has them to hand. Each is disabled once its own track has exported rows (3.5):
- * renumbering a track finance has already been paid from would silently
- * re-label money that has left the building — and the other track stays open,
- * because they are independent.
+ * The title is the TEAM, because that is what a settlement is now — it rendered
+ * the month and the fiscal year, and a settlement has neither any more. The id
+ * and the account move to the subtitle, where `S-MA-01 · Account: VF` says the
+ * rest of it in one line.
  *
  * @param {Object} settlement
  * @return {string} HTML
  */
 function renderHeader(settlement) {
+  // A legacy settlement has no team and only a month to name itself by; it must
+  // still be findable, because Confirm now requires a team to be set on it.
+  const title = settlement.team
+    || [settlement.month, settlement.fiscal_year].filter(Boolean).join(' ')
+    || t('settlement_no_team');
+
   return `
     <div class="page-title-row">
       <div>
-        <h1>${escapeHtml(settlement.month)} ${escapeHtml(settlement.fiscal_year)}</h1>
+        <h1>${escapeHtml(title)}</h1>
         <div class="page-subtitle">
           <span class="num">${escapeHtml(settlement.settlement_id)}</span>
           · ${escapeHtml(t('col_account'))}: <span class="num">${escapeHtml(settlement.account)}</span>
@@ -423,7 +427,22 @@ function renderHeader(settlement) {
 }
 
 /**
- * One track: its Tracking# input and its roll-up.
+ * One track: its Tracking# and its roll-up.
+ *
+ * The number is READ-ONLY. It is issued by Confirm, from the team's own counter
+ * (decision 6), so before that there is nothing to type and after it there is
+ * nothing to decide — an editable box invited a coordinator to invent a number,
+ * and the whole point of the counter is that nobody has to.
+ *
+ * The box therefore says one of three things:
+ *   - *Issued when you confirm* — the track has no number yet.
+ *   - the number — with a **Change** link beside it, for the case finance has
+ *     already spoken for a different one (decision 9). The counter is bumped past
+ *     whatever is typed, so the sequence never hands it out again.
+ *   - the number, *fixed* — the track has exported, and renumbering it would
+ *     re-label money that has already left the building (3.5). The other track
+ *     stays open; they are independent.
+ *
  * @param {Object} settlement
  * @param {string} period 'old' | 'new'
  * @return {string} HTML
@@ -432,6 +451,7 @@ function renderTrackCard(settlement, period) {
   const track = settlement.tracks[period];
   const value = settlement[period + '_tracking_no'];
   const locked = track.has_exported;
+  const issued = value !== null && value !== undefined && value !== '';
 
   return `
     <div class="track-card is-${period}">
@@ -443,16 +463,21 @@ function renderTrackCard(settlement, period) {
       </div>
 
       <div class="field">
-        <label class="label" for="tracking-${period}">${escapeHtml(t('col_' + period + '_track'))}</label>
+        <span class="label">${escapeHtml(t('col_' + period + '_track'))}</span>
         <div class="row-tight">
-          <input class="input num" id="tracking-${period}" type="text" inputmode="numeric"
-                 data-tracking="${period}"
-                 value="${value === null || value === undefined ? '' : escapeHtml(value)}"
-                 ${locked ? 'readonly' : ''}
-                 placeholder="${escapeHtml(t('tracking_placeholder'))}">
+          ${issued
+            ? `<span class="num text-bold">#${escapeHtml(value)}</span>`
+            : `<span class="text-muted">${escapeHtml(t('tracking_on_confirm'))}</span>`}
+
+          ${(issued && !locked) ? `
+            <button class="btn btn-ghost btn-sm" type="button"
+                    data-action="change-tracking" data-period="${period}">
+              ${escapeHtml(t('tracking_change'))}
+            </button>
+          ` : ''}
         </div>
         ${locked
-          ? `<span class="field-hint">${escapeHtml(t('tracking_locked_hint'))}</span>`
+          ? `<span class="field-hint">${escapeHtml(t('tracking_fixed_hint'))}</span>`
           : ''}
       </div>
 
@@ -519,8 +544,8 @@ function paintConfirmHints() {
     let text = '';
     let tone = '';
 
-    if (readiness.reason === 'tracking') {
-      text = t('confirm_hint_tracking');
+    if (readiness.reason === 'team') {
+      text = t('confirm_hint_team');
       tone = 'is-blocked';
     } else if (readiness.reason === 'nothing') {
       text = t('confirm_hint_nothing');
@@ -557,12 +582,14 @@ function mountGrid() {
     reference: state.reference,
     siteJcMap: state.siteJcMap,
 
-    // A row stores its month and day but not its year (2.2), and the Site→JC
-    // picker needs a whole date to choose a job code by (6.6.3).
+    // Only a LEGACY row needs this: it stored month and day but not the year
+    // (2.2), and the Site→JC picker needs a whole date to choose a job code by
+    // (6.6.3). A row written since carries its own date.
     fiscalYear: fiscalYear(),
 
     // What a new row falls back to when there is no row above to carry down
-    // from — the month being settled, which is the settlement's own.
+    // from. Empty now — the date cell takes the row above's month and year on
+    // its own (parseTypedDate).
     defaults: rowDefaults()
   });
 
@@ -749,22 +776,31 @@ function pasteOptions() {
  * What a row falls back to when neither carry-down nor the coordinator has
  * answered for it.
  *
- * Only the month, and only as a DEFAULT. A settlement is a month's worth of work
- * (rule 9), so that is what a fresh row is almost always for — but a line dated
- * into the neighbouring month is a real thing, and the cell stays editable.
+ * Nothing, now. It used to seed a new row's month from the settlement's, and the
+ * settlement has no month — a batch belongs to a team and runs across whatever
+ * days it runs across. What replaced it is better: an empty date cell takes the
+ * ROW ABOVE's month and year when the coordinator types a bare day (decision 31,
+ * parseTypedDate), which is the same convenience without a settlement-level fact
+ * that could be wrong.
+ *
+ * Kept as a function rather than deleted so the grid and the paste dialog keep
+ * one place to hang a default off if one is ever wanted again.
  *
  * @return {Object}
  */
 function rowDefaults() {
-  return { month: (state.settlement && state.settlement.month) || '' };
+  return {};
 }
 
 /**
- * The settlement's fiscal year, which a grid row does not carry.
+ * The settlement's fiscal year — for LEGACY rows only.
  *
- * A row stores a month label and a day number (2.2); the year lives once, on the
- * settlement. Putting the three together is what gives the Site→JC picker a date
- * to choose a job code by (6.6.3).
+ * A row written before the date column stored a month label and a day number
+ * (2.2) with the year living once, on the settlement. Putting the three together
+ * is what lets such a row still resolve to a real date (entryDateOf), which the
+ * Site→JC picker needs in order to choose a job code by day (6.6.3).
+ *
+ * Every row written since carries its own date and never consults this.
  *
  * @return {string} '' before the settlement has loaded.
  */
@@ -1036,26 +1072,11 @@ function bindPageActions(page) {
     if (action === 'delete-selected') return deleteSelected();
     if (action === 'paste') return openPasteDialog(pasteOptions());
     if (action === 'goto-row') return gotoRow(Number(trigger.dataset.row));
+    if (action === 'change-tracking') return openChangeTracking(trigger.dataset.period);
 
     // The only two things on this screen that write to the sheet (3.5).
     if (action === 'save') return runSave(pageHandle());
     if (action === 'confirm') return runConfirm(pageHandle(), trigger.dataset.period);
-  });
-}
-
-/**
- * Wire the header's inputs. Unlike the click delegation above, these listeners
- * sit on elements paint() has just rebuilt, so this DOES belong in paint() —
- * every repaint hands us new nodes that carry no listeners yet.
- */
-function bindHeaderEvents() {
-  const body = qs('#settlement-body');
-  if (!body) return;
-
-  // A tracking number is committed on change, not per keystroke — it is a header
-  // field, not a grid cell.
-  qsa('[data-tracking]', body).forEach(function (input) {
-    input.addEventListener('change', function () { saveTracking(input); });
   });
 }
 
@@ -1095,50 +1116,61 @@ function gotoRow(index) {
 }
 
 /**
- * Store one track's Tracking#.
+ * Override one track's Tracking# — the Change link (decision 9).
  *
- * `update_settlement` refuses to renumber a track that already has exported rows
- * (3.5); the input is read-only in that case, but the server is the gate and a
- * refusal here puts the old value back rather than leaving a number on screen
- * that was never stored.
+ * A dialog rather than an editable box, because this is the exception and not the
+ * way numbers are meant to arrive. The number issued itself at Confirm; the only
+ * reason to touch it is that finance has already spoken for a different one, and
+ * making that a deliberate two-step is the point.
  *
- * @param {HTMLInputElement} input
+ * The server bumps the team's counter past whatever is typed, so the sequence can
+ * never hand the same number out again, and it refuses the change outright once
+ * the track has exported rows (3.5).
+ *
+ * @param {string} period 'old' | 'new'
  */
-async function saveTracking(input) {
-  const period = input.dataset.tracking;
-  const raw = String(input.value || '').trim();
+function openChangeTracking(period) {
+  const current = state.settlement[period + '_tracking_no'];
+  const currentText = (current === null || current === undefined) ? '' : String(current);
 
-  const previous = state.settlement[period + '_tracking_no'];
-  const previousText = (previous === null || previous === undefined) ? '' : String(previous);
-  if (raw === previousText) return;
+  openModal({
+    title: t('tracking_change_title', { period: t('period_' + period) }),
+    confirmLabel: t('save'),
 
-  if (raw && (toNumber(raw) === null || toNumber(raw) <= 0 || toNumber(raw) % 1 !== 0)) {
-    toastError(t('tracking_invalid'));
-    input.value = previousText;
-    return;
-  }
+    bodyHtml: `
+      <div class="stack">
+        <p class="text-small text-secondary">${escapeHtml(t('tracking_change_body'))}</p>
+        <div class="field">
+          <label class="label" for="tracking-value">${escapeHtml(t('col_' + period + '_track'))}</label>
+          <input class="input num" id="tracking-value" type="text" inputmode="numeric"
+                 value="${escapeHtml(currentText)}">
+        </div>
+      </div>
+    `,
 
-  input.disabled = true;
+    onConfirm: async function (ctx) {
+      const raw = ctx.value('#tracking-value').trim();
+      const number = toNumber(raw);
 
-  try {
-    const payload = { settlement_id: state.settlementId };
-    payload[period + '_tracking_no'] = raw === '' ? '' : toNumber(raw);
+      if (!raw || number === null || number <= 0 || number % 1 !== 0) {
+        ctx.setError(t('tracking_invalid'));
+        return false;
+      }
+      if (raw === currentText) return;
 
-    const result = await api.call('update_settlement', payload);
+      const payload = { settlement_id: state.settlementId };
+      payload[period + '_tracking_no'] = number;
 
-    // Keep the roll-up the header renders from, so a later repaint agrees.
-    state.settlement[period + '_tracking_no'] = result.settlement[period + '_tracking_no'];
-    state.settlement.tracks[period].tracking_no = result.settlement[period + '_tracking_no'];
-    state.settlement.tracks[period].tracking_no_set =
-      result.settlement[period + '_tracking_no'] !== null;
+      const result = await api.call('update_settlement', payload);
 
-    toastSuccess(t('tracking_saved'));
+      // Keep the roll-up the header renders from, so a later repaint agrees.
+      state.settlement[period + '_tracking_no'] = result.settlement[period + '_tracking_no'];
+      state.settlement.tracks[period].tracking_no = result.settlement[period + '_tracking_no'];
+      state.settlement.tracks[period].tracking_no_set =
+        result.settlement[period + '_tracking_no'] !== null;
 
-  } catch (err) {
-    toastError(errorMessage(err));
-    input.value = previousText;
-
-  } finally {
-    input.disabled = false;
-  }
+      toastSuccess(t('tracking_saved'));
+      paint();
+    }
+  });
 }

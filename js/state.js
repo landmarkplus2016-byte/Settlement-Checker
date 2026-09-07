@@ -12,6 +12,8 @@
  *      localStorage, always under an `sc_` prefix (9.2).
  */
 
+import { entryDate } from './utils/dates.js';
+
 /* ------------------------------------------------------------------ *
  * localStorage keys — every one starts `sc_`
  * ------------------------------------------------------------------ */
@@ -19,6 +21,17 @@
 const LANG_KEY = 'sc_lang';
 const DEVICE_ID_KEY = 'sc_device_id';
 const DRAFT_PREFIX = 'sc_draft_';
+
+/**
+ * The shape of a stored `sc_draft_*` record.
+ *
+ *   1 — rows carried `month` + `day`.
+ *   2 — rows carry one `date`.
+ *
+ * Bumped whenever a stored row's shape changes, with a step in migrateDraft() to
+ * match. An unversioned record is v1: the field did not exist then.
+ */
+const DRAFT_SCHEMA = 2;
 
 /* ------------------------------------------------------------------ *
  * In-memory state
@@ -287,6 +300,7 @@ export function draftKey(settlementId, kind) {
  */
 export function saveDraft(settlementId, kind, rows) {
   const record = {
+    schema: DRAFT_SCHEMA,
     settlement_id: settlementId,
     kind: kind,
     saved_at: new Date().toISOString(),
@@ -316,13 +330,50 @@ export function getDraft(settlementId, kind) {
   try {
     const parsed = JSON.parse(raw);
     if (!parsed || typeof parsed !== 'object' || !Array.isArray(parsed.rows)) return null;
-    return parsed;
+    return migrateDraft(parsed);
   } catch (err) {
     // A corrupt draft is worse than none — drop it rather than crash the grid.
     console.warn('Discarding unreadable draft: ' + draftKey(settlementId, kind));
     removeLocal(draftKey(settlementId, kind));
     return null;
   }
+}
+
+/**
+ * Bring a draft written by an older version of the app up to the current shape.
+ *
+ * A draft is the ONE thing in this app that survives a deploy on the user's own
+ * machine: it is written on every keystroke and read back after a refresh, so a
+ * coordinator who was half-way through a grid when the new version shipped opens
+ * it again with rows in the old shape. Nothing else needs a migration, because
+ * nothing else is stored anywhere but a Sheet the server owns.
+ *
+ * v1 → v2 is the month + day → date change. The row's own `month` and `day` are
+ * all there is to go on, so the settlement's fiscal year is not available here —
+ * the year is taken from the draft's own `saved_at`, which is the day the
+ * coordinator was typing and therefore the right year in every case but a draft
+ * left open across New Year. A row whose date cannot be rebuilt keeps its `month`
+ * and `day` and arrives with an empty date cell, which the grid flags rather than
+ * guesses at.
+ *
+ * @param {Object} record a parsed draft.
+ * @return {Object} the same record, at DRAFT_SCHEMA.
+ */
+function migrateDraft(record) {
+  if (record.schema === DRAFT_SCHEMA) return record;
+
+  const year = String(record.saved_at || '').slice(0, 4) || String(new Date().getFullYear());
+
+  record.rows = record.rows.map(function (row) {
+    if (!row || typeof row !== 'object') return row;
+    if (row.date) return row;
+
+    row.date = entryDate(year, row.month, row.day);
+    return row;
+  });
+
+  record.schema = DRAFT_SCHEMA;
+  return record;
 }
 
 /**

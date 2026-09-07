@@ -44,7 +44,7 @@
  * one way of keeping rule 18.
  */
 
-import { entryDate, formatShortDate } from '../utils/dates.js';
+import { entryDateOf, formatShortDate } from '../utils/dates.js';
 import { explodeRows } from '../utils/explode.js';
 import { toNumber } from '../utils/validate.js';
 import { MONEY_FORMAT, box, buildFileName, palette, solid } from './exportTemplate.js';
@@ -133,13 +133,33 @@ export function buildPerSiteDocument(options) {
 
     file_name: buildFileName({
       team: team,
+
+      // The log row carries the batch's settlement only when the export was
+      // narrowed to one (3.7); an unnarrowed batch simply leaves it out of the
+      // name, exactly as the Normal file does.
+      settlementId: settlementIdOf(batch),
+
       period: batch.period,
       trackingNo: batch.tracking_no,
-      month: batch.month,
-      fiscalYear: batch.fiscal_year,
       isPerSite: true
     })
   };
+}
+
+/**
+ * The settlement id out of a log row's `settlement_id`, which is stored as the
+ * `<user_id>::<settlement_id>` batch key when the export was narrowed to one
+ * (2.1) and blank otherwise.
+ *
+ * @param {Object} batch the ExportLog row.
+ * @return {string} '' for an unnarrowed batch.
+ */
+function settlementIdOf(batch) {
+  const raw = String((batch && batch.settlement_id) || '').trim();
+  if (!raw) return '';
+
+  const parts = raw.split('::');
+  return (parts.length === 2) ? parts[1].trim() : raw;
 }
 
 /**
@@ -230,8 +250,15 @@ function costLine(row, batch, team, own) {
     // fallback for a row whose settlement could not be read.
     tracking_no: row.tracking_no || batch.tracking_no || BLANK,
 
+    /*
+     * The row's own date. `entryDateOf` reads whichever shape the row is in — the
+     * `date` cell, or a legacy row's month + day against a year — which is what
+     * lets the fifteen batches that went out before the date column existed still
+     * regenerate exactly as they were (decision 26). The batch's own fiscal year
+     * is the fallback when the settlement itself could not be read.
+     */
     date: formatShortDate(
-      entryDate(settlement.fiscal_year || batch.fiscal_year, row.month, row.day)
+      entryDateOf(row, { fiscal_year: settlement.fiscal_year || batch.fiscal_year })
     ),
 
     site_id: row.site_id,

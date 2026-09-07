@@ -197,11 +197,15 @@ function ymd(date) {
 }
 
 /**
- * The day an entry is settling, as `YYYY-MM-DD`.
+ * The day a LEGACY entry is settling, as `YYYY-MM-DD`.
  *
  * Built from the settlement's fiscal year and the row's own month + day, because
- * the grid stores those three separately (2.2) and the Site→JC picker needs one
- * date to compare task dates against (6.6.3).
+ * an entry written before the date column stored those three separately (2.2)
+ * and the Site→JC picker needs one date to compare task dates against (6.6.3).
+ *
+ * Nothing writes rows in that shape any more. Call `entryDateOf()` instead —
+ * this is the fallback inside it, kept exported only for the readers that still
+ * hold a fiscal year and a month rather than a row.
  *
  * @param {*} fiscalYear e.g. '2026'.
  * @param {*} month a three-letter label from `Lists.months`.
@@ -213,4 +217,158 @@ export function entryDate(fiscalYear, month, day) {
   const dayNumber = parseInt(String(day === 0 ? '0' : (day || '')).trim(), 10);
 
   return build(year, monthNumber(String(month || '').trim()), dayNumber);
+}
+
+/**
+ * The day an entry is settling — the client twin of Utils.gs `entryDateOf()`.
+ *
+ * **Every reader of an entry's date goes through this.** An entry carries one
+ * `date` cell; every entry written before that carries `month` and `day`, and
+ * only the SETTLEMENT knows which year those belong to. A reader that reached
+ * for `row.day` on its own would sort 3 September above 27 August, or resolve a
+ * job code against the wrong year (§6.6.3).
+ *
+ * @param {Object} row an entry, as the server shapes it.
+ * @param {Object} [settlement] its settlement; only the legacy path needs it.
+ * @return {string} `YYYY-MM-DD`, or '' when the row carries no readable day.
+ */
+export function entryDateOf(row, settlement) {
+  if (!row) return '';
+
+  const direct = normalizeIsoDate(row.date);
+  if (direct) return direct;
+
+  return entryDate(settlement && settlement.fiscal_year, row.month, row.day);
+}
+
+/**
+ * A stored date cell as `YYYY-MM-DD`, or '' when it is not one.
+ * @param {*} value
+ * @return {string}
+ */
+export function normalizeIsoDate(value) {
+  if (value === null || value === undefined || value === '') return '';
+  if (value instanceof Date) return isNaN(value.getTime()) ? '' : ymd(value);
+
+  const iso = /^(\d{4})-(\d{1,2})-(\d{1,2})/.exec(String(value).trim());
+  return iso ? build(+iso[1], +iso[2], +iso[3]) : '';
+}
+
+/* ------------------------------------------------------------------ *
+ * Typing a date into the grid
+ * ------------------------------------------------------------------ */
+
+/**
+ * What the coordinator typed into a date cell, as `YYYY-MM-DD`.
+ *
+ * **Day-first**, which is how everyone here writes a date and how the paperwork
+ * the entries come off is written. Day-first is only safe because the cell
+ * REWRITES ITSELF on blur to `11-Aug-26` — that is the mechanism, not a nicety:
+ * the coordinator sees immediately whether the app read `11-9` as 11 September,
+ * and a misreading cannot sit unnoticed in a cell that still says what he typed.
+ *
+ *   `11`                                 11 of the reference month and year
+ *   `11-9`  `11/9`  `11.9`               11 September, year from the reference
+ *   `11-9-26`  `11-9-2026`               11 September 2026
+ *   `11-sep`  `11-SEP-26`  `11-sep-2026` the same, by name
+ *   `2026-09-11`                         ISO — four digits first means year first
+ *   anything else                        '' — the cell stays as typed, red, and
+ *                                        blocks confirm
+ *
+ * Do not make the matching fuzzier than this. `07/12/2025` is December to the
+ * person who typed it and July to a US-locale reader; the whole reason this is a
+ * fixed short list is that a guess puts money under the wrong day.
+ *
+ * @param {*} value what is in the cell.
+ * @param {string} [referenceIso] the row above's date, for the parts that were
+ *        not typed. Today's date when there is no row above (decision 31) — the
+ *        settlement no longer has a month to borrow.
+ * @return {string} `YYYY-MM-DD`, or '' when it is not a date.
+ */
+export function parseTypedDate(value, referenceIso = '') {
+  const text = String(value === null || value === undefined ? '' : value).trim();
+  if (!text) return '';
+
+  // Four digits at the front means year first, whatever follows.
+  const iso = /^(\d{4})-(\d{1,2})-(\d{1,2})$/.exec(text);
+  if (iso) return realDate(+iso[1], +iso[2], +iso[3]);
+
+  const parts = text.split(/[\s\-/.]+/).filter(Boolean);
+  if (!parts.length || parts.length > 3) return '';
+
+  if (!/^\d{1,2}$/.test(parts[0])) return '';
+  const day = parseInt(parts[0], 10);
+
+  const reference = referenceParts(referenceIso);
+  let month = reference.month;
+  let year = reference.year;
+
+  if (parts.length >= 2) {
+    month = /^\d{1,2}$/.test(parts[1])
+      ? parseInt(parts[1], 10)
+      : monthNumber(parts[1]);
+  }
+
+  if (parts.length === 3) {
+    year = readTypedYear(parts[2]);
+  }
+
+  return realDate(year, month, day);
+}
+
+/**
+ * The month and year an untyped part falls back to: the row above's, or today's
+ * when there is no row above.
+ *
+ * It used to be the settlement's own month and fiscal year, which no longer
+ * exist — a settlement belongs to a team now. The row above is a better answer
+ * anyway: entries are typed in date order down the grid, so the row above is
+ * almost always the same month, and a batch that crosses into September keeps
+ * working with no month to contradict it.
+ *
+ * @param {string} referenceIso
+ * @return {{month: number, year: number}}
+ */
+function referenceParts(referenceIso) {
+  const parsed = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(referenceIso || '').trim());
+  if (parsed) return { month: +parsed[2], year: +parsed[1] };
+
+  const today = new Date();
+  return { month: today.getMonth() + 1, year: today.getFullYear() };
+}
+
+/**
+ * A typed year: `26` is 2026, `2026` is 2026.
+ * @param {string} text
+ * @return {number} 0 when it is not a year.
+ */
+function readTypedYear(text) {
+  if (/^\d{4}$/.test(text)) return parseInt(text, 10);
+  if (/^\d{2}$/.test(text)) return 2000 + parseInt(text, 10);
+  return 0;
+}
+
+/**
+ * `YYYY-MM-DD`, but only for a day that exists.
+ *
+ * build() accepts any day from 1 to 31, which is right when reading a date out
+ * of a file that was written by something that already validated it. A typed
+ * `31-2` is a typo, and storing `2026-02-31` would show up as an invalid date
+ * somewhere much further downstream.
+ *
+ * @param {number} year
+ * @param {number} month 1-12
+ * @param {number} day 1-31
+ * @return {string} '' when the three do not name a real day.
+ */
+function realDate(year, month, day) {
+  const iso = build(year, month, day);
+  if (!iso) return '';
+
+  const check = new Date(Date.UTC(year, month - 1, day));
+  const same = check.getUTCFullYear() === year
+    && check.getUTCMonth() === month - 1
+    && check.getUTCDate() === day;
+
+  return same ? iso : '';
 }

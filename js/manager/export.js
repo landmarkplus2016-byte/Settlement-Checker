@@ -1,7 +1,7 @@
 /**
  * export.js — the export builder (CLAUDE.md 3.7, 7, rules 15–18).
  *
- * A manager picks a team, a month and a report type; the screen fetches the
+ * A manager picks a team and a settlement; the screen fetches the
  * approved rows for BOTH periods, previews each as the finance file it will
  * become, and offers Download and Confirm.
  *
@@ -26,11 +26,11 @@
  *     predicate, not a row list — it re-selects server-side (rule 16). A preview
  *     left on screen after its filter changed would let a manager commit
  *     something he never looked at.
- *   - **One team-month can be several settlements.** A month holds as many as a
+ *   - **One team can have several open settlements.** A team holds as many as a
  *     coordinator opens (rule 9), each with its own pair of Tracking#s, so the
  *     settlement selector exists to send them as separate files rather than one
  *     file with two numbers in its footer. It appears only once a query has
- *     found more than one batch, because most months are one.
+ *     found more than one batch, because most teams have one open at a time.
  *
  * ── Where the per-site file comes from ─────────────────────────────────────
  *
@@ -81,28 +81,28 @@ const LOG_LIMIT = 50;
  * ------------------------------------------------------------------ */
 
 /**
- * The selection. `team` and `month` are required by `export_query`; `settlement`
- * is the optional narrowing to ONE batch, empty for the whole team-month.
+ * The selection. `team` is required by `export_query`; `settlement`
+ * is the optional narrowing to ONE batch, empty for the team's whole period.
  *
  * There is no report type here: this screen builds the Normal file, and the
  * per-site one is built from the log (see the file header).
  */
-let filter = { team: '', month: '', settlement: '', exclude_exported: true };
+let filter = { team: '', settlement: '', exclude_exported: true };
 
 /** The report this screen generates and commits. The per-site file is 6.4's. */
 const NORMAL_REPORT = 'normal';
 
 /**
- * The batches this team-month holds, merged across both periods, as
+ * The batches this team and period hold, merged across both periods, as
  * `{ key, label }`.
  *
- * A month can hold several settlements (rule 9) and each carries its own pair of
- * Tracking#s, so one team's August may be two batches under two numbers. Without
+ * A team can hold several settlements (rule 9) and each carries its own pair of
+ * Tracking#s, so one team may have two batches under two numbers. Without
  * this the only possible export is both of them in one file, with both numbers
  * in the footer.
  *
  * It is filled from the query rather than asked for up front, because "which
- * settlements have approved rows for team Ashraf in August" is a question only
+ * settlements have approved rows for team Ashraf" is a question only
  * the sweep can answer — and the server answers it whether or not the filter is
  * already narrowed, so the selector keeps working after it has been used once.
  */
@@ -123,7 +123,6 @@ let generating = false;
 
 /** Reference data for the two required selects. */
 let teams = [];
-let months = [];
 
 /** The ExportLog, newest first (7.3). */
 let log = [];
@@ -179,13 +178,12 @@ export function bindExportEvents() {
   const page$ = qs('#export-page');
   if (!page$) return;
 
-  filter = { team: '', month: '', settlement: '', exclude_exported: true };
+  filter = { team: '', settlement: '', exclude_exported: true };
   periods = emptyPeriods();
   settlementOptions = [];
   generated = false;
   generating = false;
   teams = [];
-  months = [];
   log = [];
   logError = '';
   persiteBusy = '';
@@ -229,12 +227,12 @@ export function bindExportEvents() {
     filter[key] = String(control.value || '');
 
     /*
-     * A different team or month is a different question entirely, so the
+     * A different team is a different question entirely, so the
      * batches offered for the old one are gone — including one the manager had
      * narrowed to, which would otherwise silently keep filtering a team it does
      * not belong to.
      */
-    if (key === 'team' || key === 'month') {
+    if (key === 'team') {
       filter.settlement = '';
       settlementOptions = [];
       paintSettlementFilter();
@@ -277,25 +275,24 @@ function invalidate() {
  * ================================================================== */
 
 /**
- * The two required selects.
+ * The one required select.
  *
  * Failures are swallowed, as on the approvals screen: this is the furniture
  * around the real work, and a manager who knows the team name can still be given
  * the list once it arrives. Unlike approvals, though, there is no "all" option —
- * an export is one team and one month (7.1).
+ * an export is one team (7.1).
+ *
+ * The month select is gone with the month. What narrows a team's rows now is the
+ * SETTLEMENT, and that list cannot be loaded here: which settlements have
+ * approved rows for this team is a question only the sweep can answer, so it is
+ * filled from the query (settlementOptions).
  */
 async function loadReference() {
-  const [teamData, listData] = await Promise.all([
-    api.call('list_teams', { include_inactive: true }).catch(nullOnError),
-    api.call('list_lists', { list_name: 'months' }).catch(nullOnError)
-  ]);
+  const teamData = await api.call('list_teams', { include_inactive: true }).catch(nullOnError);
 
   // Inactive teams stay in the list: entries already filed under a team keep it
-  // (2.1), so a team deactivated mid-month still has a file to export.
+  // (2.1), so a team deactivated part-way through still has a file to export.
   teams = (teamData && teamData.teams) || [];
-
-  months = ((listData && listData.lists && listData.lists.months) || [])
-    .map(function (option) { return option.value; });
 
   repaintFilters();
 }
@@ -359,7 +356,6 @@ async function generate() {
 function queryPayload(period) {
   return {
     team: filter.team,
-    month: filter.month,
     period: period,
     settlement: filter.settlement,
     exclude_exported: filter.exclude_exported
@@ -387,7 +383,7 @@ function collectSettlementOptions() {
 
       // An entry whose settlement row is missing is tallied under an empty id.
       // It cannot be narrowed to — there is nothing to name — so it stays in
-      // the whole-team-month file and out of the selector.
+      // the unnarrowed file and out of the selector.
       if (!key || !batch.settlement_id || seen[key]) return;
 
       seen[key] = true;
@@ -426,8 +422,7 @@ function rebuildDocuments() {
       ? buildExportDocument({
           query: state.query,
           period: period,
-          team: filter.team,
-          month: filter.month
+          team: filter.team
         })
       : null;
   });
@@ -531,7 +526,6 @@ function confirmExport(period) {
         ${escapeHtml(t('export_confirm_text', {
           count: count,
           team: doc.team,
-          month: doc.month,
           period: t('period_' + period)
         }))}
       </p>
@@ -582,7 +576,6 @@ function confirmExport(period) {
 
       const data = await api.call('export_commit', {
         team: filter.team,
-        month: filter.month,
         period: period,
         settlement: filter.settlement,
         report_type: NORMAL_REPORT
@@ -617,10 +610,10 @@ function confirmExport(period) {
  * already exists. Nothing is claimed — those rows are `exported` and locked
  * (rule 13); `export_batch_rows` only reads them.
  *
- * The rows come from the BATCH, not from a fresh team-month-period predicate, so
+ * The rows come from the BATCH, not from a fresh team-period predicate, so
  * the per-site file divides exactly the lines the finance file carried. Rebuilt
  * from a predicate it could differ from it — a row approved since, or a second
- * batch on the same team-month — and a per-site breakdown that does not add up
+ * batch on the same team — and a per-site breakdown that does not add up
  * to the file it explains is worse than none.
  *
  * @param {string} batchId an ExportLog batch id.
@@ -693,7 +686,7 @@ async function requery(period) {
 /**
  * The toolbar, rebuilt with whatever reference data has arrived.
  *
- * Only called when the OPTIONS change — the team and month lists landing. Every
+ * Only called when the OPTIONS change — the team list landing. Every
  * other update goes through paintGenerateButton(), which leaves the selects
  * alone.
  */
@@ -711,7 +704,7 @@ function paintGenerateButton() {
 
   button.disabled = !enabled;
   button.textContent = generating ? t('export_generating') : t('export_generate');
-  button.title = canGenerate() ? '' : t('export_needs_team_month');
+  button.title = canGenerate() ? '' : t('export_needs_team');
 }
 
 /** The two period panels, or the state that stands in for them. */
@@ -738,17 +731,19 @@ function paintLog() {
  * ------------------------------------------------------------------ */
 
 /**
- * Team, month, settlement, exclude-exported, Generate.
+ * Team, settlement, exclude-exported, Generate.
+ *
+ * Team → settlement → period, in that order (decision 20). The month select has
+ * gone: a settlement no longer has one, and the settlement selector is what
+ * narrows a team's rows now — it was already here as a secondary control and is
+ * simply the primary one.
+ *
  * @return {string} HTML
  */
 function renderFilters() {
   return `
     ${renderSelect('team', t('export_pick_team'), teams.map(function (team) {
       return { value: team.name, label: team.name + (team.active ? '' : ' · ' + t('inactive')) };
-    }))}
-
-    ${renderSelect('month', t('export_pick_month'), months.map(function (month) {
-      return { value: month, label: month };
     }))}
 
     <span id="export-settlement-filter">${renderSettlementFilter()}</span>
@@ -763,7 +758,7 @@ function renderFilters() {
 
     <button class="btn btn-primary" type="button" data-action="generate"
             ${canGenerate() && !generating ? '' : 'disabled'}
-            title="${escapeHtml(canGenerate() ? '' : t('export_needs_team_month'))}">
+            title="${escapeHtml(canGenerate() ? '' : t('export_needs_team'))}">
       ${escapeHtml(generating ? t('export_generating') : t('export_generate'))}
     </button>
   `;
@@ -772,8 +767,8 @@ function renderFilters() {
 /**
  * The settlement narrowing, when there is a choice to make.
  *
- * Hidden until a query has found more than one batch for this team-month: a
- * coordinator who opened a single settlement for August is the ordinary case,
+ * Hidden until a query has found more than one batch for this team: a
+ * coordinator with a single open settlement is the ordinary case,
  * and a select with one option in it is furniture that asks a question with no
  * second answer.
  *
@@ -791,7 +786,7 @@ function renderSettlementFilter() {
   }
 
   // One batch and no narrowing is nothing to ask about; one batch WITH a
-  // narrowing still needs its way back to the whole team-month.
+  // narrowing still needs its way back to the team's whole period.
   if (options.length < 2 && !filter.settlement) return '';
 
   return renderSelect('settlement', t('export_all_settlements'), options);
@@ -829,7 +824,7 @@ function renderSelect(name, placeholder, options) {
 
 /** @return {boolean} both required fields chosen (3.7). */
 function canGenerate() {
-  return !!(filter.team && filter.month);
+  return !!filter.team;
 }
 
 /* ------------------------------------------------------------------ *
@@ -971,7 +966,7 @@ function renderPanelWarnings(period, state, doc) {
 
   /*
    * Two settlements' worth of numbers in one file. Two coordinators on the same
-   * team, or — since a month holds as many settlements as a coordinator opens
+   * team, or — since a team holds as many settlements as a coordinator opens
    * (rule 9) — one coordinator's two batches. The settlement selector is the way
    * out of the second case, so the message names it.
    *
@@ -987,7 +982,7 @@ function renderPanelWarnings(period, state, doc) {
   }
 
   // Narrowed to one batch: the header block names one settlement, not the whole
-  // team-month, and that is worth saying before the file goes to finance.
+  // batch, and that is worth saying before the file goes to finance.
   if (filter.settlement) {
     out.push(renderAlert('info', t('export_settlement_scoped', {
       settlement: settlementLabel(filter.settlement)
@@ -1305,7 +1300,7 @@ function renderLogRow(batch) {
  * the key — the row already names the team, and the id is what a manager
  * recognises.
  *
- * Empty for a whole-team-month batch, which is most of them, and empty for a log
+ * Empty for an unnarrowed batch, which is most of them, and empty for a log
  * written before the column existed.
  *
  * @param {Object} batch a row from `list_export_log`.

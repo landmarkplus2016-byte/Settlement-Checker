@@ -150,8 +150,15 @@ function toManagerEntry(kind, row, settlement, userRow) {
   out.coordinator = toEntryCoordinator(userRow);
   out.settlement = {
     settlement_id: normalizeKey(settlement.settlement_id),
+    team_id: normalizeKey(settlement.team_id),
+    team: normalizeKey(settlement.team),
+
+    // Legacy, for a settlement created before teams: `month` is all such a row
+    // has to name itself by, and `fiscal_year` is what resolves its entries'
+    // dates (entryDateOf). Neither is written any more.
     month: normalizeKey(settlement.month),
     fiscal_year: normalizeKey(settlement.fiscal_year),
+
     account: normalizeKey(settlement.account)
   };
 
@@ -173,12 +180,10 @@ function toManagerEntry(kind, row, settlement, userRow) {
  * Approvals screens. It is not a name: two people can share a display name, and
  * approving the wrong person's month is not a mistake worth making possible.
  *
- * `month` is matched against the SETTLEMENT's month, not the entry's own month
- * cell. A settlement is one coordinator and one month (rule 9), so that is the
- * month a manager means when he says "August"; the per-row cell is a day-level
- * label the coordinator typed and may legitimately differ. An entry whose
- * settlement row is missing falls back to its own cell, so an orphan is still
- * reachable.
+ * There is no `month` any more. A settlement no longer has one — it belongs to a
+ * team and its entries carry their own dates — so "August" is not a thing a
+ * manager can ask this for. `settlement` takes its place: it is the batch, and it
+ * is what the export narrows on too (7.1).
  *
  * @param {Object} body the payload.
  * @return {Object} the normalized filter.
@@ -199,13 +204,21 @@ function readPendingFilter(body) {
     team: normalizeKey(raw.team).toLowerCase(),
     coordinator: normalizeKey(raw.coordinator).toLowerCase(),
     period: period,
-    month: normalizeKey(raw.month).toLowerCase()
+
+    /*
+     * Named `settlement_id`, not `settlement`: Export.gs's own filter already
+     * carries a `settlement` field holding a `<user_id>::<settlement_id>` batch
+     * key, and both filters are read by the SAME entryMatchesFilter below. Two
+     * different things under one name there would have the export comparing a
+     * batch key against a bare id and matching nothing at all.
+     */
+    settlement_id: normalizeKey(raw.settlement_id || raw.settlement).toLowerCase()
   };
 }
 
 /** @return {boolean} true when no filter field was supplied. */
 function isEmptyPendingFilter(filter) {
-  return !filter.team && !filter.coordinator && !filter.period && !filter.month;
+  return !filter.team && !filter.coordinator && !filter.period && !filter.settlement_id;
 }
 
 /**
@@ -222,9 +235,15 @@ function coordinatorMatchesFilter(filter, userRow) {
 }
 
 /**
- * Does this entry pass the team / period / month filters?
+ * Does this entry pass the team / period / settlement filters?
  *
- * @param {Object} filter from readPendingFilter().
+ * `team` is matched on the ENTRY's own cell rather than the settlement's, and
+ * still can be: the server stamps it there from the settlement on every save
+ * (Coordinator.gs), so the two agree by construction, and matching the row keeps
+ * a legacy entry whose settlement predates teams reachable by the team it was
+ * actually filed under.
+ *
+ * @param {Object} filter from readPendingFilter() or readExportFilter().
  * @param {Object} row the raw entry row.
  * @param {Object|null} settlement the parent Settlements row, if it exists.
  * @return {boolean}
@@ -234,11 +253,11 @@ function entryMatchesFilter(filter, row, settlement) {
 
   if (filter.period && normalizePeriod(row.period) !== filter.period) return false;
 
-  if (filter.month) {
-    var month = settlement
-      ? normalizeKey(settlement.month).toLowerCase()
-      : normalizeKey(row.month).toLowerCase();
-    if (month !== filter.month) return false;
+  if (filter.settlement_id) {
+    var id = settlement
+      ? normalizeKey(settlement.settlement_id)
+      : normalizeKey(row.settlement_id);
+    if (id.toLowerCase() !== filter.settlement_id) return false;
   }
 
   return true;

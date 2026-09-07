@@ -30,8 +30,7 @@ import { isKnownListValue } from './lists.js';
 export const FLAG_CODES = [
   'missing_site_id',
   'missing_amount',
-  'missing_month',
-  'missing_day',
+  'missing_date',
   'missing_project',
   'missing_category',
   'missing_item_description',
@@ -40,8 +39,7 @@ export const FLAG_CODES = [
   'missing_city',
   'missing_start_km',
   'missing_end_km',
-  'missing_karta_amount',
-  'missing_team'
+  'missing_karta_amount'
 ];
 
 /**
@@ -51,7 +49,7 @@ export const FLAG_CODES = [
  * table is that rule written down. Mirrored by REQUIRED_ENTRY_FIELDS in
  * Validate.gs — when one moves, the other moves with it.
  *
- * Three fields are deliberately NOT here:
+ * Four fields are deliberately NOT here:
  *
  *   - `comment` — excluded by the rule itself. It is the one optional cell.
  *   - `job_code` and `period` — these stay amber (WARNING_CODES). 6.3 is
@@ -59,27 +57,26 @@ export const FLAG_CODES = [
  *     both of these are filled FROM that lookup (rule 14). Flagging them would
  *     make a coordinator unable to settle a real expense because an admin has
  *     not imported the site yet — a wall he cannot climb himself.
+ *   - `team` — no longer a cell at all. The settlement belongs to a team and the
+ *     server stamps it onto every row it saves, so the only way one can be blank
+ *     is a legacy settlement that has no team yet — and Confirm refuses that by
+ *     name (`settlement_team_required`), which says far more than a red cell in a
+ *     column the grid does not show.
  *
- * `site_id` and the amount are checked by hand below rather than listed here,
- * because neither is a plain "is it blank" test.
+ * `site_id`, `date` and the amount are checked by hand below rather than listed
+ * here, because none of the three is a plain "is it blank" test.
  */
 const REQUIRED_TEXT_FIELDS = {
   expense: [
-    ['month', 'missing_month'],
-    ['day', 'missing_day'],
     ['project', 'missing_project'],
     ['category', 'missing_category'],
-    ['item_description', 'missing_item_description'],
-    ['team', 'missing_team']
+    ['item_description', 'missing_item_description']
   ],
   fuel: [
-    ['month', 'missing_month'],
-    ['day', 'missing_day'],
     ['project', 'missing_project'],
     ['area', 'missing_area'],
     ['driver', 'missing_driver'],
-    ['city', 'missing_city'],
-    ['team', 'missing_team']
+    ['city', 'missing_city']
   ]
 };
 
@@ -109,7 +106,8 @@ export const WARNING_CODES = [
   'job_code_count_mismatch',
   'mixed_period',
   'unknown_list_value',
-  'km_gap'
+  'km_gap',
+  'date_outside_span'
 ];
 
 /**
@@ -154,6 +152,7 @@ export function validateRows(kind, rows, options = {}) {
     report.rows.push(validateRow(kind, list[i], siteJcMap, listOptions));
   }
 
+  applyDateSpan(list, report);
   if (kind === 'fuel') applyKmContinuity(list, report);
 
   for (let i = 0; i < report.rows.length; i++) {
@@ -205,6 +204,15 @@ export function validateRow(kind, row, siteJcMap, listOptions) {
   /* --- the fields nothing works without --- */
   const siteCell = text(row.site_id);
   if (!siteCell) flag('missing_site_id', 'site_id');
+
+  /*
+   * The date. Red when the cell is empty AND when it holds something that is not
+   * a date — the grid keeps what the coordinator typed in the cell rather than
+   * blanking it, so `11-13-26` stays visible, stays red, and stays fixable. A
+   * legacy row has no `date` cell but a real `month` + `day`, which the server
+   * resolves on the way out, so it arrives here already carrying one.
+   */
+  if (!isoDate(row.date)) flag('missing_date', 'date');
 
   const amountField = isFuel ? 'fuel_amount' : 'amount';
   const amount = toNumber(row[amountField]);
@@ -356,14 +364,71 @@ function checkSiteAgainstLookup(siteCell, row, siteJcMap, warn) {
 }
 
 /**
+ * A row whose date sits outside the month the rest of the batch is in.
+ *
+ * Amber and blocking nothing, because it is legitimately common: a settlement
+ * running 27–31 August genuinely holds 1–3 September, and refusing that would be
+ * refusing the real world. What it catches is the typo — `11-9-25` for `11-9-26`,
+ * or a day dropped into the wrong grid — which otherwise reaches finance as a
+ * line dated a year out.
+ *
+ * The comparison is against the batch's DOMINANT month rather than against the
+ * settlement, which no longer has one. That is also the more useful question:
+ * whatever month most of these rows are in is the month this settlement is
+ * about.
+ *
+ * @param {Array<Object>} rows all rows of one grid.
+ * @param {Object} report from validateRows(); its rows are appended to.
+ */
+function applyDateSpan(rows, report) {
+  const counts = {};
+  let dominant = '';
+
+  rows.forEach(function (row) {
+    if (String(row.status || '').toLowerCase() === 'exported') return;
+
+    const iso = isoDate(row.date);
+    if (!iso) return;
+
+    const month = iso.slice(0, 7);
+    counts[month] = (counts[month] || 0) + 1;
+    if (!dominant || counts[month] > counts[dominant]) dominant = month;
+  });
+
+  // One month, or nothing to compare against: there is no outlier to report.
+  if (!dominant || Object.keys(counts).length < 2) return;
+
+  rows.forEach(function (row, index) {
+    if (String(row.status || '').toLowerCase() === 'exported') return;
+
+    const iso = isoDate(row.date);
+    if (!iso || iso.slice(0, 7) === dominant) return;
+
+    report.rows[index].warnings.push({
+      code: 'date_outside_span',
+      field: 'date',
+      level: 'warning',
+      detail: { date: iso, span: dominant }
+    });
+  });
+}
+
+/**
  * KM continuity (6.3): within one driver, a row's start_km should equal the
  * previous row's end_km.
  *
- * Grouped by driver and ordered by day, then by position in the grid — an
+ * Grouped by driver and ordered by DATE, then by position in the grid — an
  * odometer is one running sequence, and the two periods have nothing to do with
  * it. A row missing a reading is skipped rather than guessed at, and does not
  * break the chain: the next row is compared against the last reading actually
  * recorded.
+ *
+ * It ordered by `day` alone until entries carried a date, which is the same
+ * ordering only while a batch stays inside one month: a settlement running into
+ * September had the 1st, 2nd and 3rd sorted above the 27th, and the check
+ * reported gaps that were purely an artefact of that. Rows with no readable date
+ * sort first, together, which is where an unfinished row belongs in a grid being
+ * typed downwards.
  *
  * @param {Array<Object>} rows all fuel rows, in grid order.
  * @param {Object} report from validateRows(); its rows are appended to.
@@ -378,14 +443,13 @@ function applyKmContinuity(rows, report) {
     if (!driver) return;               // already flagged as missing_driver
 
     if (!byDriver[driver]) byDriver[driver] = [];
-    byDriver[driver].push({ index, row });
+    byDriver[driver].push({ index, row, date: isoDate(row.date) });
   });
 
   Object.keys(byDriver).forEach(function (driver) {
     const group = byDriver[driver].slice().sort(function (a, b) {
-      const dayA = toNumber(a.row.day);
-      const dayB = toNumber(b.row.day);
-      if ((dayA || 0) !== (dayB || 0)) return (dayA || 0) - (dayB || 0);
+      // ISO dates compare correctly as strings.
+      if (a.date !== b.date) return (a.date < b.date) ? -1 : 1;
       return a.index - b.index;
     });
 
@@ -457,6 +521,21 @@ export function splitMulti(value) {
 export function text(value) {
   if (value === null || value === undefined) return '';
   return String(value).trim();
+}
+
+/**
+ * A date cell as `YYYY-MM-DD`, or '' when it is not one.
+ *
+ * The grid stores a date cell in ISO once it parses (parseTypedDate), and leaves
+ * what the coordinator typed in place when it does not — so "not a date" and
+ * "empty" both come back as '' here and both are `missing_date`.
+ *
+ * @param {*} value
+ * @return {string}
+ */
+export function isoDate(value) {
+  const raw = text(value);
+  return /^\d{4}-\d{2}-\d{2}$/.test(raw) ? raw : '';
 }
 
 /**
