@@ -150,7 +150,11 @@ export function bindApprovalsEvents() {
   filter = { team: '', coordinator: '', period: '', settlement_id: '' };
   teams = [];
   coordinators = [];
-  months = [];
+  // Not `months` — that filter went with the month (3.6). The settlement list
+  // took its place and is rebuilt from each loaded page, so it resets here too;
+  // a stale option from a previous visit would offer a settlement this sweep
+  // never returned.
+  settlementIds = [];
   people = {};
   busy = false;
 
