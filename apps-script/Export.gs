@@ -1029,6 +1029,9 @@ function handleListExportLog(session, payload) {
     var exportedBy = normalizeKey(row.exported_by);
     var user = exportedBy ? findUserById(exportedBy) : null;
 
+    var downloadedBy = normalizeKey(row.persite_downloaded_by);
+    var downloader = downloadedBy ? findUserById(downloadedBy) : null;
+
     batches.push({
       batch_id: batchId,
       team: normalizeKey(row.team),
@@ -1049,7 +1052,21 @@ function handleListExportLog(session, payload) {
       // (2.4) and the export screen has no other reason to load the user list.
       exported_by_name: user ? normalizeKey(user.display_name) : '',
       exported_by_name_ar: user ? normalizeKey(user.display_name_ar) : '',
-      exported_at: toStampString(row.exported_at)
+      exported_at: toStampString(row.exported_at),
+
+      /*
+       * The last time this batch's per-site file was downloaded, by whom, and how
+       * many times in all (handleRecordPersiteDownload). Blank and 0 on a batch
+       * nobody has downloaded since this was recorded — and on a config sheet
+       * whose ExportLog has not grown the columns yet.
+       */
+      persite_downloaded_at: normalizeKey(row.persite_downloaded_at)
+        ? toStampString(row.persite_downloaded_at)
+        : '',
+      persite_downloaded_by: downloadedBy,
+      persite_downloaded_by_name: downloader ? normalizeKey(downloader.display_name) : '',
+      persite_downloaded_by_name_ar: downloader ? normalizeKey(downloader.display_name_ar) : '',
+      persite_download_count: toFiniteNumber(row.persite_download_count) || 0
     });
   }
 
@@ -1098,17 +1115,22 @@ function handleListExportLog(session, payload) {
 function handleExportBatchRows(session, payload) {
   requireManager(session);
 
-  var batchId = normalizeKey((payload || {}).batch_id);
-  if (!batchId) {
-    throw appError('validation_failed', 'invalid_export_batch', { batch_id: 'required' });
-  }
+  /*
+   * One batch or several (7.1). Several is the combined per-site file, and they
+   * are gathered in ONE sweep of the coordinator sheets rather than one sweep per
+   * batch — ten batches used to mean opening every coordinator's spreadsheet ten
+   * times over.
+   *
+   * The log rows carry the team, month and period each file was issued under.
+   * An id with no log row is not a batch, and the whole call is refused naming
+   * it, rather than building a file that is quietly short of one.
+   */
+  var batchIds = readExportBatchIds(payload);
+  var logRows = readExportLogByBatch(openConfigSpreadsheet(), batchIds);
 
-  // The log row carries the team, month and period the file was issued under —
-  // the header block's own labels. Its absence means the id is not a batch.
-  var logRow = readRowByKey(openConfigSpreadsheet(), 'ExportLog', 'batch_id', batchId);
-  if (!logRow) throw appError('not_found', 'export_batch_not_found');
+  var wanted = {};
+  for (var w = 0; w < batchIds.length; w++) wanted[batchIds[w].toLowerCase()] = true;
 
-  var wanted = batchId.toLowerCase();
   var expenses = [];
   var fuel = [];
 
@@ -1121,7 +1143,7 @@ function handleExportBatchRows(session, payload) {
 
       for (var i = 0; i < rows.length; i++) {
         var row = rows[i];
-        if (normalizeKey(row.export_batch_id).toLowerCase() !== wanted) continue;
+        if (!wanted[normalizeKey(row.export_batch_id).toLowerCase()]) continue;
 
         var settlementId = normalizeKey(row.settlement_id);
         var parent = settlements[settlementId] || missingSettlement(settlementId);
@@ -1141,17 +1163,13 @@ function handleExportBatchRows(session, payload) {
 
   var total = expenses.length + fuel.length;
 
+  var batches = batchIds.map(function (id) { return toExportBatchSummary(logRows[id]); });
+
   return {
-    batch: {
-      batch_id: batchId,
-      team: normalizeKey(logRow.team),
-      month: normalizeKey(logRow.month),
-      fiscal_year: normalizeKey(logRow.fiscal_year),
-      period: normalizePeriod(logRow.period),
-      settlement_id: normalizeKey(logRow.settlement_id),
-      report_type: normalizeKey(logRow.report_type).toLowerCase(),
-      tracking_no: normalizeKey(logRow.tracking_no)
-    },
+    // `batch` is the first, for a caller asking for one — the shape this action
+    // had before it took a list. `batches` is all of them, in the order asked.
+    batch: batches[0],
+    batches: batches,
 
     expenses: expenses,
     fuel: fuel,
@@ -1172,6 +1190,164 @@ function handleExportBatchRows(session, payload) {
     errors: sweep.errors,
     skipped: sweep.skipped
   };
+}
+
+/** The most batches one per-site file may combine — the log screen shows 50. */
+var MAX_PERSITE_BATCHES = 50;
+
+/** The ExportLog columns that record a per-site download, appended on first use. */
+var PERSITE_DOWNLOAD_COLUMNS = [
+  'persite_downloaded_at',
+  'persite_downloaded_by',
+  'persite_download_count'
+];
+
+/**
+ * The batch ids a per-site call names: `batch_ids`, or the older single
+ * `batch_id`. Trimmed, de-duplicated, order kept.
+ *
+ * @param {Object} payload
+ * @return {Array<string>}
+ * @throws {Object} appError('validation_failed') for none, or too many.
+ */
+function readExportBatchIds(payload) {
+  var body = payload || {};
+  var raw = Array.isArray(body.batch_ids) ? body.batch_ids : [body.batch_id];
+  var ids = [];
+
+  for (var i = 0; i < raw.length; i++) {
+    var id = normalizeKey(raw[i]);
+    if (id && ids.indexOf(id) === -1) ids.push(id);
+  }
+
+  if (!ids.length) {
+    throw appError('validation_failed', 'invalid_export_batch', { batch_ids: 'required' });
+  }
+
+  if (ids.length > MAX_PERSITE_BATCHES) {
+    throw appError('validation_failed', 'too_many_export_batches', {
+      batch_ids: 'at_most_' + MAX_PERSITE_BATCHES
+    });
+  }
+
+  return ids;
+}
+
+/**
+ * The ExportLog rows for these batch ids, read in one pass.
+ *
+ * @param {GoogleAppsScript.Spreadsheet.Spreadsheet} configSs
+ * @param {Array<string>} batchIds from readExportBatchIds().
+ * @return {Object} batch id -> log row (carrying `_row`).
+ * @throws {Object} appError('not_found') naming every id that is not a batch.
+ */
+function readExportLogByBatch(configSs, batchIds) {
+  var rows = readAllRows(configSs, 'ExportLog');
+  var byId = {};
+
+  for (var i = 0; i < rows.length; i++) {
+    var id = normalizeKey(rows[i].batch_id);
+    if (id && !byId[id]) byId[id] = rows[i];
+  }
+
+  var out = {};
+  var missing = {};
+
+  for (var b = 0; b < batchIds.length; b++) {
+    if (byId[batchIds[b]]) out[batchIds[b]] = byId[batchIds[b]];
+    else missing[batchIds[b]] = 'not_found';
+  }
+
+  if (Object.keys(missing).length) {
+    throw appError('not_found', 'export_batch_not_found', missing);
+  }
+
+  return out;
+}
+
+/**
+ * A log row as the per-site builder reads it.
+ * @param {Object} logRow
+ * @return {Object}
+ */
+function toExportBatchSummary(logRow) {
+  return {
+    batch_id: normalizeKey(logRow.batch_id),
+    team: normalizeKey(logRow.team),
+    month: normalizeKey(logRow.month),
+    fiscal_year: normalizeKey(logRow.fiscal_year),
+    period: normalizePeriod(logRow.period),
+    settlement_id: normalizeKey(logRow.settlement_id),
+    report_type: normalizeKey(logRow.report_type).toLowerCase(),
+    tracking_no: normalizeKey(logRow.tracking_no)
+  };
+}
+
+/* ================================================================== *
+ * record_persite_download
+ * ================================================================== */
+
+/**
+ * `record_persite_download` — note that these batches' per-site file was just
+ * downloaded (7.1).
+ *
+ * The export screen calls it once the file has been handed to the browser, so
+ * that every manager — not only the one at this desk — can see which batches
+ * still need their per-site file, and is asked before downloading one again.
+ *
+ * It is kept apart from `export_batch_rows` on purpose. That action is a read
+ * and stays one; recording inside it would mark a batch downloaded before the
+ * file had even been built, and a build that then failed would leave the log
+ * saying something that never happened.
+ *
+ * It touches only these three audit columns of ExportLog, which are appended on
+ * first use (never inserted — every reader maps by header). It cannot change a
+ * batch, its rows, or anything `export_commit` wrote. "Downloaded" means the app
+ * produced the file; whether the browser saved it is beyond what a web page can
+ * know.
+ *
+ * @param {Object} session auth context; must be a manager.
+ * @param {Object} payload { batch_ids }
+ * @return {Object} { batches: [{batch_id, persite_downloaded_at, ...}] }
+ */
+function handleRecordPersiteDownload(session, payload) {
+  requireManager(session);
+
+  var batchIds = readExportBatchIds(payload);
+
+  // Under the lock because the count is read-and-increment: two managers taking
+  // the same batch at once must end on 2, not 1.
+  return withScriptLock(function () {
+    var configSs = openConfigSpreadsheet();
+    ensureColumns(configSs, 'ExportLog', PERSITE_DOWNLOAD_COLUMNS);
+
+    var logRows = readExportLogByBatch(configSs, batchIds);
+    var stamp = nowIso();
+    var user = findUserById(session.user_id);
+    var recorded = [];
+
+    for (var i = 0; i < batchIds.length; i++) {
+      var row = logRows[batchIds[i]];
+      var count = (toFiniteNumber(row.persite_download_count) || 0) + 1;
+
+      updateRowAt(configSs, 'ExportLog', row._row, {
+        persite_downloaded_at: stamp,
+        persite_downloaded_by: session.user_id,
+        persite_download_count: count
+      });
+
+      recorded.push({
+        batch_id: batchIds[i],
+        persite_downloaded_at: stamp,
+        persite_downloaded_by: session.user_id,
+        persite_downloaded_by_name: user ? normalizeKey(user.display_name) : '',
+        persite_downloaded_by_name_ar: user ? normalizeKey(user.display_name_ar) : '',
+        persite_download_count: count
+      });
+    }
+
+    return { batches: recorded };
+  });
 }
 
 /**

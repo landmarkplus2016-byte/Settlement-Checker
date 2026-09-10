@@ -551,11 +551,11 @@ export const en = {
   export_needs_team: 'Choose a team first.',
 
   export_start_title: 'Nothing generated yet',
-  export_start_text: 'Pick a team and a month, then Generate. You get one file per period — old and new are settled separately and carry their own tracking number.',
+  export_start_text: 'Pick a team, then Generate. You get one file per period — old and new are settled separately and carry their own tracking number.',
 
   export_period_file: '{period} file',
   export_nothing_title: 'Nothing to export',
-  export_nothing_text: 'No approved entry matches this team, month and period. Entries appear here once a manager has approved them.',
+  export_nothing_text: 'No approved entry matches this team, settlement and period. Entries appear here once a manager has approved them.',
 
   export_rows_summary: '{rows} rows in the file · {claimable} will be marked exported ·',
   export_preview_capped: 'Showing the first {shown} of {total} rows. The file contains all of them.',
@@ -576,8 +576,8 @@ export const en = {
   export_already_exported: '{count} entries here have already been exported. They are shown because “hide already-exported” is off, and they will not be exported again.',
   export_claimable_zero: 'Everything here has already been exported. You can still download the file, but there is nothing left to mark.',
   export_tracking_conflict: 'These entries resolve to more than one tracking number: {numbers}. Export is blocked — one file can carry only one number in its footer, and once these rows are exported they are locked.',
-  export_tracking_conflict_split: 'These entries resolve to more than one tracking number: {numbers}, because this team’s month covers more than one settlement. Export is blocked — pick a settlement above to send them as separate files, each under its own number.',
-  export_settlement_scoped: 'This file covers one settlement only: {settlement}. Entries in the same team and month that belong to another settlement are not in it.',
+  export_tracking_conflict_split: 'These entries resolve to more than one tracking number: {numbers}, because this team has more than one settlement with approved entries. Export is blocked — pick a settlement above to send them as separate files, each under its own number.',
+  export_settlement_scoped: 'This file covers one settlement only: {settlement}. Entries of the same team that belong to another settlement are not in it.',
   export_no_tracking: 'These settlements have no tracking number for this period: {settlements}. Export is blocked until a coordinator sets it — the footer would go out blank and the number cannot be changed afterwards.',
   export_sweep_incomplete: 'Some coordinators could not be read, so this file is incomplete: {names}. Export is blocked until that is fixed.',
 
@@ -595,6 +595,21 @@ export const en = {
   export_persite_building: 'Building…',
   export_persite_hint: 'Build the per-site file for this batch — the same entries, with every multi-site line divided across its sites. Nothing is exported again.',
   export_persite_empty: 'This batch has no entries left to build a per-site file from.',
+
+  export_log_select_all: 'Select every batch shown',
+  export_log_select_row: 'Select {batch}',
+  export_persite_selected: 'Per-site file for {count} selected',
+  export_persite_none_selected: 'Tick batches to build one per-site file covering all of them.',
+  export_persite_select_pending: 'Select not downloaded ({count})',
+  export_persite_clear_selection: 'Clear',
+  export_persite_pending: 'Not downloaded',
+  export_persite_downloaded_on: 'Downloaded {when} · {who}',
+  export_persite_times: '×{count}',
+  export_persite_again_title: 'Download again?',
+  export_persite_again_one: 'The per-site file for this batch has already been downloaded:',
+  export_persite_again_text: '{count} of the {total} selected batches already had their per-site file downloaded:',
+  export_persite_again_confirm: 'Download anyway',
+  export_persite_record_failed: 'The file downloaded, but the app could not record it, so the batch still shows as not downloaded.',
 
   col_batch: 'Batch',
   col_tracking: 'Tracking #',

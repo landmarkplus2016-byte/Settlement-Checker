@@ -1260,6 +1260,46 @@ td.col-actions {
 .table th.text-end,
 .table td.text-end { text-align: end; }
 
+/* ------------------------------------------------------------------ *
+ * The export log's selection and per-site download status (7.1)
+ * ------------------------------------------------------------------ */
+
+.log-bar {
+  gap: var(--space-2);
+  margin-block-end: 0;
+  padding: var(--space-2) var(--space-4);
+  border-block-end: 1px solid var(--color-border-2);
+}
+
+.table-check-col { inline-size: 1%; }
+
+.table-check {
+  margin: 0;
+  cursor: pointer;
+  accent-color: var(--color-primary);
+}
+
+.table tr.is-selected > td { background: var(--color-primary-subtle); }
+
+.persite-status { margin-block-start: var(--space-1); }
+
+.badge-warning { background: var(--color-warning-bg); color: var(--color-warning-strong); }
+
+.persite-again-list {
+  list-style: none;
+  margin-inline: 0;
+  padding: 0;
+  display: grid;
+  gap: var(--space-2);
+}
+
+.persite-again-list li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-2);
+}
+
 /* The pager sits in the table's footer strip. */
 .pager {
   display: flex;

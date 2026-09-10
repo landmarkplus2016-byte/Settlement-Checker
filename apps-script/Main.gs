@@ -245,6 +245,16 @@ var ACTIONS = {
   export_batch_rows: {
     auth: true,
     handler: function (session, payload) { return handleExportBatchRows(session, payload); }
+  },
+
+  /*
+   * Records that a per-site file was downloaded, so the log can say which
+   * batches still need theirs (7.1). Writes three audit columns of ExportLog and
+   * nothing else. See handleRecordPersiteDownload().
+   */
+  record_persite_download: {
+    auth: true,
+    handler: function (session, payload) { return handleRecordPersiteDownload(session, payload); }
   }
 };
 

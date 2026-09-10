@@ -128,8 +128,17 @@ let teams = [];
 let log = [];
 let logError = '';
 
-/** The batch whose per-site file is being built, so its row can say so. */
-let persiteBusy = '';
+/**
+ * The batches whose per-site file is being built, so their rows can say so and
+ * no second build starts on top of it.
+ */
+let persiteBusy = [];
+
+/**
+ * The batch ids ticked in the log, for one combined per-site file (7.1). Pruned
+ * whenever the log reloads, so a tick cannot outlive the row it was on.
+ */
+let selectedBatches = new Set();
 
 /* ================================================================== *
  * Render
@@ -186,7 +195,8 @@ export function bindExportEvents() {
   teams = [];
   log = [];
   logError = '';
-  persiteBusy = '';
+  persiteBusy = [];
+  selectedBatches = new Set();
 
   page$.addEventListener('click', function (event) {
     const trigger = event.target.closest('[data-action]');
@@ -209,10 +219,21 @@ export function bindExportEvents() {
 
     if (action === 'download') return download(period);
     if (action === 'confirm-export') return confirmExport(period);
-    if (action === 'persite') return buildPerSite(trigger.dataset.batch || '');
+    if (action === 'persite') return requestPerSite([trigger.dataset.batch || '']);
+    if (action === 'persite-selected') return requestPerSite(Array.from(selectedBatches));
+    if (action === 'select-pending') return setSelection(log.filter(isPending).map(batchIdOf));
+    if (action === 'clear-selection') return setSelection([]);
   });
 
   page$.addEventListener('change', function (event) {
+    // The log's tick boxes (7.1). Not filters: they change nothing but the
+    // selection, and must not throw a generated preview away.
+    const pick = event.target.closest('[data-log-select]');
+    if (pick) return toggleBatch(pick.dataset.batch || '', pick.checked);
+
+    const all = event.target.closest('[data-log-select-all]');
+    if (all) return setSelection(all.checked ? log.map(batchIdOf) : []);
+
     const control = event.target.closest('[data-filter]');
     if (!control) return;
 
@@ -442,6 +463,9 @@ async function loadLog() {
     logError = errorMessage(err);
   }
 
+  const shown = new Set(log.map(batchIdOf));
+  selectedBatches = new Set(Array.from(selectedBatches).filter(function (id) { return shown.has(id); }));
+
   paintLog();
 }
 
@@ -603,7 +627,57 @@ function confirmExport(period) {
 }
 
 /**
- * Build and download the per-site file for one already-exported batch (6.4).
+ * Ask for the per-site file of one or more batches — first asking whether to go
+ * on when any of them has had its per-site file downloaded before.
+ *
+ * The question is why downloads are recorded at all. A second download is not
+ * wrong — finance loses files — so it is never refused; but a manager ticking
+ * ten batches should learn that three of them already went BEFORE the file does.
+ *
+ * @param {Array<string>} batchIds ExportLog batch ids.
+ */
+function requestPerSite(batchIds) {
+  const ids = oldestFirst(batchIds.filter(Boolean));
+  if (!ids.length || persiteBusy.length) return;
+
+  const before = ids.map(findBatch).filter(function (batch) {
+    return batch && !isPending(batch);
+  });
+
+  if (!before.length) return buildPerSite(ids);
+
+  openModal({
+    title: t('export_persite_again_title'),
+    confirmLabel: t('export_persite_again_confirm'),
+
+    bodyHtml: `
+      <p class="text-small text-secondary">
+        ${escapeHtml(ids.length === 1
+          ? t('export_persite_again_one')
+          : t('export_persite_again_text', { count: before.length, total: ids.length }))}
+      </p>
+
+      <ul class="persite-again-list mt-4">
+        ${before.map(function (batch) {
+          return `
+            <li>
+              <span class="num text-bold">${escapeHtml(batch.batch_id)}</span>
+              <span class="text-tiny text-muted">${escapeHtml(downloadedLine(batch))}</span>
+            </li>
+          `;
+        }).join('')}
+      </ul>
+    `,
+
+    // Not awaited: the build reports its own errors and busy state on the log,
+    // so the dialog has nothing left to wait for.
+    onConfirm: function () { buildPerSite(ids); }
+  });
+}
+
+/**
+ * Build and download the per-site file for already-exported batches (6.4) — one
+ * file, one table, however many batches (7.1).
  *
  * The last step of a settlement, and deliberately a separate act from the export
  * itself: it happens once the finance file has been issued, on a batch that
@@ -616,18 +690,18 @@ function confirmExport(period) {
  * batch on the same team — and a per-site breakdown that does not add up
  * to the file it explains is worse than none.
  *
- * @param {string} batchId an ExportLog batch id.
+ * @param {Array<string>} batchIds ExportLog batch ids, oldest first.
  */
-async function buildPerSite(batchId) {
-  if (!batchId || persiteBusy) return;
+async function buildPerSite(batchIds) {
+  if (!batchIds.length || persiteBusy.length) return;
 
-  persiteBusy = batchId;
+  persiteBusy = batchIds.slice();
   paintLog();
 
   try {
-    const data = await api.call('export_batch_rows', { batch_id: batchId });
+    const data = await api.call('export_batch_rows', { batch_ids: batchIds });
 
-    const doc = buildPerSiteDocument({ query: data, batch: (data && data.batch) || {} });
+    const doc = buildPerSiteDocument({ query: data, batches: (data && data.batches) || [] });
 
     if (!doc.has_rows) {
       toastError(t('export_persite_empty'));
@@ -639,12 +713,90 @@ async function buildPerSite(batchId) {
     toastSuccess(t('export_downloaded', {
       file: downloadWorkbook(perSiteDocumentToSheets(doc), doc.file_name, { rtl: isRtl() })
     }));
+
+    await recordPerSiteDownload(batchIds);
+
+    // Done with: the ticks have served their purpose, and leaving them on would
+    // invite downloading the same set twice.
+    batchIds.forEach(function (id) { selectedBatches.delete(id); });
   } catch (err) {
     toastError(errorMessage(err));
   } finally {
-    persiteBusy = '';
+    persiteBusy = [];
     paintLog();
   }
+}
+
+/**
+ * Record on the server that these batches' per-site file was downloaded, and
+ * update the log rows in place from its answer rather than reloading the log.
+ *
+ * A failure here does not un-download the file, so it is reported and
+ * swallowed: the manager has the file, and is only told that the log will not
+ * show it.
+ *
+ * @param {Array<string>} batchIds
+ */
+async function recordPerSiteDownload(batchIds) {
+  try {
+    const data = await api.call('record_persite_download', { batch_ids: batchIds });
+
+    ((data && data.batches) || []).forEach(function (recorded) {
+      const batch = findBatch(recorded.batch_id);
+      if (batch) Object.assign(batch, recorded);
+    });
+  } catch (err) {
+    console.warn('Per-site download not recorded: ' + (err && err.message));
+    toastError(t('export_persite_record_failed'));
+  }
+}
+
+/* ------------------------------------------------------------------ *
+ * The log's selection (7.1)
+ * ------------------------------------------------------------------ */
+
+/** @param {Object} batch @return {string} */
+function batchIdOf(batch) {
+  return batch.batch_id;
+}
+
+/** @param {string} id @return {Object|null} the log row. */
+function findBatch(id) {
+  return log.filter(function (batch) { return batch.batch_id === id; })[0] || null;
+}
+
+/** @param {Object} batch @return {boolean} its per-site file was never downloaded. */
+function isPending(batch) {
+  return !(Number(batch.persite_download_count) > 0);
+}
+
+/**
+ * The log lists newest first; the combined file reads oldest first, which is the
+ * order the batches went out in.
+ *
+ * @param {Array<string>} ids
+ * @return {Array<string>}
+ */
+function oldestFirst(ids) {
+  const position = function (id) {
+    return log.findIndex(function (batch) { return batch.batch_id === id; });
+  };
+
+  return ids.slice().sort(function (a, b) { return position(b) - position(a); });
+}
+
+/** @param {string} id @param {boolean} on */
+function toggleBatch(id, on) {
+  if (!id) return;
+  if (on) selectedBatches.add(id);
+  else selectedBatches.delete(id);
+  paintLogSelection();
+}
+
+/** @param {Array<string>} ids the whole new selection. */
+function setSelection(ids) {
+  selectedBatches = new Set(ids.filter(Boolean));
+  paintLogSelection();
 }
 
 /**
@@ -723,7 +875,39 @@ function paintResults() {
 /** The ExportLog table. */
 function paintLog() {
   const host = qs('#export-log');
-  if (host) host.innerHTML = renderLog();
+  if (!host) return;
+
+  host.innerHTML = renderLog();
+
+  // `indeterminate` exists only as a property, never as markup.
+  paintLogSelection();
+}
+
+/**
+ * Bring the tick boxes, the selected rows and the selection bar in line with
+ * `selectedBatches`, in place — a whole repaint would take the focus off the
+ * box the manager just ticked.
+ */
+function paintLogSelection() {
+  const host = qs('#export-log');
+  if (!host) return;
+
+  const bar = host.querySelector('#export-log-bar');
+  if (bar) bar.innerHTML = renderLogBar();
+
+  host.querySelectorAll('[data-log-select]').forEach(function (box) {
+    const on = selectedBatches.has(box.dataset.batch || '');
+    box.checked = on;
+
+    const tr = box.closest('tr');
+    if (tr) tr.classList.toggle('is-selected', on);
+  });
+
+  const all = host.querySelector('[data-log-select-all]');
+  if (all) {
+    all.checked = log.length > 0 && selectedBatches.size === log.length;
+    all.indeterminate = selectedBatches.size > 0 && selectedBatches.size < log.length;
+  }
 }
 
 /* ------------------------------------------------------------------ *
@@ -1220,10 +1404,17 @@ function renderLog() {
   }
 
   return `
+    <div class="toolbar log-bar" id="export-log-bar">${renderLogBar()}</div>
+
     <div class="table-wrap">
       <table class="table">
         <thead>
           <tr>
+            <th class="table-check-col">
+              <input class="table-check" type="checkbox" data-log-select-all
+                     title="${escapeHtml(t('export_log_select_all'))}"
+                     aria-label="${escapeHtml(t('export_log_select_all'))}">
+            </th>
             <th>${escapeHtml(t('col_batch'))}</th>
             <th>${escapeHtml(t('col_team'))}</th>
             <th>${escapeHtml(t('col_month'))}</th>
@@ -1247,8 +1438,16 @@ function renderLog() {
  * @return {string} HTML
  */
 function renderLogRow(batch) {
+  const selected = selectedBatches.has(batch.batch_id);
+
   return `
-    <tr>
+    <tr class="${selected ? 'is-selected' : ''}">
+      <td class="table-check-col">
+        <input class="table-check" type="checkbox" data-log-select
+               data-batch="${escapeHtml(batch.batch_id)}" ${selected ? 'checked' : ''}
+               aria-label="${escapeHtml(t('export_log_select_row', { batch: batch.batch_id }))}">
+      </td>
+
       <td class="num text-bold">${escapeHtml(batch.batch_id)}</td>
 
       <td>
@@ -1278,20 +1477,90 @@ function renderLogRow(batch) {
 
       <!--
         The last step of the settlement (6.4). Offered on every batch, including
-        one already logged as per-site: the file is rebuilt from the batch's own
-        rows and nothing is claimed, so building it twice costs a download.
+        one already downloaded: the file is rebuilt from the batch's own rows and
+        nothing is claimed, so building it twice costs a download — and a
+        question first (requestPerSite).
       -->
       <td class="text-end">
         <button class="btn btn-secondary btn-sm" type="button"
                 data-action="persite" data-batch="${escapeHtml(batch.batch_id)}"
-                ${persiteBusy ? 'disabled' : ''}
+                ${persiteBusy.length ? 'disabled' : ''}
                 title="${escapeHtml(t('export_persite_hint'))}">
-          ${escapeHtml(persiteBusy === batch.batch_id
+          ${escapeHtml(persiteBusy.indexOf(batch.batch_id) !== -1
             ? t('export_persite_building')
             : t('export_persite_build'))}
         </button>
+        <div class="persite-status">${renderDownloadStatus(batch)}</div>
       </td>
     </tr>
+  `;
+}
+
+/**
+ * Whether this batch's per-site file has been downloaded, and when, by whom.
+ * @param {Object} batch a row from `list_export_log`.
+ * @return {string} HTML
+ */
+function renderDownloadStatus(batch) {
+  if (isPending(batch)) {
+    return `<span class="badge badge-warning">${escapeHtml(t('export_persite_pending'))}</span>`;
+  }
+
+  return `<span class="text-tiny text-muted">${escapeHtml(downloadedLine(batch))}</span>`;
+}
+
+/**
+ * `Downloaded 2026-09-10 11:06 · Saad El-Dweik ×2`.
+ * @param {Object} batch
+ * @return {string}
+ */
+function downloadedLine(batch) {
+  const count = Number(batch.persite_download_count) || 0;
+
+  const who = (getLang() === 'ar' && batch.persite_downloaded_by_name_ar)
+    ? batch.persite_downloaded_by_name_ar
+    : (batch.persite_downloaded_by_name || batch.persite_downloaded_by || '—');
+
+  const line = t('export_persite_downloaded_on', {
+    when: formatDateTime(batch.persite_downloaded_at, '—'),
+    who: who
+  });
+
+  return count > 1 ? line + ' ' + t('export_persite_times', { count: count }) : line;
+}
+
+/**
+ * The strip above the log: pick the batches that still need their per-site
+ * file, and build one file for everything ticked (7.1).
+ * @return {string} HTML
+ */
+function renderLogBar() {
+  const count = selectedBatches.size;
+  const pending = log.filter(isPending).length;
+  const busy = persiteBusy.length > 0;
+
+  return `
+    <button class="btn btn-ghost btn-sm" type="button" data-action="select-pending"
+            ${pending && !busy ? '' : 'disabled'}>
+      ${escapeHtml(t('export_persite_select_pending', { count: pending }))}
+    </button>
+
+    ${count ? `
+      <button class="btn btn-ghost btn-sm" type="button" data-action="clear-selection">
+        ${escapeHtml(t('export_persite_clear_selection'))}
+      </button>
+    ` : ''}
+
+    <span class="spacer"></span>
+
+    ${count ? '' : `<span class="text-tiny text-muted">${escapeHtml(t('export_persite_none_selected'))}</span>`}
+
+    <button class="btn btn-primary btn-sm" type="button" data-action="persite-selected"
+            ${count && !busy ? '' : 'disabled'}>
+      ${escapeHtml(busy && persiteBusy.length > 1
+        ? t('export_persite_building')
+        : t('export_persite_selected', { count: count }))}
+    </button>
   `;
 }
 

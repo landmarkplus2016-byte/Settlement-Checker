@@ -44,7 +44,7 @@
  * one way of keeping rule 18.
  */
 
-import { entryDateOf, formatShortDate } from '../utils/dates.js';
+import { entryDateOf, formatDate, formatShortDate } from '../utils/dates.js';
 import { explodeRows } from '../utils/explode.js';
 import { toNumber } from '../utils/validate.js';
 import { MONEY_FORMAT, box, buildFileName, palette, solid } from './exportTemplate.js';
@@ -98,52 +98,103 @@ const BLANK = '';
  * ================================================================== */
 
 /**
- * The per-site file for one committed batch, as a model.
+ * The per-site file for one committed batch, or several combined (7.1), as a
+ * model.
+ *
+ * Several batches make ONE table, not a tab each. The file is a register that
+ * gets filtered and pivoted, and every row already names its team, Tracking#,
+ * coordinator and date, so rows from different batches cannot be mistaken for
+ * one another. They are laid out batch by batch in the order given — the export
+ * screen sends them oldest first — each batch's expenses and then its fuel,
+ * which is exactly the single-batch file repeated.
  *
  * @param {Object} options
  * @param {Object} options.query the `export_batch_rows` response.
- * @param {Object} options.batch that response's own log row — the team, month,
- *        period, fiscal year and Tracking# the batch went out under.
+ * @param {Array<Object>} [options.batches] that response's log rows, one per
+ *        batch — the team, month, period, fiscal year and Tracking# each went
+ *        out under.
+ * @param {Object} [options.batch] a single log row, the one-batch form.
  * @return {Object} the document model.
  */
 export function buildPerSiteDocument(options) {
   const opts = options || {};
   const query = opts.query || {};
-  const batch = opts.batch || {};
+  const batches = (opts.batches && opts.batches.length) ? opts.batches : [opts.batch || {}];
+  const single = batches.length === 1;
+  const first = batches[0];
 
-  const team = String(batch.team || '');
+  let rows = [];
 
-  const rows = [].concat(
-    expenseRows(query.expenses, batch, team),
-    fuelRows(query.fuel, batch, team)
-  );
+  batches.forEach(function (batch) {
+    const team = String(batch.team || '');
+
+    rows = rows.concat(
+      expenseRows(entriesOfBatch(query.expenses, batch, single), batch, team),
+      fuelRows(entriesOfBatch(query.fuel, batch, single), batch, team)
+    );
+  });
 
   return {
     report_type: 'persite',
-    team: team,
-    month: String(batch.month || ''),
-    period: String(batch.period || '').toLowerCase(),
-    tracking_no: String(batch.tracking_no || ''),
-    batch_id: String(batch.batch_id || ''),
+
+    // Only a one-batch file has a single team, period and number to name.
+    team: single ? String(first.team || '') : '',
+    month: single ? String(first.month || '') : '',
+    period: single ? String(first.period || '').toLowerCase() : '',
+    tracking_no: single ? String(first.tracking_no || '') : '',
+    batch_id: single ? String(first.batch_id || '') : '',
+    batch_ids: batches.map(function (batch) { return String(batch.batch_id || ''); }),
 
     columns: COLUMNS.slice(),
     rows: rows,
     row_count: rows.length,
     has_rows: rows.length > 0,
 
-    file_name: buildFileName({
-      team: team,
+    file_name: single
+      ? buildFileName({
+          team: first.team,
 
-      // The log row carries the batch's settlement only when the export was
-      // narrowed to one (3.7); an unnarrowed batch simply leaves it out of the
-      // name, exactly as the Normal file does.
-      settlementId: settlementIdOf(batch),
+          // The log row carries the batch's settlement only when the export was
+          // narrowed to one (3.7); an unnarrowed batch simply leaves it out of
+          // the name, exactly as the Normal file does.
+          settlementId: settlementIdOf(first),
 
-      period: batch.period,
-      trackingNo: batch.tracking_no,
-      isPerSite: true
-    })
+          period: first.period,
+          trackingNo: first.tracking_no,
+          isPerSite: true
+        })
+      : combinedFileName(batches.length)
   };
+}
+
+/**
+ * One batch's entries out of a response that may hold several.
+ *
+ * @param {Array<Object>} entries from `export_batch_rows`.
+ * @param {Object} batch the log row.
+ * @param {boolean} single true when the response holds this batch alone — then
+ *        every entry is its own, exactly as before batches could be combined.
+ * @return {Array<Object>}
+ */
+function entriesOfBatch(entries, batch, single) {
+  if (single) return entries || [];
+
+  const wanted = String(batch.batch_id || '').trim().toLowerCase();
+
+  return (entries || []).filter(function (entry) {
+    return String(entry.export_batch_id || '').trim().toLowerCase() === wanted;
+  });
+}
+
+/**
+ * `Per Site — 4 batches — 2026-09-10.xlsx`. A combined file spans teams and
+ * numbers, so it is named for what it holds and the day it was built.
+ *
+ * @param {number} count
+ * @return {string}
+ */
+function combinedFileName(count) {
+  return ['Per Site', count + ' batches', formatDate(new Date())].join(' — ') + '.xlsx';
 }
 
 /**

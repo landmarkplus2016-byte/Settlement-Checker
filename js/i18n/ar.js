@@ -545,11 +545,11 @@ export const ar = {
   export_needs_team: 'اختر الفريق أولاً.',
 
   export_start_title: 'لم يُنشأ شيء بعد',
-  export_start_text: 'اختر فريقاً وشهراً ثم اضغط إنشاء. تحصل على ملف لكل فترة — القديم والجديد يُسوَّى كل منهما على حدة وله رقم تتبع خاص به.',
+  export_start_text: 'اختر فريقاً ثم اضغط إنشاء. تحصل على ملف لكل فترة — القديم والجديد يُسوَّى كل منهما على حدة وله رقم تتبع خاص به.',
 
   export_period_file: 'ملف {period}',
   export_nothing_title: 'لا شيء للتصدير',
-  export_nothing_text: 'لا يوجد بند معتمد يطابق هذا الفريق والشهر والفترة. تظهر البنود هنا بعد اعتماد المدير لها.',
+  export_nothing_text: 'لا يوجد بند معتمد يطابق هذا الفريق والتسوية والفترة. تظهر البنود هنا بعد اعتماد المدير لها.',
 
   export_rows_summary: '{rows} بنداً في الملف · سيُعلَّم {claimable} كمُصدَّر ·',
   export_preview_capped: 'يُعرض أول {shown} من {total} بنداً. الملف يحتوي عليها جميعاً.',
@@ -570,8 +570,8 @@ export const ar = {
   export_already_exported: '{count} من البنود هنا صُدِّرت بالفعل. تظهر لأن «إخفاء المُصدَّر سابقاً» متوقف، ولن تُصدَّر مرة أخرى.',
   export_claimable_zero: 'كل ما هنا صُدِّر بالفعل. يمكنك تنزيل الملف، لكن لا يوجد ما يُعلَّم.',
   export_tracking_conflict: 'هذه البنود تؤول إلى أكثر من رقم تتبع: {numbers}. التصدير موقوف — لا يحمل الملف الواحد إلا رقماً واحداً في تذييله، وبمجرد تصدير هذه الصفوف تُقفل.',
-  export_tracking_conflict_split: 'هذه البنود تؤول إلى أكثر من رقم تتبع: {numbers}، لأن شهر هذا الفريق يضم أكثر من تسوية. التصدير موقوف — اختر تسوية من الأعلى لإرسالها كملفات منفصلة، كل منها برقمها.',
-  export_settlement_scoped: 'هذا الملف يغطي تسوية واحدة فقط: {settlement}. البنود التي تخص تسوية أخرى في الفريق والشهر نفسه ليست فيه.',
+  export_tracking_conflict_split: 'هذه البنود تؤول إلى أكثر من رقم تتبع: {numbers}، لأن لهذا الفريق أكثر من تسوية بها بنود معتمدة. التصدير موقوف — اختر تسوية من الأعلى لإرسالها كملفات منفصلة، كل منها برقمها.',
+  export_settlement_scoped: 'هذا الملف يغطي تسوية واحدة فقط: {settlement}. بنود الفريق نفسه التي تخص تسوية أخرى ليست فيه.',
   export_no_tracking: 'هذه التسويات بلا رقم تتبع لهذه الفترة: {settlements}. التصدير موقوف حتى يضبطه المنسّق — سيخرج التذييل فارغاً ولا يمكن تغيير الرقم بعد ذلك.',
   export_sweep_incomplete: 'تعذّرت قراءة بعض المنسّقين، فهذا الملف ناقص: {names}. التصدير موقوف حتى يُعالَج ذلك.',
 
@@ -589,6 +589,21 @@ export const ar = {
   export_persite_building: 'جارٍ الإنشاء…',
   export_persite_hint: 'أنشئ ملف «حسب الموقع» لهذه الدفعة — البنود نفسها مع تقسيم كل سطر متعدد المواقع على مواقعه. لا يُصدَّر شيء من جديد.',
   export_persite_empty: 'لا توجد بنود في هذه الدفعة لإنشاء ملف حسب الموقع منها.',
+
+  export_log_select_all: 'تحديد كل الدفعات المعروضة',
+  export_log_select_row: 'تحديد {batch}',
+  export_persite_selected: 'ملف حسب الموقع لـ {count} محددة',
+  export_persite_none_selected: 'حدّد دفعات لإنشاء ملف واحد حسب الموقع يضمها جميعاً.',
+  export_persite_select_pending: 'تحديد غير المُنزَّل ({count})',
+  export_persite_clear_selection: 'مسح',
+  export_persite_pending: 'لم يُنزَّل',
+  export_persite_downloaded_on: 'نُزِّل {when} · {who}',
+  export_persite_times: '×{count}',
+  export_persite_again_title: 'تنزيل مرة أخرى؟',
+  export_persite_again_one: 'سبق تنزيل ملف حسب الموقع لهذه الدفعة:',
+  export_persite_again_text: '{count} من {total} دفعة محددة سبق تنزيل ملف حسب الموقع لها:',
+  export_persite_again_confirm: 'تنزيل على أي حال',
+  export_persite_record_failed: 'تم تنزيل الملف، لكن تعذّر تسجيل ذلك، لذا ستظل الدفعة تظهر كغير مُنزَّلة.',
 
   col_batch: 'الدفعة',
   col_tracking: 'رقم التتبع',
